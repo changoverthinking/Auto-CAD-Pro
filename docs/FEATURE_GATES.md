@@ -38,8 +38,8 @@ A feature may be labeled production only when all of the following are true:
 | DXF ASCII import/export subset | verified | controlled 2D entity round-trip tests |
 | drawing bounds/viewport fit | verified | bounds/aspect tests |
 | page setup/print scale model | verified | A-series page and fixed-scale tests |
-| Windows desktop GUI | prototype | canvas/grid, zoom/pan, Line/Circle/Polyline/Arc, selection/grips, Move/Copy/Rotate, Trim/Extend/Offset, layers panel, Delete, Undo/Redo, project/DXF workflow, Text/Dimension/Hatch/Block rendering |
+| Windows desktop GUI | prototype | canvas/grid, zoom/pan, Line/Circle/Polyline/Arc, selection/grips, Move/Copy/Rotate/Scale/Mirror, Trim/Extend/Offset, Dimension/Hatch creation, layers/properties panel, Delete, Undo/Redo, project/DXF workflow, Text/Dimension/Hatch/Block rendering |
 | Windows executable artifact | prototype | CI uploads AutoCADPro-Windows-x64 after push build/test |
 | constraints | planned | FreeCAD Sketcher upstream audit required |
 | SVG/PDF export | planned | export pipeline not yet implemented |
-| full GUI editing workflow | prototype | selection/transforms/edit2d/history/file workflow, layers panel and core entity rendering active; annotation creation and richer properties editing remain |
+| full GUI editing workflow | prototype | selection/transforms/edit2d/history/file workflow, layers panel and core entity rendering active; text creation, richer annotation styling and richer properties editing remain |

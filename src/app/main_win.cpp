@@ -48,7 +48,11 @@ enum class Tool {
     Rotate,
     Trim,
     Extend,
-    Offset
+    Offset,
+    Scale,
+    Mirror,
+    Dimension,
+    Hatch
 };
 
 struct AppState {
@@ -73,7 +77,7 @@ struct AppState {
 
 AppState g_app;
 
-constexpr int kToolbarHeight = 44;
+constexpr int kToolbarHeight = 78;
 constexpr int kStatusHeight = 24;
 constexpr int kLayerPanelWidth = 230;
 constexpr int kMenuNew = 1001;
@@ -87,6 +91,8 @@ constexpr int kMenuNewLayer = 1008;
 constexpr int kMenuAssignLayer = 1009;
 constexpr int kMenuToggleLayerVisible = 1010;
 constexpr int kMenuToggleLayerLock = 1011;
+constexpr int kMenuToggleEntityVisible = 1012;
+constexpr int kMenuCycleEntityWeight = 1013;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -98,6 +104,10 @@ constexpr int kToolArc = 2008;
 constexpr int kToolTrim = 2009;
 constexpr int kToolExtend = 2010;
 constexpr int kToolOffset = 2011;
+constexpr int kToolScale = 2012;
+constexpr int kToolMirror = 2013;
+constexpr int kToolDimension = 2014;
+constexpr int kToolHatch = 2015;
 
 const wchar_t* tool_name(Tool tool) {
     switch (tool) {
@@ -112,6 +122,10 @@ const wchar_t* tool_name(Tool tool) {
         case Tool::Trim: return L"Trim";
         case Tool::Extend: return L"Extend";
         case Tool::Offset: return L"Offset";
+        case Tool::Scale: return L"Scale";
+        case Tool::Mirror: return L"Mirror";
+        case Tool::Dimension: return L"Dimension";
+        case Tool::Hatch: return L"Hatch";
     }
     return L"Select";
 }
@@ -479,6 +493,9 @@ void draw_preview(HWND hwnd, HDC dc) {
         g_app.tool == Tool::Trim ||
         g_app.tool == Tool::Extend ||
         g_app.tool == Tool::Offset ||
+        g_app.tool == Tool::Scale ||
+        g_app.tool == Tool::Mirror ||
+        g_app.tool == Tool::Dimension ||
         g_app.tool == Tool::Polyline ||
         g_app.tool == Tool::Arc) {
         MoveToEx(dc, first.x, first.y, nullptr);
@@ -518,7 +535,11 @@ void draw_toolbar(HDC dc, const RECT& client) {
         {{694, 7, 759, 37}, L"Rotate", Tool::Rotate},
         {{766, 7, 821, 37}, L"Trim", Tool::Trim},
         {{828, 7, 893, 37}, L"Extend", Tool::Extend},
-        {{900, 7, 965, 37}, L"Offset", Tool::Offset}
+        {{900, 7, 965, 37}, L"Offset", Tool::Offset},
+        {{190, 43, 255, 73}, L"Scale", Tool::Scale},
+        {{262, 43, 337, 73}, L"Mirror", Tool::Mirror},
+        {{344, 43, 439, 73}, L"Dimension", Tool::Dimension},
+        {{446, 43, 511, 73}, L"Hatch", Tool::Hatch}
     };
 
     for (const auto& button : buttons) {
@@ -586,7 +607,8 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     DrawTextW(dc,
               L"Click layer: activate\nV: visibility   L: lock\n"
               L"Layer menu: create/assign\n\n"
-              L"Selected entity properties appear\nin the status bar.",
+              L"Selected entity properties appear\nin the status bar.\n"
+              L"Entity menu: visibility/weight.",
               -1, &hint, DT_LEFT | DT_TOP | DT_WORDBREAK);
 
     (void)hwnd;
@@ -844,6 +866,13 @@ void handle_left_click(HWND hwnd, POINT point) {
     }
 
     if (point.y < kToolbarHeight) {
+        if (point.y >= 43) {
+            if (point.x >= 190 && point.x <= 255) set_tool(hwnd, Tool::Scale);
+            else if (point.x >= 262 && point.x <= 337) set_tool(hwnd, Tool::Mirror);
+            else if (point.x >= 344 && point.x <= 439) set_tool(hwnd, Tool::Dimension);
+            else if (point.x >= 446 && point.x <= 511) set_tool(hwnd, Tool::Hatch);
+            return;
+        }
         if (point.x >= 190 && point.x <= 265) set_tool(hwnd, Tool::Select);
         else if (point.x >= 272 && point.x <= 337) set_tool(hwnd, Tool::Line);
         else if (point.x >= 344 && point.x <= 419) set_tool(hwnd, Tool::Circle);
@@ -920,7 +949,10 @@ void handle_left_click(HWND hwnd, POINT point) {
          g_app.tool == Tool::Rotate ||
          g_app.tool == Tool::Trim ||
          g_app.tool == Tool::Extend ||
-         g_app.tool == Tool::Offset) &&
+         g_app.tool == Tool::Offset ||
+         g_app.tool == Tool::Scale ||
+         g_app.tool == Tool::Mirror ||
+         g_app.tool == Tool::Hatch) &&
         !g_app.selected.has_value()) {
         const auto hit = acp::selection::hit_test(
             g_app.document, g_app.blocks, world,
@@ -1016,6 +1048,101 @@ void handle_left_click(HWND hwnd, POINT point) {
                     }
                 }
             }
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
+    if (g_app.tool == Tool::Hatch && g_app.selected.has_value()) {
+        const acp::Entity* source = g_app.document.find(*g_app.selected);
+        if (source != nullptr && std::holds_alternative<PolylineEntity>(*source)) {
+            const auto& polyline = std::get<PolylineEntity>(*source);
+            if (polyline.closed && polyline.points.size() >= 3) {
+                auto command = std::make_unique<acp::AddEntityCommand>(
+                    acp::HatchEntity{polyline.points, "ANSI31", 0.0, 1.0, false});
+                auto* command_ptr = command.get();
+                if (g_app.history.apply(g_app.document, std::move(command))) {
+                    g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
+                    g_app.selected = command_ptr->id();
+                }
+            }
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
+    if (g_app.tool == Tool::Mirror && g_app.selected.has_value()) {
+        if (!g_app.has_first_point) {
+            g_app.first_point = world;
+            g_app.has_first_point = true;
+        } else {
+            const acp::Entity* source = g_app.document.find(*g_app.selected);
+            if (source != nullptr) {
+                acp::Entity replacement = *source;
+                if (acp::transform::mirror(
+                        replacement, {g_app.first_point, world})) {
+                    (void)g_app.history.apply(
+                        g_app.document,
+                        std::make_unique<acp::UpdateEntityCommand>(
+                            *g_app.selected, replacement));
+                }
+            }
+            g_app.has_first_point = false;
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
+    if (g_app.tool == Tool::Scale && g_app.selected.has_value()) {
+        if (!g_app.has_first_point) {
+            g_app.first_point = world;
+            g_app.has_first_point = true;
+        } else if (!g_app.has_second_point) {
+            g_app.second_point = world;
+            g_app.has_second_point = true;
+        } else {
+            const double reference =
+                acp::geo::distance(g_app.first_point, g_app.second_point);
+            const double target =
+                acp::geo::distance(g_app.first_point, world);
+            const acp::Entity* source = g_app.document.find(*g_app.selected);
+            if (source != nullptr &&
+                reference > acp::geo::kEpsilon &&
+                target > acp::geo::kEpsilon) {
+                acp::Entity replacement = *source;
+                if (acp::transform::scale_uniform(
+                        replacement, g_app.first_point, target / reference)) {
+                    (void)g_app.history.apply(
+                        g_app.document,
+                        std::make_unique<acp::UpdateEntityCommand>(
+                            *g_app.selected, replacement));
+                }
+            }
+            g_app.has_first_point = false;
+            g_app.has_second_point = false;
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
+    if (g_app.tool == Tool::Dimension) {
+        if (!g_app.has_first_point) {
+            g_app.first_point = world;
+            g_app.has_first_point = true;
+        } else if (!g_app.has_second_point) {
+            g_app.second_point = world;
+            g_app.has_second_point = true;
+        } else {
+            auto command = std::make_unique<acp::AddEntityCommand>(
+                acp::LinearDimensionEntity{
+                    g_app.first_point, g_app.second_point, world, std::nullopt});
+            auto* command_ptr = command.get();
+            if (g_app.history.apply(g_app.document, std::move(command))) {
+                g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
+                g_app.selected = command_ptr->id();
+            }
+            g_app.has_first_point = false;
+            g_app.has_second_point = false;
         }
         InvalidateRect(hwnd, nullptr, FALSE);
         return;
@@ -1143,6 +1270,31 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                         InvalidateRect(hwnd, nullptr, FALSE);
                     }
                     return 0;
+                case kMenuToggleEntityVisible:
+                    if (g_app.selected.has_value()) {
+                        if (acp::EntityProperties* props =
+                                g_app.document.properties(*g_app.selected)) {
+                            props->visible = !props->visible;
+                            InvalidateRect(hwnd, nullptr, FALSE);
+                        }
+                    }
+                    return 0;
+                case kMenuCycleEntityWeight:
+                    if (g_app.selected.has_value()) {
+                        if (acp::EntityProperties* props =
+                                g_app.document.properties(*g_app.selected)) {
+                            const double current =
+                                props->line_weight_override.value_or(
+                                    g_app.document.effective_line_weight(*g_app.selected));
+                            double next = 0.13;
+                            if (current < 0.18) next = 0.25;
+                            else if (current < 0.35) next = 0.50;
+                            else if (current < 0.75) next = 1.00;
+                            props->line_weight_override = next;
+                            InvalidateRect(hwnd, nullptr, FALSE);
+                        }
+                    }
+                    return 0;
                 case kMenuToggleLayerLock:
                     if (const acp::Layer* layer = g_app.document.layer(g_app.active_layer)) {
                         (void)g_app.document.set_layer_locked(
@@ -1164,6 +1316,10 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 case kToolTrim: set_tool(hwnd, Tool::Trim); return 0;
                 case kToolExtend: set_tool(hwnd, Tool::Extend); return 0;
                 case kToolOffset: set_tool(hwnd, Tool::Offset); return 0;
+                case kToolScale: set_tool(hwnd, Tool::Scale); return 0;
+                case kToolMirror: set_tool(hwnd, Tool::Mirror); return 0;
+                case kToolDimension: set_tool(hwnd, Tool::Dimension); return 0;
+                case kToolHatch: set_tool(hwnd, Tool::Hatch); return 0;
                 default: break;
             }
             break;
@@ -1258,6 +1414,22 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 set_tool(hwnd, Tool::Rotate);
                 return 0;
             }
+            if (w_param == 'S') {
+                set_tool(hwnd, Tool::Scale);
+                return 0;
+            }
+            if (w_param == 'I') {
+                set_tool(hwnd, Tool::Mirror);
+                return 0;
+            }
+            if (w_param == 'D') {
+                set_tool(hwnd, Tool::Dimension);
+                return 0;
+            }
+            if (w_param == 'H') {
+                set_tool(hwnd, Tool::Hatch);
+                return 0;
+            }
             break;
 
         case WM_LBUTTONDOWN: {
@@ -1348,6 +1520,7 @@ HMENU create_app_menu() {
     HMENU draw = CreatePopupMenu();
     HMENU view = CreatePopupMenu();
     HMENU layer = CreatePopupMenu();
+    HMENU entity = CreatePopupMenu();
 
     AppendMenuW(file, MF_STRING, kMenuNew, L"&New");
     AppendMenuW(file, MF_STRING, kMenuOpen, L"&Open Project...");
@@ -1371,6 +1544,11 @@ HMENU create_app_menu() {
     AppendMenuW(draw, MF_STRING, kToolTrim, L"&Trim\tT");
     AppendMenuW(draw, MF_STRING, kToolExtend, L"&Extend\tE");
     AppendMenuW(draw, MF_STRING, kToolOffset, L"&Offset\tO");
+    AppendMenuW(draw, MF_STRING, kToolScale, L"&Scale\tS");
+    AppendMenuW(draw, MF_STRING, kToolMirror, L"M&irror\tI");
+    AppendMenuW(draw, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(draw, MF_STRING, kToolDimension, L"&Dimension\tD");
+    AppendMenuW(draw, MF_STRING, kToolHatch, L"&Hatch\tH");
 
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"&File");
     AppendMenuW(view, MF_STRING, kMenuZoomExtents, L"Zoom &Extents");
@@ -1379,7 +1557,10 @@ HMENU create_app_menu() {
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerVisible, L"Toggle &Visibility");
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerLock, L"Toggle &Lock");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(draw), L"&Draw");
+    AppendMenuW(entity, MF_STRING, kMenuToggleEntityVisible, L"Toggle &Visibility");
+    AppendMenuW(entity, MF_STRING, kMenuCycleEntityWeight, L"Cycle Line &Weight");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(layer), L"&Layer");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(entity), L"&Entity");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"&View");
     return menu;
 }
