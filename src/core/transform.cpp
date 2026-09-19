@@ -43,6 +43,12 @@ void translate(Entity& entity, geo::Vec2 delta) noexcept {
             for (auto& point : value.points) point = point + delta;
         } else if constexpr (std::is_same_v<T, BlockReferenceEntity>) {
             value.insertion_point = value.insertion_point + delta;
+        } else if constexpr (std::is_same_v<T, TextEntity>) {
+            value.position = value.position + delta;
+        } else if constexpr (std::is_same_v<T, LinearDimensionEntity>) {
+            value.first = value.first + delta;
+            value.second = value.second + delta;
+            value.line_point = value.line_point + delta;
         }
     }, entity);
 }
@@ -64,6 +70,13 @@ void rotate(Entity& entity, geo::Vec2 origin, double radians) noexcept {
         } else if constexpr (std::is_same_v<T, BlockReferenceEntity>) {
             value.insertion_point = rotate_point(value.insertion_point, origin, radians);
             value.rotation += radians;
+        } else if constexpr (std::is_same_v<T, TextEntity>) {
+            value.position = rotate_point(value.position, origin, radians);
+            value.rotation += radians;
+        } else if constexpr (std::is_same_v<T, LinearDimensionEntity>) {
+            value.first = rotate_point(value.first, origin, radians);
+            value.second = rotate_point(value.second, origin, radians);
+            value.line_point = rotate_point(value.line_point, origin, radians);
         }
     }, entity);
 }
@@ -87,6 +100,13 @@ bool scale_uniform(Entity& entity, geo::Vec2 origin, double factor) noexcept {
         } else if constexpr (std::is_same_v<T, BlockReferenceEntity>) {
             value.insertion_point = scale_point(value.insertion_point, origin, factor);
             value.scale *= factor;
+        } else if constexpr (std::is_same_v<T, TextEntity>) {
+            value.position = scale_point(value.position, origin, factor);
+            value.height *= factor;
+        } else if constexpr (std::is_same_v<T, LinearDimensionEntity>) {
+            value.first = scale_point(value.first, origin, factor);
+            value.second = scale_point(value.second, origin, factor);
+            value.line_point = scale_point(value.line_point, origin, factor);
         }
     }, entity);
 
@@ -120,6 +140,15 @@ bool mirror(Entity& entity, geo::Segment axis) noexcept {
             const double axis_angle = std::atan2(direction.y, direction.x);
             value.insertion_point = mirror_point(value.insertion_point, axis);
             value.rotation = 2.0 * axis_angle - value.rotation;
+        } else if constexpr (std::is_same_v<T, TextEntity>) {
+            const geo::Vec2 direction = axis.b - axis.a;
+            const double axis_angle = std::atan2(direction.y, direction.x);
+            value.position = mirror_point(value.position, axis);
+            value.rotation = 2.0 * axis_angle - value.rotation;
+        } else if constexpr (std::is_same_v<T, LinearDimensionEntity>) {
+            value.first = mirror_point(value.first, axis);
+            value.second = mirror_point(value.second, axis);
+            value.line_point = mirror_point(value.line_point, axis);
         }
     }, entity);
 
