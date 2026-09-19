@@ -79,6 +79,7 @@ struct AppState {
     bool snap_enabled{true};
     std::optional<acp::snap::Candidate> snap_candidate;
     std::wstring text_buffer;
+    bool dirty{false};
 };
 
 AppState g_app;
@@ -179,6 +180,28 @@ void set_tool(HWND hwnd, Tool tool) {
         g_app.polyline_points.clear();
     }
     InvalidateRect(hwnd, nullptr, FALSE);
+}
+
+
+bool apply_history(std::unique_ptr<acp::Command> command) {
+    if (!g_app.history.apply(g_app.document, std::move(command))) {
+        return false;
+    }
+    g_app.dirty = true;
+    return true;
+}
+
+bool confirm_discard_unsaved(HWND hwnd) {
+    if (!g_app.dirty) {
+        return true;
+    }
+
+    const int result = MessageBoxW(
+        hwnd,
+        L"The current drawing has unsaved changes.\n\nDiscard them?",
+        L"Auto CAD Pro",
+        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+    return result == IDYES;
 }
 
 bool active_layer_writable() {
@@ -865,16 +888,12 @@ bool handle_layer_panel_click(HWND hwnd, POINT point) {
             if (point.x >= row.right - 68 && point.x < row.right - 38) {
                 acp::Layer replacement = *layer;
                 replacement.visible = !replacement.visible;
-                (void)g_app.history.apply(
-                    g_app.document,
-                    std::make_unique<acp::UpdateLayerCommand>(
+                (void)apply_history(std::make_unique<acp::UpdateLayerCommand>(
                         id, replacement));
             } else if (point.x >= row.right - 34) {
                 acp::Layer replacement = *layer;
                 replacement.locked = !replacement.locked;
-                (void)g_app.history.apply(
-                    g_app.document,
-                    std::make_unique<acp::UpdateLayerCommand>(
+                (void)apply_history(std::make_unique<acp::UpdateLayerCommand>(
                         id, replacement));
             } else {
                 g_app.active_layer = id;
@@ -894,6 +913,7 @@ void create_layer(HWND hwnd) {
         const acp::LayerId id = g_app.document.create_layer(candidate);
         if (id != 0) {
             g_app.active_layer = id;
+            g_app.dirty = true;
             InvalidateRect(hwnd, nullptr, FALSE);
             return;
         }
@@ -915,9 +935,7 @@ void assign_selected_to_active_layer(HWND hwnd) {
     }
     acp::EntityProperties replacement = *current;
     replacement.layer_id = g_app.active_layer;
-    if (g_app.history.apply(
-            g_app.document,
-            std::make_unique<acp::UpdateEntityPropertiesCommand>(
+    if (apply_history(std::make_unique<acp::UpdateEntityPropertiesCommand>(
                 *g_app.selected, replacement))) {
         InvalidateRect(hwnd, nullptr, FALSE);
     }
@@ -938,7 +956,8 @@ void draw_status(HWND hwnd, HDC dc, const RECT& client) {
         active_layer->locked ? L"LOCKED" :
         !active_layer->visible ? L"HIDDEN" :
         L"ACTIVE";
-    swprintf_s(buffer, L"Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu    Selected: %llu    Layer: %u (%s)    SNAP: %s    Undo: %zu",
+    swprintf_s(buffer, L"%s  Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu    Selected: %llu    Layer: %u (%s)    SNAP: %s    Undo: %zu",
+               g_app.dirty ? L"*" : L" ",
                tool_name(g_app.tool), cursor_world.x, cursor_world.y,
                g_app.zoom * 100.0, g_app.document.size(),
                static_cast<unsigned long long>(g_app.selected.value_or(0)),
@@ -1030,6 +1049,9 @@ void fit_drawing(HWND hwnd) {
 }
 
 void open_project(HWND hwnd) {
+    if (!confirm_discard_unsaved(hwnd)) {
+        return;
+    }
     const auto path = choose_file(
         hwnd, false,
         L"Auto CAD Pro Project (*.acp)\0*.acp\0All Files (*.*)\0*.*\0\0",
@@ -1054,6 +1076,7 @@ void open_project(HWND hwnd) {
     g_app.blocks = std::move(project->blocks);
     g_app.history = acp::History{};
     g_app.active_layer = acp::kDefaultLayerId;
+    g_app.dirty = false;
     reset_interaction_state();
     fit_drawing(hwnd);
 }
@@ -1071,10 +1094,15 @@ void save_project(HWND hwnd) {
         acp::persistence::serialize_project(g_app.document, g_app.blocks);
     if (!write_text_file(*path, data)) {
         show_file_error(hwnd, L"Could not save the project.");
+        return;
     }
+    g_app.dirty = false;
 }
 
 void import_dxf(HWND hwnd) {
+    if (!confirm_discard_unsaved(hwnd)) {
+        return;
+    }
     const auto path = choose_file(
         hwnd, false,
         L"DXF Drawing (*.dxf)\0*.dxf\0All Files (*.*)\0*.*\0\0",
@@ -1099,6 +1127,7 @@ void import_dxf(HWND hwnd) {
     g_app.blocks = acp::BlockLibrary{};
     g_app.history = acp::History{};
     g_app.active_layer = acp::kDefaultLayerId;
+    g_app.dirty = true;
     reset_interaction_state();
     fit_drawing(hwnd);
 }
@@ -1234,7 +1263,7 @@ void handle_left_click(HWND hwnd, POINT point) {
                 auto command = std::make_unique<acp::AddEntityCommand>(
                     ArcEntity{{g_app.first_point, radius, start_angle, end_angle, true}});
                 auto* command_ptr = command.get();
-                if (g_app.history.apply(g_app.document, std::move(command))) {
+                if (apply_history(std::move(command))) {
                     g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
                     g_app.selected = command_ptr->id();
                 }
@@ -1294,9 +1323,7 @@ void handle_left_click(HWND hwnd, POINT point) {
                         segment,
                         std::get<LineEntity>(*cutter).segment,
                         world)) {
-                    (void)g_app.history.apply(
-                        g_app.document,
-                        std::make_unique<acp::UpdateEntityCommand>(
+                    (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
                             *g_app.selected, replacement));
                 }
             }
@@ -1324,9 +1351,7 @@ void handle_left_click(HWND hwnd, POINT point) {
                 if (acp::edit2d::extend_segment(
                         segment,
                         std::get<LineEntity>(*boundary).segment)) {
-                    (void)g_app.history.apply(
-                        g_app.document,
-                        std::make_unique<acp::UpdateEntityCommand>(
+                    (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
                             *g_app.selected, replacement));
                 }
             }
@@ -1353,7 +1378,7 @@ void handle_left_click(HWND hwnd, POINT point) {
                     auto command = std::make_unique<acp::AddEntityCommand>(
                         LineEntity{*offset});
                     auto* command_ptr = command.get();
-                    if (g_app.history.apply(g_app.document, std::move(command))) {
+                    if (apply_history(std::move(command))) {
                         g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
                         g_app.selected = command_ptr->id();
                     }
@@ -1375,7 +1400,7 @@ void handle_left_click(HWND hwnd, POINT point) {
                 auto command = std::make_unique<acp::AddEntityCommand>(
                     acp::HatchEntity{polyline.points, "ANSI31", 0.0, 1.0, false});
                 auto* command_ptr = command.get();
-                if (g_app.history.apply(g_app.document, std::move(command))) {
+                if (apply_history(std::move(command))) {
                     g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
                     g_app.selected = command_ptr->id();
                 }
@@ -1398,9 +1423,7 @@ void handle_left_click(HWND hwnd, POINT point) {
                 acp::Entity replacement = *source;
                 if (acp::transform::mirror(
                         replacement, {g_app.first_point, world})) {
-                    (void)g_app.history.apply(
-                        g_app.document,
-                        std::make_unique<acp::UpdateEntityCommand>(
+                    (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
                             *g_app.selected, replacement));
                 }
             }
@@ -1432,9 +1455,7 @@ void handle_left_click(HWND hwnd, POINT point) {
                 acp::Entity replacement = *source;
                 if (acp::transform::scale_uniform(
                         replacement, g_app.first_point, target / reference)) {
-                    (void)g_app.history.apply(
-                        g_app.document,
-                        std::make_unique<acp::UpdateEntityCommand>(
+                    (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
                             *g_app.selected, replacement));
                 }
             }
@@ -1457,7 +1478,7 @@ void handle_left_click(HWND hwnd, POINT point) {
                 acp::LinearDimensionEntity{
                     g_app.first_point, g_app.second_point, world, std::nullopt});
             auto* command_ptr = command.get();
-            if (g_app.history.apply(g_app.document, std::move(command))) {
+            if (apply_history(std::move(command))) {
                 g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
                 g_app.selected = command_ptr->id();
             }
@@ -1480,7 +1501,7 @@ void handle_left_click(HWND hwnd, POINT point) {
             auto command = std::make_unique<acp::AddEntityCommand>(
                 LineEntity{{g_app.first_point, world}});
             auto* command_ptr = command.get();
-            if (g_app.history.apply(g_app.document, std::move(command))) {
+            if (apply_history(std::move(command))) {
                 g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
                 g_app.selected = command_ptr->id();
             }
@@ -1491,7 +1512,7 @@ void handle_left_click(HWND hwnd, POINT point) {
             auto command = std::make_unique<acp::AddEntityCommand>(
                 CircleEntity{{g_app.first_point, radius}});
             auto* command_ptr = command.get();
-            if (g_app.history.apply(g_app.document, std::move(command))) {
+            if (apply_history(std::move(command))) {
                 g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
                 g_app.selected = command_ptr->id();
             }
@@ -1507,9 +1528,7 @@ void handle_left_click(HWND hwnd, POINT point) {
             if (g_app.tool == Tool::Move) {
                 acp::Entity replacement = *source;
                 acp::transform::translate(replacement, world - g_app.first_point);
-                (void)g_app.history.apply(
-                    g_app.document,
-                    std::make_unique<acp::UpdateEntityCommand>(
+                (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
                         *g_app.selected, replacement));
             } else if (g_app.tool == Tool::Copy) {
                 const acp::EntityProperties* source_properties_ptr =
@@ -1522,7 +1541,7 @@ void handle_left_click(HWND hwnd, POINT point) {
                     acp::transform::translated_copy(*source, world - g_app.first_point);
                 auto command = std::make_unique<acp::AddEntityCommand>(copy);
                 auto* command_ptr = command.get();
-                if (g_app.history.apply(g_app.document, std::move(command))) {
+                if (apply_history(std::move(command))) {
                     if (source_properties.has_value()) {
                         if (acp::EntityProperties* copied_properties =
                                 g_app.document.properties(command_ptr->id())) {
@@ -1537,9 +1556,7 @@ void handle_left_click(HWND hwnd, POINT point) {
                     acp::Entity replacement = *source;
                     const double radians = std::atan2(direction.y, direction.x);
                     acp::transform::rotate(replacement, g_app.first_point, radians);
-                    (void)g_app.history.apply(
-                        g_app.document,
-                        std::make_unique<acp::UpdateEntityCommand>(
+                    (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
                             *g_app.selected, replacement));
                 }
             }
@@ -1564,10 +1581,14 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
                 case kMenuNew:
+                    if (!confirm_discard_unsaved(hwnd)) {
+                        return 0;
+                    }
                     g_app.document = Document{};
                     g_app.history = acp::History{};
                     g_app.blocks = acp::BlockLibrary{};
                     g_app.active_layer = acp::kDefaultLayerId;
+                    g_app.dirty = false;
                     reset_interaction_state();
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
@@ -1599,9 +1620,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     if (const acp::Layer* layer = g_app.document.layer(g_app.active_layer)) {
                         acp::Layer replacement = *layer;
                         replacement.visible = !replacement.visible;
-                        (void)g_app.history.apply(
-                            g_app.document,
-                            std::make_unique<acp::UpdateLayerCommand>(
+                        (void)apply_history(std::make_unique<acp::UpdateLayerCommand>(
                                 g_app.active_layer, replacement));
                         InvalidateRect(hwnd, nullptr, FALSE);
                     }
@@ -1612,9 +1631,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                                 g_app.document.properties(*g_app.selected)) {
                             acp::EntityProperties replacement = *props;
                             replacement.visible = !replacement.visible;
-                            (void)g_app.history.apply(
-                                g_app.document,
-                                std::make_unique<acp::UpdateEntityPropertiesCommand>(
+                            (void)apply_history(std::make_unique<acp::UpdateEntityPropertiesCommand>(
                                     *g_app.selected, replacement));
                             InvalidateRect(hwnd, nullptr, FALSE);
                         }
@@ -1638,9 +1655,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                             else if (current < 0.75) next = 1.00;
                             acp::EntityProperties replacement = *props;
                             replacement.line_weight_override = next;
-                            (void)g_app.history.apply(
-                                g_app.document,
-                                std::make_unique<acp::UpdateEntityPropertiesCommand>(
+                            (void)apply_history(std::make_unique<acp::UpdateEntityPropertiesCommand>(
                                     *g_app.selected, replacement));
                             InvalidateRect(hwnd, nullptr, FALSE);
                         }
@@ -1650,15 +1665,15 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     if (const acp::Layer* layer = g_app.document.layer(g_app.active_layer)) {
                         acp::Layer replacement = *layer;
                         replacement.locked = !replacement.locked;
-                        (void)g_app.history.apply(
-                            g_app.document,
-                            std::make_unique<acp::UpdateLayerCommand>(
+                        (void)apply_history(std::make_unique<acp::UpdateLayerCommand>(
                                 g_app.active_layer, replacement));
                         InvalidateRect(hwnd, nullptr, FALSE);
                     }
                     return 0;
                 case kMenuExit:
-                    DestroyWindow(hwnd);
+                    if (confirm_discard_unsaved(hwnd)) {
+                        DestroyWindow(hwnd);
+                    }
                     return 0;
                 case kToolSelect: set_tool(hwnd, Tool::Select); return 0;
                 case kToolLine: set_tool(hwnd, Tool::Line); return 0;
@@ -1683,6 +1698,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
         case WM_KEYDOWN:
             if ((GetKeyState(VK_CONTROL) & 0x8000) != 0 && w_param == 'Z') {
                 if (g_app.history.undo(g_app.document)) {
+                    g_app.dirty = true;
                     if (g_app.selected.has_value() &&
                         g_app.document.find(*g_app.selected) == nullptr) {
                         g_app.selected.reset();
@@ -1693,6 +1709,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             }
             if ((GetKeyState(VK_CONTROL) & 0x8000) != 0 && w_param == 'Y') {
                 if (g_app.history.redo(g_app.document)) {
+                    g_app.dirty = true;
                     InvalidateRect(hwnd, nullptr, FALSE);
                 }
                 return 0;
@@ -1702,9 +1719,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     return 0;
                 }
                 const acp::EntityId id = *g_app.selected;
-                if (g_app.history.apply(
-                        g_app.document,
-                        std::make_unique<acp::RemoveEntityCommand>(id))) {
+                if (apply_history(std::make_unique<acp::RemoveEntityCommand>(id))) {
                     g_app.selected.reset();
                     InvalidateRect(hwnd, nullptr, FALSE);
                 }
@@ -1731,8 +1746,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                         acp::TextEntity{
                             g_app.first_point, utf8, 2.5, 0.0});
                     auto* command_ptr = command.get();
-                    if (g_app.history.apply(
-                            g_app.document, std::move(command))) {
+                    if (apply_history(std::move(command))) {
                         g_app.document.set_entity_layer(
                             command_ptr->id(), g_app.active_layer);
                         g_app.selected = command_ptr->id();
@@ -1752,7 +1766,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     auto command = std::make_unique<acp::AddEntityCommand>(
                         PolylineEntity{g_app.polyline_points, close_polyline});
                     auto* command_ptr = command.get();
-                    if (g_app.history.apply(g_app.document, std::move(command))) {
+                    if (apply_history(std::move(command))) {
                         g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
                         g_app.selected = command_ptr->id();
                     }
@@ -1923,6 +1937,12 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             EndPaint(hwnd, &ps);
             return 0;
         }
+
+        case WM_CLOSE:
+            if (confirm_discard_unsaved(hwnd)) {
+                DestroyWindow(hwnd);
+            }
+            return 0;
 
         case WM_DESTROY:
             PostQuitMessage(0);

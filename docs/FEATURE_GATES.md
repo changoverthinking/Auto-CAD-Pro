@@ -63,3 +63,5 @@ A feature may be labeled production only when all of the following are true:
 - Text input uses the Windows Unicode character stream and converts to UTF-8 on commit, including surrogate-pair-safe backspace handling.
 
 - SVG export serializes visible 2D geometry, instantiated blocks, text, dimensions, hatches and effective line weights with XML escaping and drawing bounds-derived viewBox.
+
+- Unsaved-change protection tracks command mutations, layer creation, DXF import, Undo and Redo; New/Open/Import/Exit/WM_CLOSE now require explicit discard confirmation when dirty, while successful project Save clears the dirty flag.
