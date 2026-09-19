@@ -15,7 +15,7 @@ namespace {
 void transform_primitive(
     BlockPrimitive& primitive,
     geo::Vec2 base_point,
-    const BlockInstance& instance) {
+    const BlockReferenceEntity& instance) {
 
     std::visit([&](auto& value) {
         using T = std::decay_t<decltype(value)>;
@@ -98,7 +98,7 @@ bool BlockLibrary::remove(BlockId id) {
     return blocks_.erase(id) == 1;
 }
 
-std::vector<BlockPrimitive> BlockLibrary::instantiate(const BlockInstance& instance) const {
+std::vector<BlockPrimitive> BlockLibrary::instantiate(const BlockReferenceEntity& instance) const {
     const auto* block = find(instance.block_id);
     if (block == nullptr ||
         !std::isfinite(instance.scale) ||

@@ -41,6 +41,8 @@ void translate(Entity& entity, geo::Vec2 delta) noexcept {
             value.arc.center = value.arc.center + delta;
         } else if constexpr (std::is_same_v<T, PolylineEntity>) {
             for (auto& point : value.points) point = point + delta;
+        } else if constexpr (std::is_same_v<T, BlockReferenceEntity>) {
+            value.insertion_point = value.insertion_point + delta;
         }
     }, entity);
 }
@@ -59,6 +61,9 @@ void rotate(Entity& entity, geo::Vec2 origin, double radians) noexcept {
             value.arc.end_angle += radians;
         } else if constexpr (std::is_same_v<T, PolylineEntity>) {
             for (auto& point : value.points) point = rotate_point(point, origin, radians);
+        } else if constexpr (std::is_same_v<T, BlockReferenceEntity>) {
+            value.insertion_point = rotate_point(value.insertion_point, origin, radians);
+            value.rotation += radians;
         }
     }, entity);
 }
@@ -79,6 +84,9 @@ bool scale_uniform(Entity& entity, geo::Vec2 origin, double factor) noexcept {
             value.arc.radius *= factor;
         } else if constexpr (std::is_same_v<T, PolylineEntity>) {
             for (auto& point : value.points) point = scale_point(point, origin, factor);
+        } else if constexpr (std::is_same_v<T, BlockReferenceEntity>) {
+            value.insertion_point = scale_point(value.insertion_point, origin, factor);
+            value.scale *= factor;
         }
     }, entity);
 
@@ -107,6 +115,11 @@ bool mirror(Entity& entity, geo::Segment axis) noexcept {
             value.arc.counter_clockwise = !value.arc.counter_clockwise;
         } else if constexpr (std::is_same_v<T, PolylineEntity>) {
             for (auto& point : value.points) point = mirror_point(point, axis);
+        } else if constexpr (std::is_same_v<T, BlockReferenceEntity>) {
+            const geo::Vec2 direction = axis.b - axis.a;
+            const double axis_angle = std::atan2(direction.y, direction.x);
+            value.insertion_point = mirror_point(value.insertion_point, axis);
+            value.rotation = 2.0 * axis_angle - value.rotation;
         }
     }, entity);
 

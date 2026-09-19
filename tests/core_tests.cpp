@@ -345,7 +345,7 @@ int main() {
     expect(blocks.rename(doorBlock, "Door-900"), "rename block definition");
 
     const auto placedDoor = blocks.instantiate(
-        BlockInstance{doorBlock, {100, 200}, std::numbers::pi / 2.0, 2.0});
+        BlockReferenceEntity{doorBlock, {100, 200}, std::numbers::pi / 2.0, 2.0});
     expect(placedDoor.size() == 2, "instantiate block geometry");
     const auto& placedDoorLine = std::get<LineEntity>(placedDoor[0]);
     expect(geo::nearly_equal(placedDoorLine.segment.a, {100, 200}, 1e-8) &&
@@ -363,7 +363,7 @@ int main() {
            geo::nearly_equal(std::get<LineEntity>(sourceDoor->geometry[0]).segment.b, {10, 0}),
            "block instancing preserves definition");
 
-    expect(blocks.instantiate(BlockInstance{doorBlock, {0, 0}, 0.0, 0.0}).empty(),
+    expect(blocks.instantiate(BlockReferenceEntity{doorBlock, {0, 0}, 0.0, 0.0}).empty(),
            "reject invalid block scale");
     expect(blocks.remove(doorBlock) && blocks.find(doorBlock) == nullptr,
            "remove block definition");
@@ -398,6 +398,56 @@ int main() {
            geo::nearly_equal(*historyPropsDoc.properties(styledId)->line_weight_override, 0.90) &&
            !historyPropsDoc.properties(styledId)->visible,
            "undo remove preserves entity properties");
+
+
+    BlockLibrary integrationBlocks;
+    const BlockId chairBlock = integrationBlocks.create(
+        "Chair",
+        {0, 0},
+        std::vector<BlockPrimitive>{
+            LineEntity{{{0, 0}, {10, 0}}},
+            LineEntity{{{10, 0}, {10, 10}}}
+        });
+    expect(chairBlock != 0, "create integration block");
+
+    Document blockDoc;
+    const EntityId blockRefId = blockDoc.insert(
+        BlockReferenceEntity{chairBlock, {100, 50}, 0.0, 1.0});
+    const auto blockHit = selection::hit_test(
+        blockDoc, integrationBlocks, {105, 50.2}, 0.5);
+    expect(blockHit.has_value() && blockHit->id == blockRefId &&
+           geo::nearly_equal(blockHit->nearest, {105, 50}),
+           "select block reference by instantiated geometry");
+
+    expect(!selection::hit_test(blockDoc, {105, 50.2}, 0.5).has_value(),
+           "block reference requires library-aware selection");
+
+    Entity blockMove = BlockReferenceEntity{chairBlock, {10, 20}, 0.0, 2.0};
+    transform::translate(blockMove, {5, -5});
+    const auto& movedBlock = std::get<BlockReferenceEntity>(blockMove);
+    expect(geo::nearly_equal(movedBlock.insertion_point, {15, 15}) &&
+           geo::nearly_equal(movedBlock.scale, 2.0),
+           "translate block reference");
+
+    transform::rotate(blockMove, {0, 0}, std::numbers::pi / 2.0);
+    const auto& rotatedBlock = std::get<BlockReferenceEntity>(blockMove);
+    expect(geo::nearly_equal(rotatedBlock.insertion_point, {-15, 15}, 1e-8) &&
+           geo::nearly_equal(rotatedBlock.rotation, std::numbers::pi / 2.0, 1e-8),
+           "rotate block reference");
+
+    expect(transform::scale_uniform(blockMove, {0, 0}, 0.5),
+           "scale block reference");
+    const auto& scaledBlock = std::get<BlockReferenceEntity>(blockMove);
+    expect(geo::nearly_equal(scaledBlock.insertion_point, {-7.5, 7.5}, 1e-8) &&
+           geo::nearly_equal(scaledBlock.scale, 1.0),
+           "scale block reference geometry scale");
+
+    Entity mirroredBlock = BlockReferenceEntity{chairBlock, {5, 2}, 0.25, 1.0};
+    expect(transform::mirror(mirroredBlock, {{0, -10}, {0, 10}}),
+           "mirror block reference");
+    const auto& mirroredBlockRef = std::get<BlockReferenceEntity>(mirroredBlock);
+    expect(geo::nearly_equal(mirroredBlockRef.insertion_point, {-5, 2}, 1e-8),
+           "mirror block insertion point");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
