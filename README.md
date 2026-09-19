@@ -2,6 +2,21 @@
 
 Windows-first CAD application focused on a production-grade 2D workflow before any 3D expansion.
 
+## Current executable
+
+The repository now builds a real Windows desktop application named `AutoCADPro.exe`.
+
+Current GUI foundation:
+- native Win32/GDI 2D workspace linked directly to `acp_core`;
+- CAD grid and coordinate status display;
+- mouse-wheel zoom around cursor;
+- middle-mouse pan;
+- interactive Line tool;
+- interactive Circle tool;
+- Windows CI build/test and downloadable x64 executable artifact.
+
+This GUI is still a prototype gate: selection, grips, properties, file Open/Save, DXF commands, layers panel, annotation tools and production drawing workflow are the next integration stage.
+
 ## Development gates
 
 A feature is not considered implemented until it has:
