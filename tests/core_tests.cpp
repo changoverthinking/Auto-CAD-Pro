@@ -1,4 +1,5 @@
 #include "acp/document.hpp"
+#include "acp/edit2d.hpp"
 #include "acp/geometry2d.hpp"
 #include "acp/history.hpp"
 #include "acp/snap.hpp"
@@ -143,6 +144,68 @@ int main() {
     expect(geo::nearly_equal(invalidMirrorLine.segment.a, invalidMirrorLineBefore.segment.a) &&
            geo::nearly_equal(invalidMirrorLine.segment.b, invalidMirrorLineBefore.segment.b),
            "degenerate mirror leaves entity unchanged");
+
+
+    const auto infiniteHit = edit2d::infinite_line_intersection(
+        {{0, 0}, {5, 0}}, {{10, -5}, {10, 5}});
+    expect(infiniteHit.has_value() &&
+           geo::nearly_equal(infiniteHit->point, {10, 0}) &&
+           geo::nearly_equal(infiniteHit->lhs_parameter, 2.0),
+           "infinite line intersection parameters");
+
+    const auto offsetUp = edit2d::offset_segment({{0, 0}, {10, 0}}, 2.0);
+    expect(offsetUp.has_value() &&
+           geo::nearly_equal(offsetUp->a, {0, 2}) &&
+           geo::nearly_equal(offsetUp->b, {10, 2}),
+           "offset horizontal segment left");
+
+    const auto offsetDown = edit2d::offset_segment({{0, 0}, {10, 0}}, -3.0);
+    expect(offsetDown.has_value() &&
+           geo::nearly_equal(offsetDown->a, {0, -3}) &&
+           geo::nearly_equal(offsetDown->b, {10, -3}),
+           "offset horizontal segment right");
+
+    expect(!edit2d::offset_segment({{1, 1}, {1, 1}}, 2.0).has_value(),
+           "reject offset degenerate segment");
+
+    geo::Segment trimLeft{{0, 0}, {10, 0}};
+    expect(edit2d::trim_segment(trimLeft, {{4, -5}, {4, 5}}, {1, 0}),
+           "trim removes picked left side");
+    expect(geo::nearly_equal(trimLeft.a, {4, 0}) &&
+           geo::nearly_equal(trimLeft.b, {10, 0}),
+           "trim left result");
+
+    geo::Segment trimRight{{0, 0}, {10, 0}};
+    expect(edit2d::trim_segment(trimRight, {{6, -5}, {6, 5}}, {9, 0}),
+           "trim removes picked right side");
+    expect(geo::nearly_equal(trimRight.a, {0, 0}) &&
+           geo::nearly_equal(trimRight.b, {6, 0}),
+           "trim right result");
+
+    geo::Segment noTrim{{0, 0}, {10, 0}};
+    expect(!edit2d::trim_segment(noTrim, {{20, -1}, {20, 1}}, {5, 0}),
+           "trim rejects cutter outside target");
+    expect(geo::nearly_equal(noTrim.a, {0, 0}) &&
+           geo::nearly_equal(noTrim.b, {10, 0}),
+           "failed trim leaves target unchanged");
+
+    geo::Segment extendEnd{{0, 0}, {5, 0}};
+    expect(edit2d::extend_segment(extendEnd, {{10, -5}, {10, 5}}),
+           "extend end to boundary");
+    expect(geo::nearly_equal(extendEnd.a, {0, 0}) &&
+           geo::nearly_equal(extendEnd.b, {10, 0}),
+           "extend end result");
+
+    geo::Segment extendStart{{5, 0}, {10, 0}};
+    expect(edit2d::extend_segment(extendStart, {{0, -5}, {0, 5}}),
+           "extend start to boundary");
+    expect(geo::nearly_equal(extendStart.a, {0, 0}) &&
+           geo::nearly_equal(extendStart.b, {10, 0}),
+           "extend start result");
+
+    geo::Segment noExtend{{0, 0}, {10, 0}};
+    expect(!edit2d::extend_segment(noExtend, {{5, -5}, {5, 5}}),
+           "extend rejects existing interior intersection");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
