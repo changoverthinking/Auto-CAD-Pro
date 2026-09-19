@@ -207,6 +207,39 @@ int main() {
     expect(!edit2d::extend_segment(noExtend, {{5, -5}, {5, 5}}),
            "extend rejects existing interior intersection");
 
+
+    const geo::Arc quarterArc{{0, 0}, 10.0, 0.0, std::numbers::pi / 2.0, true};
+    expect(geo::valid_arc(quarterArc), "valid quarter arc");
+    expect(geo::nearly_equal(geo::arc_sweep(quarterArc), std::numbers::pi / 2.0),
+           "quarter arc sweep");
+    expect(geo::nearly_equal(geo::arc_length(quarterArc), 5.0 * std::numbers::pi),
+           "quarter arc length");
+    expect(geo::nearly_equal(geo::arc_start_point(quarterArc), {10, 0}, 1e-8) &&
+           geo::nearly_equal(geo::arc_end_point(quarterArc), {0, 10}, 1e-8),
+           "quarter arc endpoints");
+
+    const geo::Arc clockwiseArc{{0, 0}, 2.0, 0.0, -std::numbers::pi / 2.0, false};
+    expect(geo::nearly_equal(geo::arc_sweep(clockwiseArc), std::numbers::pi / 2.0),
+           "clockwise arc sweep");
+
+    const geo::Arc fullArc{{1, 2}, 3.0, 0.0, 0.0, true};
+    expect(geo::nearly_equal(geo::arc_sweep(fullArc), 2.0 * std::numbers::pi),
+           "equal arc angles represent full circle");
+
+    const geo::Arc invalidArc{{0, 0}, 0.0, 0.0, 1.0, true};
+    expect(!geo::valid_arc(invalidArc) && geo::nearly_equal(geo::arc_length(invalidArc), 0.0),
+           "reject invalid arc radius");
+
+    const auto rectangle = geo::rectangle_from_corners({1, 2}, {5, 8});
+    expect(rectangle.size() == 4 &&
+           geo::nearly_equal(rectangle[0], {1, 2}) &&
+           geo::nearly_equal(rectangle[1], {5, 2}) &&
+           geo::nearly_equal(rectangle[2], {5, 8}) &&
+           geo::nearly_equal(rectangle[3], {1, 8}),
+           "rectangle from opposite corners");
+    expect(geo::nearly_equal(geo::polyline_length(rectangle, true), 20.0),
+           "closed rectangle perimeter");
+
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return EXIT_FAILURE;
