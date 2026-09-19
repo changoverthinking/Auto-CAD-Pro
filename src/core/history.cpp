@@ -1,5 +1,7 @@
 #include "acp/history.hpp"
 
+#include <utility>
+
 namespace acp {
 
 AddEntityCommand::AddEntityCommand(Entity entity)
@@ -7,7 +9,15 @@ AddEntityCommand::AddEntityCommand(Entity entity)
 
 bool AddEntityCommand::execute(Document& document) {
     if (executed_ && id_ != 0) {
-        return document.insert_with_id(id_, entity_);
+        if (!document.insert_with_id(id_, entity_)) {
+            return false;
+        }
+        if (properties_.has_value()) {
+            if (auto* props = document.properties(id_)) {
+                *props = *properties_;
+            }
+        }
+        return true;
     }
 
     id_ = document.insert(entity_);
@@ -16,9 +26,14 @@ bool AddEntityCommand::execute(Document& document) {
 }
 
 void AddEntityCommand::undo(Document& document) {
-    if (id_ != 0) {
-        document.erase(id_);
+    if (id_ == 0) {
+        return;
     }
+
+    if (const auto* props = document.properties(id_)) {
+        properties_ = *props;
+    }
+    document.erase(id_);
 }
 
 RemoveEntityCommand::RemoveEntityCommand(EntityId id)
@@ -26,17 +41,25 @@ RemoveEntityCommand::RemoveEntityCommand(EntityId id)
 
 bool RemoveEntityCommand::execute(Document& document) {
     const Entity* existing = document.find(id_);
-    if (existing == nullptr) {
+    const EntityProperties* props = document.properties(id_);
+    if (existing == nullptr || props == nullptr) {
         return false;
     }
 
     backup_ = *existing;
+    backup_properties_ = *props;
     return document.erase(id_);
 }
 
 void RemoveEntityCommand::undo(Document& document) {
-    if (backup_.has_value()) {
-        document.insert_with_id(id_, *backup_);
+    if (!backup_.has_value() || !backup_properties_.has_value()) {
+        return;
+    }
+
+    if (document.insert_with_id(id_, *backup_)) {
+        if (auto* props = document.properties(id_)) {
+            *props = *backup_properties_;
+        }
     }
 }
 
@@ -70,6 +93,7 @@ bool History::redo(Document& document) {
     auto command = std::move(redo_.back());
     redo_.pop_back();
     if (!command->execute(document)) {
+        redo_.push_back(std::move(command));
         return false;
     }
 
