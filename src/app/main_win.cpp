@@ -8,6 +8,7 @@
 #include "acp/bounds.hpp"
 #include "acp/history.hpp"
 #include "acp/dxf.hpp"
+#include "acp/edit2d.hpp"
 #include "acp/persistence.hpp"
 #include "acp/selection.hpp"
 #include "acp/transform.hpp"
@@ -24,6 +25,7 @@
 #include <optional>
 #include <string>
 #include <variant>
+#include <vector>
 #include <type_traits>
 
 namespace {
@@ -39,9 +41,14 @@ enum class Tool {
     Select,
     Line,
     Circle,
+    Polyline,
+    Arc,
     Move,
     Copy,
-    Rotate
+    Rotate,
+    Trim,
+    Extend,
+    Offset
 };
 
 struct AppState {
@@ -49,6 +56,11 @@ struct AppState {
     acp::History history;
     acp::BlockLibrary blocks;
     std::optional<acp::EntityId> selected;
+    std::optional<acp::EntityId> auxiliary_entity;
+    acp::LayerId active_layer{acp::kDefaultLayerId};
+    std::vector<Vec2> polyline_points;
+    bool has_second_point{false};
+    Vec2 second_point{};
     Tool tool{Tool::Select};
     double zoom{1.0};
     Vec2 view_center{0.0, 0.0};
@@ -63,6 +75,7 @@ AppState g_app;
 
 constexpr int kToolbarHeight = 44;
 constexpr int kStatusHeight = 24;
+constexpr int kLayerPanelWidth = 230;
 constexpr int kMenuNew = 1001;
 constexpr int kMenuExit = 1002;
 constexpr int kMenuOpen = 1003;
@@ -70,21 +83,35 @@ constexpr int kMenuSave = 1004;
 constexpr int kMenuImportDxf = 1005;
 constexpr int kMenuExportDxf = 1006;
 constexpr int kMenuZoomExtents = 1007;
+constexpr int kMenuNewLayer = 1008;
+constexpr int kMenuAssignLayer = 1009;
+constexpr int kMenuToggleLayerVisible = 1010;
+constexpr int kMenuToggleLayerLock = 1011;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
 constexpr int kToolMove = 2004;
 constexpr int kToolCopy = 2005;
 constexpr int kToolRotate = 2006;
+constexpr int kToolPolyline = 2007;
+constexpr int kToolArc = 2008;
+constexpr int kToolTrim = 2009;
+constexpr int kToolExtend = 2010;
+constexpr int kToolOffset = 2011;
 
 const wchar_t* tool_name(Tool tool) {
     switch (tool) {
         case Tool::Select: return L"Select";
         case Tool::Line: return L"Line";
         case Tool::Circle: return L"Circle";
+        case Tool::Polyline: return L"Polyline";
+        case Tool::Arc: return L"Arc";
         case Tool::Move: return L"Move";
         case Tool::Copy: return L"Copy";
         case Tool::Rotate: return L"Rotate";
+        case Tool::Trim: return L"Trim";
+        case Tool::Extend: return L"Extend";
+        case Tool::Offset: return L"Offset";
     }
     return L"Select";
 }
@@ -93,6 +120,7 @@ RECT canvas_rect(HWND hwnd) {
     RECT rc{};
     GetClientRect(hwnd, &rc);
     rc.top += kToolbarHeight;
+    rc.right = std::max(rc.left, rc.right - kLayerPanelWidth);
     rc.bottom = std::max(rc.top, rc.bottom - kStatusHeight);
     return rc;
 }
@@ -120,6 +148,11 @@ Vec2 screen_to_world(HWND hwnd, POINT p) {
 void set_tool(HWND hwnd, Tool tool) {
     g_app.tool = tool;
     g_app.has_first_point = false;
+    g_app.has_second_point = false;
+    g_app.auxiliary_entity.reset();
+    if (tool != Tool::Polyline) {
+        g_app.polyline_points.clear();
+    }
     InvalidateRect(hwnd, nullptr, FALSE);
 }
 
@@ -442,7 +475,12 @@ void draw_preview(HWND hwnd, HDC dc) {
     if (g_app.tool == Tool::Line ||
         g_app.tool == Tool::Move ||
         g_app.tool == Tool::Copy ||
-        g_app.tool == Tool::Rotate) {
+        g_app.tool == Tool::Rotate ||
+        g_app.tool == Tool::Trim ||
+        g_app.tool == Tool::Extend ||
+        g_app.tool == Tool::Offset ||
+        g_app.tool == Tool::Polyline ||
+        g_app.tool == Tool::Arc) {
         MoveToEx(dc, first.x, first.y, nullptr);
         LineTo(dc, second.x, second.y);
     } else if (g_app.tool == Tool::Circle) {
@@ -473,9 +511,14 @@ void draw_toolbar(HDC dc, const RECT& client) {
         {{190, 7, 265, 37}, L"Select", Tool::Select},
         {{272, 7, 337, 37}, L"Line", Tool::Line},
         {{344, 7, 419, 37}, L"Circle", Tool::Circle},
-        {{426, 7, 491, 37}, L"Move", Tool::Move},
-        {{498, 7, 563, 37}, L"Copy", Tool::Copy},
-        {{570, 7, 645, 37}, L"Rotate", Tool::Rotate}
+        {{426, 7, 501, 37}, L"Polyline", Tool::Polyline},
+        {{508, 7, 563, 37}, L"Arc", Tool::Arc},
+        {{570, 7, 625, 37}, L"Move", Tool::Move},
+        {{632, 7, 687, 37}, L"Copy", Tool::Copy},
+        {{694, 7, 759, 37}, L"Rotate", Tool::Rotate},
+        {{766, 7, 821, 37}, L"Trim", Tool::Trim},
+        {{828, 7, 893, 37}, L"Extend", Tool::Extend},
+        {{900, 7, 965, 37}, L"Offset", Tool::Offset}
     };
 
     for (const auto& button : buttons) {
@@ -488,6 +531,123 @@ void draw_toolbar(HDC dc, const RECT& client) {
     }
 }
 
+
+void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
+    RECT panel{
+        std::max(client.left, client.right - kLayerPanelWidth),
+        kToolbarHeight,
+        client.right,
+        client.bottom - kStatusHeight
+    };
+
+    HBRUSH background = CreateSolidBrush(RGB(35, 39, 46));
+    FillRect(dc, &panel, background);
+    DeleteObject(background);
+
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(235, 237, 242));
+
+    RECT heading{panel.left + 12, panel.top + 8, panel.right - 8, panel.top + 34};
+    DrawTextW(dc, L"LAYERS / PROPERTIES", -1, &heading,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    int y = panel.top + 40;
+    for (const acp::LayerId id : g_app.document.layer_ids()) {
+        const acp::Layer* layer = g_app.document.layer(id);
+        if (layer == nullptr) {
+            continue;
+        }
+
+        RECT row{panel.left + 8, y, panel.right - 8, y + 28};
+        HBRUSH row_brush = CreateSolidBrush(
+            id == g_app.active_layer ? RGB(58, 76, 98) : RGB(46, 50, 58));
+        FillRect(dc, &row, row_brush);
+        DeleteObject(row_brush);
+
+        wchar_t name[160]{};
+        MultiByteToWideChar(CP_UTF8, 0, layer->name.c_str(), -1,
+                            name, static_cast<int>(std::size(name)));
+        RECT name_rect{row.left + 8, row.top, row.right - 72, row.bottom};
+        DrawTextW(dc, name, -1, &name_rect,
+                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+        RECT vis_rect{row.right - 68, row.top, row.right - 38, row.bottom};
+        RECT lock_rect{row.right - 34, row.top, row.right - 4, row.bottom};
+        DrawTextW(dc, layer->visible ? L"V" : L"-", -1, &vis_rect,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        DrawTextW(dc, layer->locked ? L"L" : L"-", -1, &lock_rect,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        y += 32;
+    }
+
+    y += 8;
+    SetTextColor(dc, RGB(180, 186, 198));
+    RECT hint{panel.left + 10, y, panel.right - 10, panel.bottom};
+    DrawTextW(dc,
+              L"Click layer: activate\nV: visibility   L: lock\n"
+              L"Layer menu: create/assign\n\n"
+              L"Selected entity properties appear\nin the status bar.",
+              -1, &hint, DT_LEFT | DT_TOP | DT_WORDBREAK);
+
+    (void)hwnd;
+}
+
+bool handle_layer_panel_click(HWND hwnd, POINT point) {
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    const int panel_left = client.right - kLayerPanelWidth;
+    if (point.x < panel_left || point.y < kToolbarHeight ||
+        point.y >= client.bottom - kStatusHeight) {
+        return false;
+    }
+
+    int y = kToolbarHeight + 40;
+    for (const acp::LayerId id : g_app.document.layer_ids()) {
+        const acp::Layer* layer = g_app.document.layer(id);
+        if (layer == nullptr) {
+            continue;
+        }
+        RECT row{panel_left + 8, y, client.right - 8, y + 28};
+        if (PtInRect(&row, point)) {
+            if (point.x >= row.right - 68 && point.x < row.right - 38) {
+                (void)g_app.document.set_layer_visible(id, !layer->visible);
+            } else if (point.x >= row.right - 34) {
+                (void)g_app.document.set_layer_locked(id, !layer->locked);
+            } else {
+                g_app.active_layer = id;
+            }
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return true;
+        }
+        y += 32;
+    }
+    return true;
+}
+
+void create_layer(HWND hwnd) {
+    int suffix = 1;
+    while (true) {
+        const std::string candidate = "Layer " + std::to_string(suffix);
+        const acp::LayerId id = g_app.document.create_layer(candidate);
+        if (id != 0) {
+            g_app.active_layer = id;
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return;
+        }
+        ++suffix;
+        if (suffix > 9999) {
+            return;
+        }
+    }
+}
+
+void assign_selected_to_active_layer(HWND hwnd) {
+    if (g_app.selected.has_value()) {
+        (void)g_app.document.set_entity_layer(*g_app.selected, g_app.active_layer);
+        InvalidateRect(hwnd, nullptr, FALSE);
+    }
+}
+
 void draw_status(HWND hwnd, HDC dc, const RECT& client) {
     RECT bar{client.left, client.bottom - kStatusHeight, client.right, client.bottom};
     HBRUSH brush = CreateSolidBrush(RGB(32, 35, 41));
@@ -496,10 +656,14 @@ void draw_status(HWND hwnd, HDC dc, const RECT& client) {
 
     const Vec2 cursor_world = screen_to_world(hwnd, g_app.cursor);
     wchar_t buffer[256]{};
-    swprintf_s(buffer, L"Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu    Selected: %llu    Undo: %zu",
+    const acp::Layer* active_layer = g_app.document.layer(g_app.active_layer);
+    const wchar_t* layer_state = active_layer != nullptr && active_layer->locked
+        ? L"LOCKED" : L"ACTIVE";
+    swprintf_s(buffer, L"Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu    Selected: %llu    Layer: %u (%s)    Undo: %zu",
                tool_name(g_app.tool), cursor_world.x, cursor_world.y,
                g_app.zoom * 100.0, g_app.document.size(),
                static_cast<unsigned long long>(g_app.selected.value_or(0)),
+               static_cast<unsigned>(g_app.active_layer), layer_state,
                g_app.history.undo_size());
 
     SetBkMode(dc, TRANSPARENT);
@@ -675,13 +839,22 @@ void export_dxf(HWND hwnd) {
 }
 
 void handle_left_click(HWND hwnd, POINT point) {
+    if (handle_layer_panel_click(hwnd, point)) {
+        return;
+    }
+
     if (point.y < kToolbarHeight) {
         if (point.x >= 190 && point.x <= 265) set_tool(hwnd, Tool::Select);
         else if (point.x >= 272 && point.x <= 337) set_tool(hwnd, Tool::Line);
         else if (point.x >= 344 && point.x <= 419) set_tool(hwnd, Tool::Circle);
-        else if (point.x >= 426 && point.x <= 491) set_tool(hwnd, Tool::Move);
-        else if (point.x >= 498 && point.x <= 563) set_tool(hwnd, Tool::Copy);
-        else if (point.x >= 570 && point.x <= 645) set_tool(hwnd, Tool::Rotate);
+        else if (point.x >= 426 && point.x <= 501) set_tool(hwnd, Tool::Polyline);
+        else if (point.x >= 508 && point.x <= 563) set_tool(hwnd, Tool::Arc);
+        else if (point.x >= 570 && point.x <= 625) set_tool(hwnd, Tool::Move);
+        else if (point.x >= 632 && point.x <= 687) set_tool(hwnd, Tool::Copy);
+        else if (point.x >= 694 && point.x <= 759) set_tool(hwnd, Tool::Rotate);
+        else if (point.x >= 766 && point.x <= 821) set_tool(hwnd, Tool::Trim);
+        else if (point.x >= 828 && point.x <= 893) set_tool(hwnd, Tool::Extend);
+        else if (point.x >= 900 && point.x <= 965) set_tool(hwnd, Tool::Offset);
         return;
     }
 
@@ -694,7 +867,8 @@ void handle_left_click(HWND hwnd, POINT point) {
 
     if (g_app.tool == Tool::Select) {
         const auto hit = acp::selection::hit_test(
-            g_app.document, g_app.blocks, world, 8.0 / std::max(g_app.zoom, 0.02));
+            g_app.document, g_app.blocks, world,
+            8.0 / std::max(g_app.zoom, 0.02));
         g_app.selected = hit.has_value()
             ? std::optional<acp::EntityId>{hit->id}
             : std::nullopt;
@@ -702,14 +876,146 @@ void handle_left_click(HWND hwnd, POINT point) {
         return;
     }
 
+    if (g_app.tool == Tool::Polyline) {
+        g_app.polyline_points.push_back(world);
+        g_app.has_first_point = true;
+        g_app.first_point = world;
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
+    if (g_app.tool == Tool::Arc) {
+        if (!g_app.has_first_point) {
+            g_app.first_point = world;
+            g_app.has_first_point = true;
+        } else if (!g_app.has_second_point) {
+            g_app.second_point = world;
+            g_app.has_second_point = true;
+        } else {
+            const double radius = acp::geo::distance(g_app.first_point, g_app.second_point);
+            if (radius > acp::geo::kEpsilon) {
+                const double start_angle = std::atan2(
+                    g_app.second_point.y - g_app.first_point.y,
+                    g_app.second_point.x - g_app.first_point.x);
+                const double end_angle = std::atan2(
+                    world.y - g_app.first_point.y,
+                    world.x - g_app.first_point.x);
+                auto command = std::make_unique<acp::AddEntityCommand>(
+                    ArcEntity{{g_app.first_point, radius, start_angle, end_angle, true}});
+                auto* command_ptr = command.get();
+                if (g_app.history.apply(g_app.document, std::move(command))) {
+                    g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
+                    g_app.selected = command_ptr->id();
+                }
+            }
+            g_app.has_first_point = false;
+            g_app.has_second_point = false;
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
     if ((g_app.tool == Tool::Move ||
          g_app.tool == Tool::Copy ||
-         g_app.tool == Tool::Rotate) &&
+         g_app.tool == Tool::Rotate ||
+         g_app.tool == Tool::Trim ||
+         g_app.tool == Tool::Extend ||
+         g_app.tool == Tool::Offset) &&
         !g_app.selected.has_value()) {
         const auto hit = acp::selection::hit_test(
-            g_app.document, world, 8.0 / std::max(g_app.zoom, 0.02));
+            g_app.document, g_app.blocks, world,
+            8.0 / std::max(g_app.zoom, 0.02));
         if (hit.has_value()) {
             g_app.selected = hit->id;
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
+    if (g_app.tool == Tool::Trim && g_app.selected.has_value()) {
+        const acp::Entity* target = g_app.document.find(*g_app.selected);
+        if (target == nullptr || !std::holds_alternative<LineEntity>(*target)) {
+            return;
+        }
+
+        if (!g_app.auxiliary_entity.has_value()) {
+            const auto hit = acp::selection::hit_test(
+                g_app.document, g_app.blocks, world,
+                8.0 / std::max(g_app.zoom, 0.02));
+            if (hit.has_value() && hit->id != *g_app.selected) {
+                const acp::Entity* cutter = g_app.document.find(hit->id);
+                if (cutter != nullptr && std::holds_alternative<LineEntity>(*cutter)) {
+                    g_app.auxiliary_entity = hit->id;
+                }
+            }
+        } else {
+            const acp::Entity* cutter = g_app.document.find(*g_app.auxiliary_entity);
+            if (cutter != nullptr && std::holds_alternative<LineEntity>(*cutter)) {
+                acp::Entity replacement = *target;
+                auto& segment = std::get<LineEntity>(replacement).segment;
+                if (acp::edit2d::trim_segment(
+                        segment,
+                        std::get<LineEntity>(*cutter).segment,
+                        world)) {
+                    (void)g_app.history.apply(
+                        g_app.document,
+                        std::make_unique<acp::UpdateEntityCommand>(
+                            *g_app.selected, replacement));
+                }
+            }
+            g_app.auxiliary_entity.reset();
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
+    if (g_app.tool == Tool::Extend && g_app.selected.has_value()) {
+        const acp::Entity* target = g_app.document.find(*g_app.selected);
+        const auto hit = acp::selection::hit_test(
+            g_app.document, g_app.blocks, world,
+            8.0 / std::max(g_app.zoom, 0.02));
+        if (target != nullptr && hit.has_value() &&
+            hit->id != *g_app.selected &&
+            std::holds_alternative<LineEntity>(*target)) {
+            const acp::Entity* boundary = g_app.document.find(hit->id);
+            if (boundary != nullptr && std::holds_alternative<LineEntity>(*boundary)) {
+                acp::Entity replacement = *target;
+                auto& segment = std::get<LineEntity>(replacement).segment;
+                if (acp::edit2d::extend_segment(
+                        segment,
+                        std::get<LineEntity>(*boundary).segment)) {
+                    (void)g_app.history.apply(
+                        g_app.document,
+                        std::make_unique<acp::UpdateEntityCommand>(
+                            *g_app.selected, replacement));
+                }
+            }
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
+    if (g_app.tool == Tool::Offset && g_app.selected.has_value()) {
+        const acp::Entity* source = g_app.document.find(*g_app.selected);
+        if (source != nullptr && std::holds_alternative<LineEntity>(*source)) {
+            const auto& segment = std::get<LineEntity>(*source).segment;
+            const Vec2 direction = segment.b - segment.a;
+            const double length = acp::geo::length(direction);
+            if (length > acp::geo::kEpsilon) {
+                const double signed_distance =
+                    acp::geo::cross(direction, world - segment.a) / length;
+                const auto offset = acp::edit2d::offset_segment(
+                    segment, signed_distance);
+                if (offset.has_value()) {
+                    auto command = std::make_unique<acp::AddEntityCommand>(
+                        LineEntity{*offset});
+                    auto* command_ptr = command.get();
+                    if (g_app.history.apply(g_app.document, std::move(command))) {
+                        g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
+                        g_app.selected = command_ptr->id();
+                    }
+                }
+            }
         }
         InvalidateRect(hwnd, nullptr, FALSE);
         return;
@@ -724,18 +1030,24 @@ void handle_left_click(HWND hwnd, POINT point) {
 
     if (g_app.tool == Tool::Line) {
         if (acp::geo::distance(g_app.first_point, world) > acp::geo::kEpsilon) {
-            (void)g_app.history.apply(
-                g_app.document,
-                std::make_unique<acp::AddEntityCommand>(
-                    LineEntity{{g_app.first_point, world}}));
+            auto command = std::make_unique<acp::AddEntityCommand>(
+                LineEntity{{g_app.first_point, world}});
+            auto* command_ptr = command.get();
+            if (g_app.history.apply(g_app.document, std::move(command))) {
+                g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
+                g_app.selected = command_ptr->id();
+            }
         }
     } else if (g_app.tool == Tool::Circle) {
         const double radius = acp::geo::distance(g_app.first_point, world);
         if (radius > acp::geo::kEpsilon) {
-            (void)g_app.history.apply(
-                g_app.document,
-                std::make_unique<acp::AddEntityCommand>(
-                    CircleEntity{{g_app.first_point, radius}}));
+            auto command = std::make_unique<acp::AddEntityCommand>(
+                CircleEntity{{g_app.first_point, radius}});
+            auto* command_ptr = command.get();
+            if (g_app.history.apply(g_app.document, std::move(command))) {
+                g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
+                g_app.selected = command_ptr->id();
+            }
         }
     } else if (g_app.selected.has_value()) {
         const acp::Entity* source = g_app.document.find(*g_app.selected);
@@ -753,6 +1065,11 @@ void handle_left_click(HWND hwnd, POINT point) {
                 auto command = std::make_unique<acp::AddEntityCommand>(copy);
                 auto* command_ptr = command.get();
                 if (g_app.history.apply(g_app.document, std::move(command))) {
+                    const acp::EntityProperties* props =
+                        g_app.document.properties(*g_app.selected);
+                    if (props != nullptr) {
+                        g_app.document.set_entity_layer(command_ptr->id(), props->layer_id);
+                    }
                     g_app.selected = command_ptr->id();
                 }
             } else if (g_app.tool == Tool::Rotate) {
@@ -792,7 +1109,10 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     g_app.history = acp::History{};
                     g_app.blocks = acp::BlockLibrary{};
                     g_app.selected.reset();
+                    g_app.active_layer = acp::kDefaultLayerId;
+                    g_app.polyline_points.clear();
                     g_app.has_first_point = false;
+                    g_app.has_second_point = false;
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
                 case kMenuOpen:
@@ -810,15 +1130,40 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 case kMenuZoomExtents:
                     fit_drawing(hwnd);
                     return 0;
+                case kMenuNewLayer:
+                    create_layer(hwnd);
+                    return 0;
+                case kMenuAssignLayer:
+                    assign_selected_to_active_layer(hwnd);
+                    return 0;
+                case kMenuToggleLayerVisible:
+                    if (const acp::Layer* layer = g_app.document.layer(g_app.active_layer)) {
+                        (void)g_app.document.set_layer_visible(
+                            g_app.active_layer, !layer->visible);
+                        InvalidateRect(hwnd, nullptr, FALSE);
+                    }
+                    return 0;
+                case kMenuToggleLayerLock:
+                    if (const acp::Layer* layer = g_app.document.layer(g_app.active_layer)) {
+                        (void)g_app.document.set_layer_locked(
+                            g_app.active_layer, !layer->locked);
+                        InvalidateRect(hwnd, nullptr, FALSE);
+                    }
+                    return 0;
                 case kMenuExit:
                     DestroyWindow(hwnd);
                     return 0;
                 case kToolSelect: set_tool(hwnd, Tool::Select); return 0;
                 case kToolLine: set_tool(hwnd, Tool::Line); return 0;
                 case kToolCircle: set_tool(hwnd, Tool::Circle); return 0;
+                case kToolPolyline: set_tool(hwnd, Tool::Polyline); return 0;
+                case kToolArc: set_tool(hwnd, Tool::Arc); return 0;
                 case kToolMove: set_tool(hwnd, Tool::Move); return 0;
                 case kToolCopy: set_tool(hwnd, Tool::Copy); return 0;
                 case kToolRotate: set_tool(hwnd, Tool::Rotate); return 0;
+                case kToolTrim: set_tool(hwnd, Tool::Trim); return 0;
+                case kToolExtend: set_tool(hwnd, Tool::Extend); return 0;
+                case kToolOffset: set_tool(hwnd, Tool::Offset); return 0;
                 default: break;
             }
             break;
@@ -852,7 +1197,25 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             }
             if (w_param == VK_ESCAPE) {
                 g_app.has_first_point = false;
+                g_app.has_second_point = false;
+                g_app.polyline_points.clear();
+                g_app.auxiliary_entity.reset();
                 set_tool(hwnd, Tool::Select);
+                return 0;
+            }
+            if (w_param == VK_RETURN && g_app.tool == Tool::Polyline) {
+                if (g_app.polyline_points.size() >= 2) {
+                    auto command = std::make_unique<acp::AddEntityCommand>(
+                        PolylineEntity{g_app.polyline_points, false});
+                    auto* command_ptr = command.get();
+                    if (g_app.history.apply(g_app.document, std::move(command))) {
+                        g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
+                        g_app.selected = command_ptr->id();
+                    }
+                }
+                g_app.polyline_points.clear();
+                g_app.has_first_point = false;
+                InvalidateRect(hwnd, nullptr, FALSE);
                 return 0;
             }
             if (w_param == 'L') {
@@ -863,11 +1226,31 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 set_tool(hwnd, Tool::Circle);
                 return 0;
             }
+            if (w_param == 'P' && (GetKeyState(VK_CONTROL) & 0x8000) == 0) {
+                set_tool(hwnd, Tool::Polyline);
+                return 0;
+            }
+            if (w_param == 'A') {
+                set_tool(hwnd, Tool::Arc);
+                return 0;
+            }
             if (w_param == 'M') {
                 set_tool(hwnd, Tool::Move);
                 return 0;
             }
-            if (w_param == 'P') {
+            if (w_param == 'O') {
+                set_tool(hwnd, Tool::Offset);
+                return 0;
+            }
+            if (w_param == 'T') {
+                set_tool(hwnd, Tool::Trim);
+                return 0;
+            }
+            if (w_param == 'E') {
+                set_tool(hwnd, Tool::Extend);
+                return 0;
+            }
+            if (w_param == 'Y') {
                 set_tool(hwnd, Tool::Copy);
                 return 0;
             }
@@ -938,6 +1321,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             draw_selection_overlay(hwnd, memory);
             draw_preview(hwnd, memory);
             draw_toolbar(memory, client);
+            draw_layer_panel(hwnd, memory, client);
             draw_status(hwnd, memory, client);
 
             BitBlt(dc, 0, 0, client.right, client.bottom, memory, 0, 0, SRCCOPY);
@@ -963,6 +1347,7 @@ HMENU create_app_menu() {
     HMENU file = CreatePopupMenu();
     HMENU draw = CreatePopupMenu();
     HMENU view = CreatePopupMenu();
+    HMENU layer = CreatePopupMenu();
 
     AppendMenuW(file, MF_STRING, kMenuNew, L"&New");
     AppendMenuW(file, MF_STRING, kMenuOpen, L"&Open Project...");
@@ -976,14 +1361,25 @@ HMENU create_app_menu() {
     AppendMenuW(draw, MF_STRING, kToolSelect, L"&Select\tEsc");
     AppendMenuW(draw, MF_STRING, kToolLine, L"&Line\tL");
     AppendMenuW(draw, MF_STRING, kToolCircle, L"&Circle\tC");
+    AppendMenuW(draw, MF_STRING, kToolPolyline, L"&Polyline\tP");
+    AppendMenuW(draw, MF_STRING, kToolArc, L"&Arc\tA");
     AppendMenuW(draw, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(draw, MF_STRING, kToolMove, L"&Move\tM");
-    AppendMenuW(draw, MF_STRING, kToolCopy, L"Co&py\tP");
+    AppendMenuW(draw, MF_STRING, kToolCopy, L"Cop&y\tY");
     AppendMenuW(draw, MF_STRING, kToolRotate, L"&Rotate\tR");
+    AppendMenuW(draw, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(draw, MF_STRING, kToolTrim, L"&Trim\tT");
+    AppendMenuW(draw, MF_STRING, kToolExtend, L"&Extend\tE");
+    AppendMenuW(draw, MF_STRING, kToolOffset, L"&Offset\tO");
 
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"&File");
     AppendMenuW(view, MF_STRING, kMenuZoomExtents, L"Zoom &Extents");
+    AppendMenuW(layer, MF_STRING, kMenuNewLayer, L"&New Layer");
+    AppendMenuW(layer, MF_STRING, kMenuAssignLayer, L"&Assign Selected to Active");
+    AppendMenuW(layer, MF_STRING, kMenuToggleLayerVisible, L"Toggle &Visibility");
+    AppendMenuW(layer, MF_STRING, kMenuToggleLayerLock, L"Toggle &Lock");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(draw), L"&Draw");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(layer), L"&Layer");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"&View");
     return menu;
 }
