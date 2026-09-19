@@ -2,6 +2,7 @@
 
 #include "acp/annotation.hpp"
 #include "acp/block.hpp"
+#include "acp/hatch.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -118,8 +119,13 @@ DistanceResult nearest_on_entity(
             const auto baseline = annotation::text_baseline(value);
             const auto nearest = geo::nearest_point(baseline, point);
             return {geo::distance(nearest, point), nearest};
-        } else {
+        } else if constexpr (std::is_same_v<T, LinearDimensionEntity>) {
             return nearest_on_dimension(value, point);
+        } else if constexpr (std::is_same_v<T, HatchEntity>) {
+            if (!hatch::valid(value)) return {};
+            return nearest_on_polyline(PolylineEntity{value.boundary, true}, point);
+        } else {
+            return {};
         }
     }, entity);
 }

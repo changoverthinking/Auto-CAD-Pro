@@ -17,6 +17,7 @@ add_library(acp_core
     src/core/edit2d.cpp
     src/core/block.cpp
     src/core/annotation.cpp
+    src/core/hatch.cpp
 )
 target_include_directories(acp_core PUBLIC include)
 target_compile_features(acp_core PUBLIC cxx_std_20)
