@@ -286,6 +286,52 @@ int main() {
            !mirroredArcEntity.arc.counter_clockwise,
            "mirror arc center and orientation");
 
+
+    Document layerDoc;
+    expect(layerDoc.layer(kDefaultLayerId) != nullptr &&
+           layerDoc.layer(kDefaultLayerId)->name == "0",
+           "default layer exists");
+
+    const LayerId wallsLayer = layerDoc.create_layer("Walls");
+    const LayerId dimsLayer = layerDoc.create_layer("Dimensions");
+    expect(wallsLayer != 0 && dimsLayer != 0 && wallsLayer != dimsLayer,
+           "create unique layers");
+    expect(layerDoc.create_layer("Walls") == 0, "reject duplicate layer name");
+    expect(layerDoc.rename_layer(dimsLayer, "Dims"), "rename layer");
+    expect(!layerDoc.rename_layer(dimsLayer, "Walls"), "reject duplicate renamed layer");
+
+    const EntityId wallEntity = layerDoc.insert(LineEntity{{{0, 0}, {10, 0}}});
+    expect(layerDoc.set_entity_layer(wallEntity, wallsLayer), "assign entity layer");
+    expect(layerDoc.properties(wallEntity) != nullptr &&
+           layerDoc.properties(wallEntity)->layer_id == wallsLayer,
+           "entity layer persisted");
+
+    expect(layerDoc.set_layer_line_weight(wallsLayer, 0.50), "set layer line weight");
+    expect(geo::nearly_equal(layerDoc.effective_line_weight(wallEntity), 0.50),
+           "entity inherits layer line weight");
+    layerDoc.properties(wallEntity)->line_weight_override = 0.80;
+    expect(geo::nearly_equal(layerDoc.effective_line_weight(wallEntity), 0.80),
+           "entity line weight override");
+
+    expect(layerDoc.set_layer_visible(wallsLayer, false), "hide layer");
+    expect(!layerDoc.entity_visible(wallEntity), "hidden layer hides entity");
+    expect(!selection::hit_test(layerDoc, {5, 0}, 0.5).has_value(),
+           "selection skips hidden layer");
+
+    expect(layerDoc.set_layer_visible(wallsLayer, true), "show layer");
+    layerDoc.properties(wallEntity)->visible = false;
+    expect(!layerDoc.entity_visible(wallEntity), "entity visibility override");
+    layerDoc.properties(wallEntity)->visible = true;
+
+    expect(layerDoc.set_layer_locked(wallsLayer, true), "lock layer");
+    expect(layerDoc.entity_locked(wallEntity), "entity inherits locked layer");
+    expect(layerDoc.set_layer_locked(wallsLayer, false), "unlock layer");
+    expect(!layerDoc.entity_locked(wallEntity), "entity unlocked with layer");
+
+    expect(!layerDoc.remove_layer(wallsLayer), "cannot remove layer in use");
+    expect(layerDoc.remove_layer(dimsLayer), "remove unused layer");
+    expect(!layerDoc.remove_layer(kDefaultLayerId), "cannot remove default layer");
+
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return EXIT_FAILURE;
