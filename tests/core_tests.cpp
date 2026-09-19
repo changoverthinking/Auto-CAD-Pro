@@ -240,6 +240,52 @@ int main() {
     expect(geo::nearly_equal(geo::polyline_length(rectangle, true), 20.0),
            "closed rectangle perimeter");
 
+
+    Document arcDoc;
+    const EntityId arcId = arcDoc.insert(ArcEntity{{{50, 50}, 10.0, 0.0, std::numbers::pi / 2.0, true}});
+    const auto arcHit = selection::hit_test(arcDoc, {57.1, 57.1}, 0.5);
+    expect(arcHit.has_value() && arcHit->id == arcId, "select arc on valid sweep");
+    expect(!selection::hit_test(arcDoc, {42.9, 57.1}, 0.5).has_value(),
+           "arc selection ignores circle outside sweep");
+
+    const auto arcEndpointSnap = snap::best_for_arc(
+        {{0, 0}, 10.0, 0.0, std::numbers::pi / 2.0, true},
+        {9.8, 0.1}, 0.5);
+    expect(arcEndpointSnap.has_value() && arcEndpointSnap->kind == snap::Kind::Endpoint,
+           "arc endpoint snap");
+
+    const auto arcNearestSnap = snap::best_for_arc(
+        {{0, 0}, 10.0, 0.0, std::numbers::pi / 2.0, true},
+        {7.0, 7.2}, 0.5);
+    expect(arcNearestSnap.has_value() && arcNearestSnap->kind == snap::Kind::Nearest,
+           "arc nearest snap");
+
+    const auto intersectionSnap = snap::intersection_for_segments(
+        {{0, 0}, {10, 10}}, {{0, 10}, {10, 0}}, {5.1, 5.1}, 0.5);
+    expect(intersectionSnap.has_value() && intersectionSnap->kind == snap::Kind::Intersection &&
+           geo::nearly_equal(intersectionSnap->point, {5, 5}),
+           "segment intersection snap");
+
+    Entity arcTransform = ArcEntity{{{2, 0}, 3.0, 0.0, std::numbers::pi / 2.0, true}};
+    transform::rotate(arcTransform, {0, 0}, std::numbers::pi / 2.0);
+    const auto& rotatedArcEntity = std::get<ArcEntity>(arcTransform);
+    expect(geo::nearly_equal(rotatedArcEntity.arc.center, {0, 2}, 1e-8) &&
+           geo::nearly_equal(rotatedArcEntity.arc.start_angle, std::numbers::pi / 2.0, 1e-8),
+           "rotate arc entity");
+
+    expect(transform::scale_uniform(arcTransform, {0, 0}, 2.0), "scale arc accepted");
+    const auto& scaledArcEntity = std::get<ArcEntity>(arcTransform);
+    expect(geo::nearly_equal(scaledArcEntity.arc.center, {0, 4}, 1e-8) &&
+           geo::nearly_equal(scaledArcEntity.arc.radius, 6.0),
+           "scale arc entity");
+
+    Entity mirroredArc = ArcEntity{{{2, 0}, 3.0, 0.0, std::numbers::pi / 2.0, true}};
+    expect(transform::mirror(mirroredArc, {{0, -10}, {0, 10}}), "mirror arc accepted");
+    const auto& mirroredArcEntity = std::get<ArcEntity>(mirroredArc);
+    expect(geo::nearly_equal(mirroredArcEntity.arc.center, {-2, 0}, 1e-8) &&
+           !mirroredArcEntity.arc.counter_clockwise,
+           "mirror arc center and orientation");
+
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return EXIT_FAILURE;

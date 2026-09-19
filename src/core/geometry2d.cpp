@@ -136,6 +136,47 @@ Vec2 arc_end_point(const Arc& arc) noexcept {
     };
 }
 
+bool angle_on_arc(const Arc& arc, double angle, double eps) noexcept {
+    if (!valid_arc(arc)) {
+        return false;
+    }
+
+    const double full = 2.0 * std::numbers::pi;
+    const double sweep = arc_sweep(arc);
+    if (sweep >= full - eps) {
+        return true;
+    }
+
+    const double relative = arc.counter_clockwise
+        ? normalize_positive_angle(angle - arc.start_angle)
+        : normalize_positive_angle(arc.start_angle - angle);
+
+    return relative <= sweep + eps;
+}
+
+Vec2 nearest_point(const Arc& arc, Vec2 p) noexcept {
+    if (!valid_arc(arc)) {
+        return arc.center;
+    }
+
+    const Vec2 delta = p - arc.center;
+    if (length(delta) <= kEpsilon) {
+        return arc_start_point(arc);
+    }
+
+    const double angle = std::atan2(delta.y, delta.x);
+    if (angle_on_arc(arc, angle)) {
+        return {
+            arc.center.x + arc.radius * std::cos(angle),
+            arc.center.y + arc.radius * std::sin(angle)
+        };
+    }
+
+    const Vec2 start = arc_start_point(arc);
+    const Vec2 end = arc_end_point(arc);
+    return distance(start, p) <= distance(end, p) ? start : end;
+}
+
 std::vector<Vec2> rectangle_from_corners(Vec2 first, Vec2 opposite) {
     return {
         first,
