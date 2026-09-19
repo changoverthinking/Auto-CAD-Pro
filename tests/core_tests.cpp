@@ -6,6 +6,7 @@
 #include "acp/dxf.hpp"
 #include "acp/geometry2d.hpp"
 #include "acp/history.hpp"
+#include "acp/layout.hpp"
 #include "acp/hatch.hpp"
 #include "acp/persistence.hpp"
 #include "acp/snap.hpp"
@@ -785,6 +786,48 @@ int main() {
     bounds::Bounds2 invalidBounds;
     expect(!bounds::fit_to_aspect(invalidBounds, 1.0).has_value(),
            "reject invalid viewport bounds");
+
+
+    const auto a3Landscape = layout::paper_size_mm(
+        layout::PaperSize::A3, layout::Orientation::Landscape);
+    expect(geo::nearly_equal(a3Landscape.width, 420.0) &&
+           geo::nearly_equal(a3Landscape.height, 297.0),
+           "A3 landscape dimensions");
+
+    layout::PageSetup printPage{
+        layout::PaperSize::A3,
+        layout::Orientation::Landscape,
+        {10.0, 10.0, 10.0, 10.0}
+    };
+    const auto printable = layout::printable_size_mm(printPage);
+    expect(printable.has_value() &&
+           geo::nearly_equal(printable->width, 400.0) &&
+           geo::nearly_equal(printable->height, 277.0),
+           "page printable area");
+
+    bounds::Bounds2 printDrawing;
+    printDrawing.include({0, 0});
+    printDrawing.include({20000, 10000});
+    const auto printFit = layout::fit_to_page(printDrawing, printPage);
+    expect(printFit.has_value() &&
+           geo::nearly_equal(printFit->center, {10000, 5000}) &&
+           geo::nearly_equal(printFit->scale_denominator, 50.0) &&
+           printFit->world_width >= printDrawing.width() &&
+           printFit->world_height >= printDrawing.height(),
+           "fit drawing to A3 page");
+
+    const auto scale100 = layout::viewport_at_scale(
+        {5000, 3000}, printPage, 100.0);
+    expect(scale100.has_value() &&
+           geo::nearly_equal(scale100->scale_denominator, 100.0) &&
+           geo::nearly_equal(scale100->world_width, 40000.0) &&
+           geo::nearly_equal(scale100->world_height, 27700.0),
+           "fixed 1 to 100 print viewport");
+
+    layout::PageSetup invalidPage = printPage;
+    invalidPage.margins.left = 500.0;
+    expect(!layout::printable_size_mm(invalidPage).has_value(),
+           "reject page margins larger than paper");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
