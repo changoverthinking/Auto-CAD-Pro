@@ -2,7 +2,6 @@
 
 #include "acp/document.hpp"
 
-#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -10,7 +9,6 @@
 
 namespace acp {
 
-using BlockId = std::uint32_t;
 using BlockPrimitive = std::variant<LineEntity, CircleEntity, ArcEntity, PolylineEntity>;
 
 struct BlockDefinition {
@@ -18,13 +16,6 @@ struct BlockDefinition {
     std::string name;
     geo::Vec2 base_point{};
     std::vector<BlockPrimitive> geometry;
-};
-
-struct BlockInstance {
-    BlockId block_id{};
-    geo::Vec2 insertion_point{};
-    double rotation{};
-    double scale{1.0};
 };
 
 class BlockLibrary {
@@ -41,7 +32,7 @@ public:
     bool rename(BlockId id, std::string name);
     [[nodiscard]] bool remove(BlockId id);
 
-    [[nodiscard]] std::vector<BlockPrimitive> instantiate(const BlockInstance& instance) const;
+    [[nodiscard]] std::vector<BlockPrimitive> instantiate(const BlockReferenceEntity& instance) const;
 
 private:
     [[nodiscard]] bool name_exists(const std::string& name, BlockId ignore_id = 0) const;

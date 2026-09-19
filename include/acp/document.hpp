@@ -1,5 +1,6 @@
 #pragma once
 
+#include "acp/block_types.hpp"
 #include "acp/geometry2d.hpp"
 
 #include <cstdint>
@@ -24,7 +25,12 @@ struct PolylineEntity {
     bool closed{false};
 };
 
-using Entity = std::variant<LineEntity, CircleEntity, ArcEntity, PolylineEntity>;
+using Entity = std::variant<
+    LineEntity,
+    CircleEntity,
+    ArcEntity,
+    PolylineEntity,
+    BlockReferenceEntity>;
 
 struct Layer {
     LayerId id{};
