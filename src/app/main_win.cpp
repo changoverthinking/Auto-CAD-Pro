@@ -18,6 +18,7 @@
 #include <cwchar>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <numbers>
 #include <memory>
 #include <optional>
@@ -192,10 +193,151 @@ void draw_arc(HWND hwnd, HDC dc, const ArcEntity& entity) {
     }
 }
 
+void draw_segment(HWND hwnd, HDC dc, const acp::geo::Segment& segment) {
+    const POINT a = world_to_screen(hwnd, segment.a);
+    const POINT b = world_to_screen(hwnd, segment.b);
+    MoveToEx(dc, a.x, a.y, nullptr);
+    LineTo(dc, b.x, b.y);
+}
+
+void draw_circle(HWND hwnd, HDC dc, const CircleEntity& entity) {
+    const POINT center = world_to_screen(hwnd, entity.circle.center);
+    const LONG r = std::max<LONG>(
+        1, static_cast<LONG>(std::lround(entity.circle.radius * g_app.zoom)));
+    Ellipse(dc, center.x - r, center.y - r, center.x + r, center.y + r);
+}
+
+void draw_polyline(HWND hwnd, HDC dc, const PolylineEntity& entity) {
+    if (entity.points.size() < 2) {
+        return;
+    }
+    const POINT first = world_to_screen(hwnd, entity.points.front());
+    MoveToEx(dc, first.x, first.y, nullptr);
+    for (std::size_t i = 1; i < entity.points.size(); ++i) {
+        const POINT p = world_to_screen(hwnd, entity.points[i]);
+        LineTo(dc, p.x, p.y);
+    }
+    if (entity.closed) {
+        LineTo(dc, first.x, first.y);
+    }
+}
+
+void draw_text(HWND hwnd, HDC dc, const acp::TextEntity& entity) {
+    if (entity.text.empty()) {
+        return;
+    }
+
+    const int wide_length = MultiByteToWideChar(
+        CP_UTF8, 0, entity.text.data(), static_cast<int>(entity.text.size()),
+        nullptr, 0);
+    if (wide_length <= 0) {
+        return;
+    }
+
+    std::wstring wide(static_cast<std::size_t>(wide_length), L'\0');
+    (void)MultiByteToWideChar(
+        CP_UTF8, 0, entity.text.data(), static_cast<int>(entity.text.size()),
+        wide.data(), wide_length);
+
+    const POINT position = world_to_screen(hwnd, entity.position);
+    const int pixel_height = std::max(
+        9, static_cast<int>(std::lround(entity.height * g_app.zoom)));
+    const int escapement = static_cast<int>(std::lround(
+        -entity.rotation * 1800.0 / std::numbers::pi));
+
+    HFONT font = CreateFontW(
+        -pixel_height, 0, escapement, escapement, FW_NORMAL,
+        FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    if (font == nullptr) {
+        return;
+    }
+
+    HGDIOBJ old_font = SelectObject(dc, font);
+    const int old_mode = SetBkMode(dc, TRANSPARENT);
+    TextOutW(dc, position.x, position.y - pixel_height,
+             wide.c_str(), static_cast<int>(wide.size()));
+    SetBkMode(dc, old_mode);
+    SelectObject(dc, old_font);
+    DeleteObject(font);
+}
+
+void draw_dimension(HWND hwnd, HDC dc, const acp::LinearDimensionEntity& entity) {
+    if (!acp::annotation::valid_linear_dimension(entity)) {
+        return;
+    }
+
+    draw_segment(hwnd, dc, acp::annotation::first_extension_line(entity));
+    draw_segment(hwnd, dc, acp::annotation::second_extension_line(entity));
+    const acp::geo::Segment line = acp::annotation::dimension_line(entity);
+    draw_segment(hwnd, dc, line);
+
+    wchar_t label[128]{};
+    if (entity.text_override.has_value()) {
+        const std::string& text = *entity.text_override;
+        const int wide_length = MultiByteToWideChar(
+            CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+        if (wide_length > 0) {
+            std::wstring wide(static_cast<std::size_t>(wide_length), L'\0');
+            (void)MultiByteToWideChar(
+                CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                wide.data(), wide_length);
+            wcsncpy_s(label, wide.c_str(), _TRUNCATE);
+        }
+    } else {
+        swprintf_s(label, L"%.2f", acp::annotation::measurement(entity));
+    }
+
+    const POINT p = world_to_screen(hwnd, acp::geo::midpoint(line));
+    const int old_mode = SetBkMode(dc, TRANSPARENT);
+    TextOutW(dc, p.x + 4, p.y - 16, label, static_cast<int>(wcslen(label)));
+    SetBkMode(dc, old_mode);
+}
+
+void draw_hatch(HWND hwnd, HDC dc, const acp::HatchEntity& entity) {
+    if (entity.boundary.size() < 3) {
+        return;
+    }
+
+    std::vector<POINT> points;
+    points.reserve(entity.boundary.size());
+    for (const Vec2 point : entity.boundary) {
+        points.push_back(world_to_screen(hwnd, point));
+    }
+
+    HBRUSH brush = entity.solid
+        ? CreateSolidBrush(RGB(72, 78, 88))
+        : CreateHatchBrush(HS_BDIAGONAL, RGB(120, 126, 138));
+    if (brush == nullptr) {
+        return;
+    }
+    HGDIOBJ old_brush = SelectObject(dc, brush);
+    Polygon(dc, points.data(), static_cast<int>(points.size()));
+    SelectObject(dc, old_brush);
+    DeleteObject(brush);
+}
+
+void draw_block_primitive(HWND hwnd, HDC dc, const acp::BlockPrimitive& primitive) {
+    std::visit([&](const auto& item) {
+        using T = std::decay_t<decltype(item)>;
+        if constexpr (std::is_same_v<T, LineEntity>) {
+            draw_segment(hwnd, dc, item.segment);
+        } else if constexpr (std::is_same_v<T, CircleEntity>) {
+            draw_circle(hwnd, dc, item);
+        } else if constexpr (std::is_same_v<T, ArcEntity>) {
+            draw_arc(hwnd, dc, item);
+        } else if constexpr (std::is_same_v<T, PolylineEntity>) {
+            draw_polyline(hwnd, dc, item);
+        }
+    }, primitive);
+}
+
 void draw_document(HWND hwnd, HDC dc) {
     HPEN entity_pen = CreatePen(PS_SOLID, 2, RGB(229, 232, 239));
     HGDIOBJ old_pen = SelectObject(dc, entity_pen);
     HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+    const COLORREF old_text_color = SetTextColor(dc, RGB(229, 232, 239));
 
     for (const auto id : g_app.document.ids()) {
         if (!g_app.document.entity_visible(id)) {
@@ -209,38 +351,32 @@ void draw_document(HWND hwnd, HDC dc) {
         std::visit([&](const auto& item) {
             using T = std::decay_t<decltype(item)>;
             if constexpr (std::is_same_v<T, LineEntity>) {
-                const POINT a = world_to_screen(hwnd, item.segment.a);
-                const POINT b = world_to_screen(hwnd, item.segment.b);
-                MoveToEx(dc, a.x, a.y, nullptr);
-                LineTo(dc, b.x, b.y);
+                draw_segment(hwnd, dc, item.segment);
             } else if constexpr (std::is_same_v<T, CircleEntity>) {
-                const POINT center = world_to_screen(hwnd, item.circle.center);
-                const LONG r = std::max<LONG>(1, static_cast<LONG>(std::lround(item.circle.radius * g_app.zoom)));
-                Ellipse(dc, center.x - r, center.y - r, center.x + r, center.y + r);
+                draw_circle(hwnd, dc, item);
             } else if constexpr (std::is_same_v<T, ArcEntity>) {
                 draw_arc(hwnd, dc, item);
             } else if constexpr (std::is_same_v<T, PolylineEntity>) {
-                if (item.points.size() < 2) {
-                    return;
+                draw_polyline(hwnd, dc, item);
+            } else if constexpr (std::is_same_v<T, acp::BlockReferenceEntity>) {
+                for (const auto& primitive : g_app.blocks.instantiate(item)) {
+                    draw_block_primitive(hwnd, dc, primitive);
                 }
-                const POINT first = world_to_screen(hwnd, item.points.front());
-                MoveToEx(dc, first.x, first.y, nullptr);
-                for (std::size_t i = 1; i < item.points.size(); ++i) {
-                    const POINT p = world_to_screen(hwnd, item.points[i]);
-                    LineTo(dc, p.x, p.y);
-                }
-                if (item.closed) {
-                    LineTo(dc, first.x, first.y);
-                }
+            } else if constexpr (std::is_same_v<T, acp::TextEntity>) {
+                draw_text(hwnd, dc, item);
+            } else if constexpr (std::is_same_v<T, acp::LinearDimensionEntity>) {
+                draw_dimension(hwnd, dc, item);
+            } else if constexpr (std::is_same_v<T, acp::HatchEntity>) {
+                draw_hatch(hwnd, dc, item);
             }
         }, *entity);
     }
 
+    SetTextColor(dc, old_text_color);
     SelectObject(dc, old_brush);
     SelectObject(dc, old_pen);
     DeleteObject(entity_pen);
 }
-
 
 void draw_selection_overlay(HWND hwnd, HDC dc) {
     if (!g_app.selected.has_value()) {
@@ -250,7 +386,7 @@ void draw_selection_overlay(HWND hwnd, HDC dc) {
     if (entity == nullptr) {
         return;
     }
-    const auto box = acp::bounds::entity_bounds(*entity);
+    const auto box = acp::bounds::entity_bounds(*entity, &g_app.blocks);
     if (!box.has_value()) {
         return;
     }
@@ -558,7 +694,7 @@ void handle_left_click(HWND hwnd, POINT point) {
 
     if (g_app.tool == Tool::Select) {
         const auto hit = acp::selection::hit_test(
-            g_app.document, world, 8.0 / std::max(g_app.zoom, 0.02));
+            g_app.document, g_app.blocks, world, 8.0 / std::max(g_app.zoom, 0.02));
         g_app.selected = hit.has_value()
             ? std::optional<acp::EntityId>{hit->id}
             : std::nullopt;
