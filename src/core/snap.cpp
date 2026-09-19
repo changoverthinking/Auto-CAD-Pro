@@ -1,11 +1,20 @@
 #include "acp/snap.hpp"
 
-#include <algorithm>
-#include <array>
+#include <vector>
 
 namespace acp::snap {
 
 namespace {
+
+int priority(Kind kind) noexcept {
+    switch (kind) {
+        case Kind::Endpoint: return 0;
+        case Kind::Midpoint: return 1;
+        case Kind::Center: return 1;
+        case Kind::Nearest: return 10;
+    }
+    return 100;
+}
 
 std::optional<Candidate> pick_best(const std::vector<Candidate>& candidates, double aperture) noexcept {
     const Candidate* best = nullptr;
@@ -13,14 +22,16 @@ std::optional<Candidate> pick_best(const std::vector<Candidate>& candidates, dou
         if (candidate.distance_to_cursor > aperture) {
             continue;
         }
-        if (best == nullptr || candidate.distance_to_cursor < best->distance_to_cursor) {
+
+        if (best == nullptr ||
+            priority(candidate.kind) < priority(best->kind) ||
+            (priority(candidate.kind) == priority(best->kind) &&
+             candidate.distance_to_cursor < best->distance_to_cursor)) {
             best = &candidate;
         }
     }
-    if (best == nullptr) {
-        return std::nullopt;
-    }
-    return *best;
+
+    return best == nullptr ? std::nullopt : std::optional<Candidate>{*best};
 }
 
 } // namespace
@@ -31,10 +42,11 @@ std::optional<Candidate> best_for_segment(
     double aperture,
     bool include_nearest) noexcept {
 
+    const auto middle = geo::midpoint(segment);
     std::vector<Candidate> candidates{
         {segment.a, Kind::Endpoint, geo::distance(segment.a, cursor)},
         {segment.b, Kind::Endpoint, geo::distance(segment.b, cursor)},
-        {geo::midpoint(segment), Kind::Midpoint, geo::distance(geo::midpoint(segment), cursor)}
+        {middle, Kind::Midpoint, geo::distance(middle, cursor)}
     };
 
     if (include_nearest) {
@@ -50,9 +62,8 @@ std::optional<Candidate> best_for_circle(
     geo::Vec2 cursor,
     double aperture) noexcept {
 
-    const double d = geo::distance(circle.center, cursor);
     return pick_best({
-        {circle.center, Kind::Center, d}
+        {circle.center, Kind::Center, geo::distance(circle.center, cursor)}
     }, aperture);
 }
 
