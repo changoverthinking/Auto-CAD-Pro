@@ -368,6 +368,37 @@ int main() {
     expect(blocks.remove(doorBlock) && blocks.find(doorBlock) == nullptr,
            "remove block definition");
 
+
+    Document historyPropsDoc;
+    const LayerId historyLayer = historyPropsDoc.create_layer("HistoryLayer");
+    History propertyHistory;
+    auto addStyled = std::make_unique<AddEntityCommand>(LineEntity{{{1, 1}, {2, 2}}});
+    auto* addStyledPtr = addStyled.get();
+    expect(propertyHistory.apply(historyPropsDoc, std::move(addStyled)), "add styled entity");
+    const EntityId styledId = addStyledPtr->id();
+    expect(historyPropsDoc.set_entity_layer(styledId, historyLayer), "style history layer assignment");
+    historyPropsDoc.properties(styledId)->line_weight_override = 0.90;
+    historyPropsDoc.properties(styledId)->visible = false;
+
+    expect(propertyHistory.undo(historyPropsDoc), "undo styled add");
+    expect(propertyHistory.redo(historyPropsDoc), "redo styled add");
+    expect(historyPropsDoc.properties(styledId) != nullptr &&
+           historyPropsDoc.properties(styledId)->layer_id == historyLayer &&
+           historyPropsDoc.properties(styledId)->line_weight_override.has_value() &&
+           geo::nearly_equal(*historyPropsDoc.properties(styledId)->line_weight_override, 0.90) &&
+           !historyPropsDoc.properties(styledId)->visible,
+           "redo add preserves entity properties");
+
+    expect(propertyHistory.apply(historyPropsDoc, std::make_unique<RemoveEntityCommand>(styledId)),
+           "remove styled entity");
+    expect(propertyHistory.undo(historyPropsDoc), "undo styled remove");
+    expect(historyPropsDoc.properties(styledId) != nullptr &&
+           historyPropsDoc.properties(styledId)->layer_id == historyLayer &&
+           historyPropsDoc.properties(styledId)->line_weight_override.has_value() &&
+           geo::nearly_equal(*historyPropsDoc.properties(styledId)->line_weight_override, 0.90) &&
+           !historyPropsDoc.properties(styledId)->visible,
+           "undo remove preserves entity properties");
+
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return EXIT_FAILURE;

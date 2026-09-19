@@ -25,6 +25,7 @@ public:
 
 private:
     Entity entity_;
+    std::optional<EntityProperties> properties_;
     EntityId id_{0};
     bool executed_{false};
 };
@@ -39,6 +40,7 @@ public:
 private:
     EntityId id_;
     std::optional<Entity> backup_;
+    std::optional<EntityProperties> backup_properties_;
 };
 
 class History {
