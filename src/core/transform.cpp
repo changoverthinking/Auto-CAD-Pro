@@ -20,6 +20,18 @@ geo::Vec2 scale_point(geo::Vec2 point, geo::Vec2 origin, double factor) noexcept
     return origin + (point - origin) * factor;
 }
 
+geo::Vec2 mirror_point(geo::Vec2 point, geo::Segment axis) noexcept {
+    const geo::Vec2 direction = axis.b - axis.a;
+    const double denom = geo::dot(direction, direction);
+    if (denom <= geo::kEpsilon) {
+        return point;
+    }
+
+    const double t = geo::dot(point - axis.a, direction) / denom;
+    const geo::Vec2 projection = axis.a + direction * t;
+    return projection * 2.0 - point;
+}
+
 void translate(Entity& entity, geo::Vec2 delta) noexcept {
     std::visit([&](auto& value) {
         using T = std::decay_t<decltype(value)>;
@@ -73,6 +85,35 @@ bool scale_uniform(Entity& entity, geo::Vec2 origin, double factor) noexcept {
     }, entity);
 
     return true;
+}
+
+bool mirror(Entity& entity, geo::Segment axis) noexcept {
+    const geo::Vec2 direction = axis.b - axis.a;
+    if (geo::dot(direction, direction) <= geo::kEpsilon) {
+        return false;
+    }
+
+    std::visit([&](auto& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, LineEntity>) {
+            value.segment.a = mirror_point(value.segment.a, axis);
+            value.segment.b = mirror_point(value.segment.b, axis);
+        } else if constexpr (std::is_same_v<T, CircleEntity>) {
+            value.circle.center = mirror_point(value.circle.center, axis);
+        } else if constexpr (std::is_same_v<T, PolylineEntity>) {
+            for (auto& point : value.points) {
+                point = mirror_point(point, axis);
+            }
+        }
+    }, entity);
+
+    return true;
+}
+
+Entity translated_copy(const Entity& entity, geo::Vec2 delta) noexcept {
+    Entity copy = entity;
+    translate(copy, delta);
+    return copy;
 }
 
 } // namespace acp::transform
