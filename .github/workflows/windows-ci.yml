@@ -13,10 +13,18 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -S . -B build -A x64 -DACP_BUILD_TESTS=ON
+        run: cmake -S . -B build -A x64 -DACP_BUILD_TESTS=ON -DACP_BUILD_APP=ON
 
       - name: Build
         run: cmake --build build --config Release --parallel
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Upload Windows application
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoCADPro-Windows-x64
+          path: build/Release/AutoCADPro.exe
+          if-no-files-found: error

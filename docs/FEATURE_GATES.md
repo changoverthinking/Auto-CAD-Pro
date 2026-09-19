@@ -5,7 +5,7 @@ Auto CAD Pro does not use UI visibility as proof of implementation.
 ## States
 
 - **planned**: accepted into roadmap, no production code.
-- **prototype**: code exists but correctness/stability is not proven.
+- **prototype**: code exists but correctness/stability is not fully proven.
 - **verified**: automated tests pass on Windows CI for defined acceptance cases.
 - **production**: verified plus real document workflow, undo/redo integration, persistence, performance and regression coverage.
 - **blocked**: known defect prevents promotion.
@@ -22,19 +22,24 @@ A feature may be labeled production only when all of the following are true:
 - no blocker or critical issue is open against it;
 - upstream-derived code has a recorded source commit and license.
 
-## Initial matrix
+## Current matrix
 
 | Feature | State | Evidence |
 |---|---|---|
-| Vec2/segment primitives | prototype | core tests added |
-| segment intersection | prototype | normal/parallel/out-of-range tests |
-| nearest-point projection | prototype | normal/degenerate tests |
-| endpoint snap | prototype | core test |
-| midpoint snap | prototype | core test |
-| center snap | prototype | aperture test |
-| line/polyline document entities | planned | not yet integrated |
-| circle/arc entities | planned | not yet integrated |
-| trim/extend/offset | planned | not yet implemented |
+| line/polyline/circle/arc entities | verified | document integration + Windows core tests |
+| move/copy/rotate/mirror/scale | verified | transform tests including property preservation |
+| trim/extend/offset | verified | edit2d acceptance and edge-case tests |
+| endpoint/midpoint/center/intersection snaps | verified | snap aperture and geometry tests |
+| layers/entity properties | verified | layer visibility/locking/weights + persistence tests |
+| blocks/block references | verified | block definition/reference integration tests |
+| text/linear dimensions | verified | annotation document and persistence tests |
+| hatches | verified | hatch entity and persistence tests |
+| project save/open | verified | versioned round-trip tests |
+| DXF ASCII import/export subset | verified | controlled 2D entity round-trip tests |
+| drawing bounds/viewport fit | verified | bounds/aspect tests |
+| page setup/print scale model | verified | A-series page and fixed-scale tests |
+| Windows desktop GUI | prototype | real Win32 executable linked to acp_core; canvas, grid, zoom, pan, Line/Circle tools |
+| Windows executable artifact | prototype | CI uploads AutoCADPro-Windows-x64 after push build/test |
 | constraints | planned | FreeCAD Sketcher upstream audit required |
-| DXF import/export | planned | upstream audit required |
-| GUI | planned | intentionally deferred until core behavior is real |
+| SVG/PDF export | planned | export pipeline not yet implemented |
+| full GUI editing workflow | planned | selection/grips/properties/file commands still to integrate |
