@@ -663,10 +663,10 @@ int main() {
     const LayerId dxfWalls = dxfDoc.create_layer("Walls");
     const EntityId dxfLineId = dxfDoc.insert(LineEntity{{{1, 2}, {11, 2}}});
     expect(dxfDoc.set_entity_layer(dxfLineId, dxfWalls), "assign dxf line layer");
-    dxfDoc.insert(CircleEntity{{{5, 5}, 2.5}});
-    dxfDoc.insert(ArcEntity{{{10, 10}, 4.0, 0.0, std::numbers::pi / 2.0, true}});
-    dxfDoc.insert(PolylineEntity{{{0, 0}, {3, 0}, {3, 4}}, true});
-    dxfDoc.insert(TextEntity{{2, 8}, "DXF NOTE", 2.0, 0.25});
+    (void)dxfDoc.insert(CircleEntity{{{5, 5}, 2.5}});
+    (void)dxfDoc.insert(ArcEntity{{{10, 10}, 4.0, 0.0, std::numbers::pi / 2.0, true}});
+    (void)dxfDoc.insert(PolylineEntity{{{0, 0}, {3, 0}, {3, 4}}, true});
+    (void)dxfDoc.insert(TextEntity{{2, 8}, "DXF NOTE", 2.0, 0.25});
 
     const std::string dxfText = dxf::export_ascii(dxfDoc);
     expect(dxfText.find("LWPOLYLINE") != std::string::npos &&
@@ -806,8 +806,8 @@ int main() {
            "page printable area");
 
     bounds::Bounds2 printDrawing;
-    printDrawing.include({0, 0});
-    printDrawing.include({20000, 10000});
+    printDrawing.include(geo::Vec2{0, 0});
+    printDrawing.include(geo::Vec2{20000, 10000});
     const auto printFit = layout::fit_to_page(printDrawing, printPage);
     expect(printFit.has_value() &&
            geo::nearly_equal(printFit->center, {10000, 5000}) &&
