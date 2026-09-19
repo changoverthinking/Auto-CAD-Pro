@@ -2,6 +2,7 @@
 #include "acp/geometry2d.hpp"
 #include "acp/history.hpp"
 #include "acp/snap.hpp"
+#include "acp/selection.hpp"
 #include "acp/transform.hpp"
 
 #include <cmath>
@@ -88,6 +89,25 @@ int main() {
     expect(movedPolyline.points.size() == 3 &&
            geo::nearly_equal(movedPolyline.points[0], {-1, 2}) &&
            geo::nearly_equal(movedPolyline.points[2], {0, 3}), "translate polyline");
+
+    Document selectionDoc;
+    const EntityId selectionLine = selectionDoc.insert(LineEntity{{{0, 0}, {10, 0}}});
+    const EntityId selectionCircle = selectionDoc.insert(CircleEntity{{{20, 0}, 5}});
+    const EntityId selectionPolyline = selectionDoc.insert(PolylineEntity{{{30, 0}, {35, 5}, {40, 0}}, false});
+
+    const auto lineHit = selection::hit_test(selectionDoc, {4, 0.25}, 0.5);
+    expect(lineHit.has_value() && lineHit->id == selectionLine &&
+           geo::nearly_equal(lineHit->nearest, {4, 0}), "select line by aperture");
+
+    const auto circleHit = selection::hit_test(selectionDoc, {25.2, 0}, 0.5);
+    expect(circleHit.has_value() && circleHit->id == selectionCircle &&
+           geo::nearly_equal(circleHit->nearest, {25, 0}), "select circle perimeter");
+
+    const auto polylineHit = selection::hit_test(selectionDoc, {35, 4.8}, 0.5);
+    expect(polylineHit.has_value() && polylineHit->id == selectionPolyline, "select polyline segment");
+
+    expect(!selection::hit_test(selectionDoc, {100, 100}, 1.0).has_value(), "selection miss outside aperture");
+    expect(!selection::hit_test(selectionDoc, {0, 0}, -1.0).has_value(), "reject negative selection aperture");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
