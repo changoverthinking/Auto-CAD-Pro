@@ -863,13 +863,13 @@ int main() {
     const EntityId propertyId =
         propertyDoc.insert(LineEntity{{{0, 0}, {5, 0}}});
     const LayerId propertyLayer = propertyDoc.create_layer("PropertyLayer");
-    History propertyHistory;
+    History propertyMutationHistory;
 
     EntityProperties propertyReplacement = *propertyDoc.properties(propertyId);
     propertyReplacement.layer_id = propertyLayer;
     propertyReplacement.visible = false;
     propertyReplacement.line_weight_override = 0.50;
-    expect(propertyHistory.apply(
+    expect(propertyMutationHistory.apply(
                propertyDoc,
                std::make_unique<UpdateEntityPropertiesCommand>(
                    propertyId, propertyReplacement)),
@@ -878,13 +878,13 @@ int main() {
            !propertyDoc.properties(propertyId)->visible &&
            propertyDoc.properties(propertyId)->line_weight_override.has_value(),
            "entity properties command changes properties");
-    expect(propertyHistory.undo(propertyDoc),
+    expect(propertyMutationHistory.undo(propertyDoc),
            "entity properties command undo");
     expect(propertyDoc.properties(propertyId)->layer_id == kDefaultLayerId &&
            propertyDoc.properties(propertyId)->visible &&
            !propertyDoc.properties(propertyId)->line_weight_override.has_value(),
            "entity properties undo restores properties");
-    expect(propertyHistory.redo(propertyDoc),
+    expect(propertyMutationHistory.redo(propertyDoc),
            "entity properties command redo");
     expect(propertyDoc.properties(propertyId)->layer_id == propertyLayer &&
            !propertyDoc.properties(propertyId)->visible,
@@ -894,7 +894,7 @@ int main() {
     layerReplacement.visible = false;
     layerReplacement.locked = true;
     layerReplacement.line_weight = 0.70;
-    expect(propertyHistory.apply(
+    expect(propertyMutationHistory.apply(
                propertyDoc,
                std::make_unique<UpdateLayerCommand>(
                    propertyLayer, layerReplacement)),
@@ -903,14 +903,35 @@ int main() {
            propertyDoc.layer(propertyLayer)->locked &&
            geo::nearly_equal(propertyDoc.layer(propertyLayer)->line_weight, 0.70),
            "layer update command changes layer");
-    expect(propertyHistory.undo(propertyDoc), "layer update command undo");
+    expect(propertyMutationHistory.undo(propertyDoc), "layer update command undo");
     expect(propertyDoc.layer(propertyLayer)->visible &&
            !propertyDoc.layer(propertyLayer)->locked,
            "layer update undo restores layer");
-    expect(propertyHistory.redo(propertyDoc), "layer update command redo");
+    expect(propertyMutationHistory.redo(propertyDoc), "layer update command redo");
     expect(!propertyDoc.layer(propertyLayer)->visible &&
            propertyDoc.layer(propertyLayer)->locked,
            "layer update redo reapplies layer");
+
+    EntityProperties invalidPropertyReplacement =
+        *propertyDoc.properties(propertyId);
+    invalidPropertyReplacement.line_weight_override = -1.0;
+    expect(!propertyMutationHistory.apply(
+               propertyDoc,
+               std::make_unique<UpdateEntityPropertiesCommand>(
+                   propertyId, invalidPropertyReplacement)),
+           "reject invalid entity line weight command");
+
+    const LayerId duplicateLayer =
+        propertyDoc.create_layer("DuplicateLayer");
+    Layer invalidLayerReplacement = *propertyDoc.layer(propertyLayer);
+    invalidLayerReplacement.name = propertyDoc.layer(duplicateLayer)->name;
+    expect(!propertyMutationHistory.apply(
+               propertyDoc,
+               std::make_unique<UpdateLayerCommand>(
+                   propertyLayer, invalidLayerReplacement)),
+           "reject duplicate layer name command");
+    expect(propertyDoc.layer(propertyLayer)->name == "PropertyLayer",
+           "failed layer update keeps original name");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";

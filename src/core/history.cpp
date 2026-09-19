@@ -1,5 +1,6 @@
 #include "acp/history.hpp"
 
+#include <cmath>
 #include <utility>
 
 namespace acp {
@@ -98,6 +99,11 @@ bool UpdateEntityPropertiesCommand::execute(Document& document) {
     if (existing == nullptr || document.layer(replacement_.layer_id) == nullptr) {
         return false;
     }
+    if (replacement_.line_weight_override.has_value() &&
+        (!std::isfinite(*replacement_.line_weight_override) ||
+         *replacement_.line_weight_override < 0.0)) {
+        return false;
+    }
 
     if (!original_.has_value()) {
         original_ = *existing;
@@ -118,26 +124,41 @@ void UpdateEntityPropertiesCommand::undo(Document& document) {
 UpdateLayerCommand::UpdateLayerCommand(LayerId id, Layer replacement)
     : id_(id), replacement_(std::move(replacement)) {}
 
+namespace {
+bool apply_layer_state(Document& document, LayerId id, const Layer& state) {
+    Layer* existing = document.layer(id);
+    if (existing == nullptr || state.id != id || state.name.empty() ||
+        !std::isfinite(state.line_weight) || state.line_weight < 0.0) {
+        return false;
+    }
+
+    if (existing->name != state.name &&
+        !document.rename_layer(id, state.name)) {
+        return false;
+    }
+    return document.set_layer_visible(id, state.visible) &&
+           document.set_layer_locked(id, state.locked) &&
+           document.set_layer_line_weight(id, state.line_weight);
+}
+} // namespace
+
 bool UpdateLayerCommand::execute(Document& document) {
     Layer* existing = document.layer(id_);
-    if (existing == nullptr || replacement_.id != id_) {
+    if (existing == nullptr) {
         return false;
     }
 
     if (!original_.has_value()) {
         original_ = *existing;
     }
-    *existing = replacement_;
-    return true;
+    return apply_layer_state(document, id_, replacement_);
 }
 
 void UpdateLayerCommand::undo(Document& document) {
     if (!original_.has_value()) {
         return;
     }
-    if (Layer* existing = document.layer(id_)) {
-        *existing = *original_;
-    }
+    (void)apply_layer_state(document, id_, *original_);
 }
 
 bool History::apply(Document& document, std::unique_ptr<Command> command) {
