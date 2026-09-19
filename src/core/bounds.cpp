@@ -33,11 +33,11 @@ Bounds2 primitive_bounds(const BlockPrimitive& primitive) noexcept {
             result.include(value.segment.b);
         } else if constexpr (std::is_same_v<T, CircleEntity>) {
             if (std::isfinite(value.circle.radius) && value.circle.radius >= 0.0) {
-                result.include({
+                result.include(geo::Vec2{
                     value.circle.center.x - value.circle.radius,
                     value.circle.center.y - value.circle.radius
                 });
-                result.include({
+                result.include(geo::Vec2{
                     value.circle.center.x + value.circle.radius,
                     value.circle.center.y + value.circle.radius
                 });
@@ -61,7 +61,7 @@ Bounds2 primitive_bounds(const BlockPrimitive& primitive) noexcept {
                 if (!geo::angle_on_arc(value.arc, angle)) {
                     continue;
                 }
-                result.include({
+                result.include(geo::Vec2{
                     value.arc.center.x + value.arc.radius * std::cos(angle),
                     value.arc.center.y + value.arc.radius * std::sin(angle)
                 });
