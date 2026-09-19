@@ -10,6 +10,8 @@ option(ACP_BUILD_TESTS "Build Auto CAD Pro tests" ON)
 add_library(acp_core
     src/core/geometry2d.cpp
     src/core/snap.cpp
+    src/core/document.cpp
+    src/core/history.cpp
 )
 target_include_directories(acp_core PUBLIC include)
 target_compile_features(acp_core PUBLIC cxx_std_20)
