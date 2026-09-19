@@ -77,7 +77,7 @@ struct AppState {
     POINT cursor{};
     bool snap_enabled{true};
     std::optional<acp::snap::Candidate> snap_candidate;
-    std::string text_buffer;
+    std::wstring text_buffer;
 };
 
 AppState g_app;
@@ -201,6 +201,40 @@ void reset_interaction_state() {
     g_app.text_buffer.clear();
 }
 
+
+
+std::string utf8_from_wide(const std::wstring& text) {
+    if (text.empty()) {
+        return {};
+    }
+    const int length = WideCharToMultiByte(
+        CP_UTF8, WC_ERR_INVALID_CHARS,
+        text.data(), static_cast<int>(text.size()),
+        nullptr, 0, nullptr, nullptr);
+    if (length <= 0) {
+        return {};
+    }
+    std::string result(static_cast<std::size_t>(length), '\0');
+    const int written = WideCharToMultiByte(
+        CP_UTF8, WC_ERR_INVALID_CHARS,
+        text.data(), static_cast<int>(text.size()),
+        result.data(), length, nullptr, nullptr);
+    return written == length ? result : std::string{};
+}
+
+void erase_last_utf16_codepoint(std::wstring& text) {
+    if (text.empty()) {
+        return;
+    }
+    const wchar_t last = text.back();
+    text.pop_back();
+    if (last >= 0xDC00 && last <= 0xDFFF && !text.empty()) {
+        const wchar_t lead = text.back();
+        if (lead >= 0xD800 && lead <= 0xDBFF) {
+            text.pop_back();
+        }
+    }
+}
 
 int snap_priority(acp::snap::Kind kind) {
     switch (kind) {
@@ -673,11 +707,7 @@ void draw_preview(HWND hwnd, HDC dc) {
 
     if (g_app.tool == Tool::Text) {
         const POINT p = world_to_screen(hwnd, g_app.first_point);
-        std::wstring preview;
-        preview.reserve(g_app.text_buffer.size() + 1);
-        for (char ch : g_app.text_buffer) {
-            preview.push_back(static_cast<unsigned char>(ch));
-        }
+        std::wstring preview = g_app.text_buffer;
         preview.push_back(L'_');
         const int old_mode = SetBkMode(dc, TRANSPARENT);
         TextOutW(dc, p.x, p.y - 16, preview.c_str(),
@@ -1118,6 +1148,7 @@ void handle_left_click(HWND hwnd, POINT point) {
         return;
     }
 
+    const Vec2 raw_world = screen_to_world(hwnd, point);
     const Vec2 world = resolved_input_point(hwnd, point);
 
     if ((g_app.tool == Tool::Line ||
@@ -1132,7 +1163,7 @@ void handle_left_click(HWND hwnd, POINT point) {
 
     if (g_app.tool == Tool::Select) {
         const auto hit = acp::selection::hit_test(
-            g_app.document, g_app.blocks, world,
+            g_app.document, g_app.blocks, raw_world,
             8.0 / std::max(g_app.zoom, 0.02));
         g_app.selected = hit.has_value()
             ? std::optional<acp::EntityId>{hit->id}
@@ -1202,7 +1233,7 @@ void handle_left_click(HWND hwnd, POINT point) {
          g_app.tool == Tool::Hatch) &&
         !g_app.selected.has_value()) {
         const auto hit = acp::selection::hit_test(
-            g_app.document, g_app.blocks, world,
+            g_app.document, g_app.blocks, raw_world,
             8.0 / std::max(g_app.zoom, 0.02));
         if (hit.has_value()) {
             g_app.selected = hit->id;
@@ -1222,7 +1253,7 @@ void handle_left_click(HWND hwnd, POINT point) {
 
         if (!g_app.auxiliary_entity.has_value()) {
             const auto hit = acp::selection::hit_test(
-                g_app.document, g_app.blocks, world,
+                g_app.document, g_app.blocks, raw_world,
                 8.0 / std::max(g_app.zoom, 0.02));
             if (hit.has_value() && hit->id != *g_app.selected) {
                 const acp::Entity* cutter = g_app.document.find(hit->id);
@@ -1257,7 +1288,7 @@ void handle_left_click(HWND hwnd, POINT point) {
         }
         const acp::Entity* target = g_app.document.find(*g_app.selected);
         const auto hit = acp::selection::hit_test(
-            g_app.document, g_app.blocks, world,
+            g_app.document, g_app.blocks, raw_world,
             8.0 / std::max(g_app.zoom, 0.02));
         if (target != nullptr && hit.has_value() &&
             hit->id != *g_app.selected &&
@@ -1664,9 +1695,14 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 if (g_app.has_first_point &&
                     !g_app.text_buffer.empty() &&
                     active_layer_writable()) {
+                    const std::string utf8 = utf8_from_wide(g_app.text_buffer);
+                    if (utf8.empty()) {
+                        MessageBeep(MB_ICONWARNING);
+                        return 0;
+                    }
                     auto command = std::make_unique<acp::AddEntityCommand>(
                         acp::TextEntity{
-                            g_app.first_point, g_app.text_buffer, 2.5, 0.0});
+                            g_app.first_point, utf8, 2.5, 0.0});
                     auto* command_ptr = command.get();
                     if (g_app.history.apply(
                             g_app.document, std::move(command))) {
@@ -1770,12 +1806,10 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
         case WM_CHAR:
             if (g_app.tool == Tool::Text && g_app.has_first_point) {
                 if (w_param == VK_BACK) {
-                    if (!g_app.text_buffer.empty()) {
-                        g_app.text_buffer.pop_back();
-                    }
-                } else if (w_param >= 32 && w_param <= 126) {
+                    erase_last_utf16_codepoint(g_app.text_buffer);
+                } else if (w_param >= 32 && w_param <= 0xFFFF) {
                     g_app.text_buffer.push_back(
-                        static_cast<char>(w_param));
+                        static_cast<wchar_t>(w_param));
                 }
                 InvalidateRect(hwnd, nullptr, FALSE);
                 return 0;
@@ -1802,10 +1836,13 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
         case WM_MOUSEMOVE: {
             const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
             g_app.cursor = p;
-            if (!g_app.panning) {
+            const RECT canvas = canvas_rect(hwnd);
+            if (!g_app.panning && PtInRect(&canvas, p)) {
                 const Vec2 raw = screen_to_world(hwnd, p);
                 g_app.snap_candidate = best_document_snap(
                     raw, 10.0 / std::max(g_app.zoom, 0.02));
+            } else if (!g_app.panning) {
+                g_app.snap_candidate.reset();
             }
             if (g_app.panning) {
                 const LONG dx = p.x - g_app.last_mouse.x;

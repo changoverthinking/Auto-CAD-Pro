@@ -58,3 +58,6 @@ A feature may be labeled production only when all of the following are true:
 
 - GUI Object Snap now resolves visible Line/Polyline/Circle/Arc geometry using the tested snap core, including segment intersections, and can be toggled with F3.
 - Text creation is reachable in the real GUI: choose Text, click insertion point, type ASCII text, press Enter to commit through History.
+
+- Object snap input resolution is kept separate from entity hit-testing so Select/Trim/Extend target acquisition uses the real cursor location instead of a snapped point.
+- Text input uses the Windows Unicode character stream and converts to UTF-8 on commit, including surrogate-pair-safe backspace handling.
