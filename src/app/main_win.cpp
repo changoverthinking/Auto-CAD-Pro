@@ -2,10 +2,13 @@
 #define NOMINMAX
 #include <windows.h>
 #include <windowsx.h>
+#include <commdlg.h>
 
 #include "acp/document.hpp"
 #include "acp/bounds.hpp"
 #include "acp/history.hpp"
+#include "acp/dxf.hpp"
+#include "acp/persistence.hpp"
 #include "acp/selection.hpp"
 #include "acp/transform.hpp"
 
@@ -13,6 +16,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cwchar>
+#include <filesystem>
+#include <fstream>
 #include <numbers>
 #include <memory>
 #include <optional>
@@ -41,6 +46,7 @@ enum class Tool {
 struct AppState {
     Document document;
     acp::History history;
+    acp::BlockLibrary blocks;
     std::optional<acp::EntityId> selected;
     Tool tool{Tool::Select};
     double zoom{1.0};
@@ -58,6 +64,11 @@ constexpr int kToolbarHeight = 44;
 constexpr int kStatusHeight = 24;
 constexpr int kMenuNew = 1001;
 constexpr int kMenuExit = 1002;
+constexpr int kMenuOpen = 1003;
+constexpr int kMenuSave = 1004;
+constexpr int kMenuImportDxf = 1005;
+constexpr int kMenuExportDxf = 1006;
+constexpr int kMenuZoomExtents = 1007;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -361,6 +372,172 @@ void draw_status(HWND hwnd, HDC dc, const RECT& client) {
     DrawTextW(dc, buffer, -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 }
 
+
+std::optional<std::filesystem::path> choose_file(
+    HWND hwnd,
+    bool save,
+    const wchar_t* filter,
+    const wchar_t* default_extension) {
+
+    wchar_t buffer[4096]{};
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = hwnd;
+    dialog.lpstrFile = buffer;
+    dialog.nMaxFile = static_cast<DWORD>(std::size(buffer));
+    dialog.lpstrFilter = filter;
+    dialog.lpstrDefExt = default_extension;
+    dialog.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST |
+                   (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
+
+    const BOOL ok = save
+        ? GetSaveFileNameW(&dialog)
+        : GetOpenFileNameW(&dialog);
+    if (!ok) {
+        return std::nullopt;
+    }
+    return std::filesystem::path(buffer);
+}
+
+std::optional<std::string> read_text_file(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        return std::nullopt;
+    }
+    std::string data(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    if (!input.good() && !input.eof()) {
+        return std::nullopt;
+    }
+    return data;
+}
+
+bool write_text_file(const std::filesystem::path& path, const std::string& data) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) {
+        return false;
+    }
+    output.write(data.data(), static_cast<std::streamsize>(data.size()));
+    return output.good();
+}
+
+void show_file_error(HWND hwnd, const wchar_t* message) {
+    MessageBoxW(hwnd, message, L"Auto CAD Pro", MB_OK | MB_ICONERROR);
+}
+
+void fit_drawing(HWND hwnd) {
+    const auto drawing = acp::bounds::drawing_bounds(g_app.document, &g_app.blocks);
+    if (!drawing.has_value()) {
+        return;
+    }
+
+    const RECT rc = canvas_rect(hwnd);
+    const double width_px = std::max(1L, rc.right - rc.left);
+    const double height_px = std::max(1L, rc.bottom - rc.top);
+    const auto fit = acp::bounds::fit_to_aspect(
+        *drawing, width_px / height_px, 0.08);
+    if (!fit.has_value()) {
+        return;
+    }
+
+    g_app.view_center = fit->center;
+    const double world_width = std::max(fit->world_width, acp::geo::kEpsilon);
+    const double world_height = std::max(fit->world_height, acp::geo::kEpsilon);
+    g_app.zoom = std::clamp(
+        std::min(width_px / world_width, height_px / world_height),
+        0.02, 200.0);
+    InvalidateRect(hwnd, nullptr, FALSE);
+}
+
+void open_project(HWND hwnd) {
+    const auto path = choose_file(
+        hwnd, false,
+        L"Auto CAD Pro Project (*.acp)\0*.acp\0All Files (*.*)\0*.*\0\0",
+        L"acp");
+    if (!path.has_value()) {
+        return;
+    }
+
+    const auto data = read_text_file(*path);
+    if (!data.has_value()) {
+        show_file_error(hwnd, L"Could not read the selected project.");
+        return;
+    }
+
+    auto project = acp::persistence::deserialize_project(*data);
+    if (!project.has_value()) {
+        show_file_error(hwnd, L"The project file is invalid or unsupported.");
+        return;
+    }
+
+    g_app.document = std::move(project->document);
+    g_app.blocks = std::move(project->blocks);
+    g_app.history = acp::History{};
+    g_app.selected.reset();
+    g_app.has_first_point = false;
+    fit_drawing(hwnd);
+}
+
+void save_project(HWND hwnd) {
+    const auto path = choose_file(
+        hwnd, true,
+        L"Auto CAD Pro Project (*.acp)\0*.acp\0All Files (*.*)\0*.*\0\0",
+        L"acp");
+    if (!path.has_value()) {
+        return;
+    }
+
+    const std::string data =
+        acp::persistence::serialize_project(g_app.document, g_app.blocks);
+    if (!write_text_file(*path, data)) {
+        show_file_error(hwnd, L"Could not save the project.");
+    }
+}
+
+void import_dxf(HWND hwnd) {
+    const auto path = choose_file(
+        hwnd, false,
+        L"DXF Drawing (*.dxf)\0*.dxf\0All Files (*.*)\0*.*\0\0",
+        L"dxf");
+    if (!path.has_value()) {
+        return;
+    }
+
+    const auto data = read_text_file(*path);
+    if (!data.has_value()) {
+        show_file_error(hwnd, L"Could not read the selected DXF.");
+        return;
+    }
+
+    auto result = acp::dxf::import_ascii(*data);
+    if (!result.has_value()) {
+        show_file_error(hwnd, L"The DXF file is invalid or unsupported.");
+        return;
+    }
+
+    g_app.document = std::move(result->document);
+    g_app.blocks = acp::BlockLibrary{};
+    g_app.history = acp::History{};
+    g_app.selected.reset();
+    g_app.has_first_point = false;
+    fit_drawing(hwnd);
+}
+
+void export_dxf(HWND hwnd) {
+    const auto path = choose_file(
+        hwnd, true,
+        L"DXF Drawing (*.dxf)\0*.dxf\0All Files (*.*)\0*.*\0\0",
+        L"dxf");
+    if (!path.has_value()) {
+        return;
+    }
+
+    if (!write_text_file(*path, acp::dxf::export_ascii(g_app.document))) {
+        show_file_error(hwnd, L"Could not export the DXF drawing.");
+    }
+}
+
 void handle_left_click(HWND hwnd, POINT point) {
     if (point.y < kToolbarHeight) {
         if (point.x >= 190 && point.x <= 265) set_tool(hwnd, Tool::Select);
@@ -477,9 +654,25 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 case kMenuNew:
                     g_app.document = Document{};
                     g_app.history = acp::History{};
+                    g_app.blocks = acp::BlockLibrary{};
                     g_app.selected.reset();
                     g_app.has_first_point = false;
                     InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                case kMenuOpen:
+                    open_project(hwnd);
+                    return 0;
+                case kMenuSave:
+                    save_project(hwnd);
+                    return 0;
+                case kMenuImportDxf:
+                    import_dxf(hwnd);
+                    return 0;
+                case kMenuExportDxf:
+                    export_dxf(hwnd);
+                    return 0;
+                case kMenuZoomExtents:
+                    fit_drawing(hwnd);
                     return 0;
                 case kMenuExit:
                     DestroyWindow(hwnd);
@@ -633,8 +826,14 @@ HMENU create_app_menu() {
     HMENU menu = CreateMenu();
     HMENU file = CreatePopupMenu();
     HMENU draw = CreatePopupMenu();
+    HMENU view = CreatePopupMenu();
 
     AppendMenuW(file, MF_STRING, kMenuNew, L"&New");
+    AppendMenuW(file, MF_STRING, kMenuOpen, L"&Open Project...");
+    AppendMenuW(file, MF_STRING, kMenuSave, L"&Save Project...");
+    AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(file, MF_STRING, kMenuImportDxf, L"&Import DXF...");
+    AppendMenuW(file, MF_STRING, kMenuExportDxf, L"&Export DXF...");
     AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(file, MF_STRING, kMenuExit, L"E&xit");
 
@@ -647,7 +846,9 @@ HMENU create_app_menu() {
     AppendMenuW(draw, MF_STRING, kToolRotate, L"&Rotate\tR");
 
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"&File");
+    AppendMenuW(view, MF_STRING, kMenuZoomExtents, L"Zoom &Extents");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(draw), L"&Draw");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"&View");
     return menu;
 }
 

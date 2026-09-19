@@ -35,7 +35,7 @@ endif()
 
 if(ACP_BUILD_APP AND WIN32)
     add_executable(AutoCADPro WIN32 src/app/main_win.cpp)
-    target_link_libraries(AutoCADPro PRIVATE acp_core user32 gdi32)
+    target_link_libraries(AutoCADPro PRIVATE acp_core user32 gdi32 comdlg32)
     target_compile_definitions(AutoCADPro PRIVATE UNICODE _UNICODE)
     target_compile_features(AutoCADPro PRIVATE cxx_std_20)
     if(MSVC)
