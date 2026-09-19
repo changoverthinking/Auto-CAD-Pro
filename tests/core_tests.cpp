@@ -934,6 +934,62 @@ int main() {
     expect(propertyDoc.layer(propertyLayer)->name == "PropertyLayer",
            "failed layer update keeps original name");
 
+    Document documentSnapDoc;
+    (void)documentSnapDoc.insert(
+        LineEntity{{{0, 0}, {10, 10}}});
+    (void)documentSnapDoc.insert(
+        LineEntity{{{0, 10}, {10, 0}}});
+    const auto documentIntersectionSnap =
+        snap::best_for_document(
+            documentSnapDoc, nullptr, {5.1, 5.1}, 0.5, true);
+    expect(documentIntersectionSnap.has_value() &&
+           documentIntersectionSnap->kind == snap::Kind::Intersection &&
+           geo::nearly_equal(
+               documentIntersectionSnap->point, {5, 5}, 1e-8),
+           "document snap finds nearby segment intersection");
+
+    const EntityId hiddenSnapId = documentSnapDoc.insert(
+        LineEntity{{{100, 100}, {110, 100}}});
+    documentSnapDoc.properties(hiddenSnapId)->visible = false;
+    const auto hiddenSnap =
+        snap::best_for_document(
+            documentSnapDoc, nullptr, {100, 100}, 0.25, false);
+    expect(!hiddenSnap.has_value(),
+           "document snap ignores hidden entities");
+
+    (void)documentSnapDoc.insert(CircleEntity{{{20, 20}, 5.0}});
+    const auto centerSnap =
+        snap::best_for_document(
+            documentSnapDoc, nullptr, {20.1, 20.1}, 0.5, false);
+    expect(centerSnap.has_value() &&
+           centerSnap->kind == snap::Kind::Center &&
+           geo::nearly_equal(centerSnap->point, {20, 20}, 1e-8),
+           "document snap finds circle center");
+
+    BlockLibrary documentSnapBlocks;
+    const BlockId snapBlockId = documentSnapBlocks.create(
+        "SnapBlock",
+        {0, 0},
+        std::vector<BlockPrimitive>{
+            LineEntity{{{0, 0}, {2, 0}}}
+        });
+    (void)documentSnapDoc.insert(BlockReferenceEntity{
+        snapBlockId, {30, 30}, 0.0, 1.0});
+    const auto blockEndpointSnap =
+        snap::best_for_document(
+            documentSnapDoc, &documentSnapBlocks,
+            {30.1, 30.0}, 0.25, false);
+    expect(blockEndpointSnap.has_value() &&
+           blockEndpointSnap->kind == snap::Kind::Endpoint &&
+           geo::nearly_equal(
+               blockEndpointSnap->point, {30, 30}, 1e-8),
+           "document snap supports instantiated block geometry");
+
+    expect(!snap::best_for_document(
+               documentSnapDoc, &documentSnapBlocks,
+               {0, 0}, -1.0, true).has_value(),
+           "document snap rejects invalid aperture");
+
     Document svgDoc;
     const EntityId svgLineId =
         svgDoc.insert(LineEntity{{{0, 0}, {100, 0}}});

@@ -261,51 +261,6 @@ void erase_last_utf16_codepoint(std::wstring& text) {
     }
 }
 
-int snap_priority(acp::snap::Kind kind) {
-    switch (kind) {
-        case acp::snap::Kind::Endpoint:
-        case acp::snap::Kind::Intersection: return 0;
-        case acp::snap::Kind::Midpoint:
-        case acp::snap::Kind::Center: return 1;
-        case acp::snap::Kind::Nearest: return 10;
-    }
-    return 100;
-}
-
-void consider_snap(
-    std::optional<acp::snap::Candidate>& best,
-    const std::optional<acp::snap::Candidate>& candidate) {
-
-    if (!candidate.has_value()) {
-        return;
-    }
-    if (!best.has_value() ||
-        snap_priority(candidate->kind) < snap_priority(best->kind) ||
-        (snap_priority(candidate->kind) == snap_priority(best->kind) &&
-         candidate->distance_to_cursor < best->distance_to_cursor)) {
-        best = candidate;
-    }
-}
-
-std::vector<acp::geo::Segment> snap_segments_for_entity(const acp::Entity& entity) {
-    std::vector<acp::geo::Segment> segments;
-    std::visit([&](const auto& value) {
-        using T = std::decay_t<decltype(value)>;
-        if constexpr (std::is_same_v<T, LineEntity>) {
-            segments.push_back(value.segment);
-        } else if constexpr (std::is_same_v<T, PolylineEntity>) {
-            if (value.points.size() < 2) return;
-            for (std::size_t i = 1; i < value.points.size(); ++i) {
-                segments.push_back({value.points[i - 1], value.points[i]});
-            }
-            if (value.closed && value.points.size() > 2) {
-                segments.push_back({value.points.back(), value.points.front()});
-            }
-        }
-    }, entity);
-    return segments;
-}
-
 std::optional<acp::snap::Candidate> best_document_snap(
     Vec2 cursor,
     double aperture) {
@@ -313,51 +268,12 @@ std::optional<acp::snap::Candidate> best_document_snap(
     if (!g_app.snap_enabled) {
         return std::nullopt;
     }
-
-    std::optional<acp::snap::Candidate> best;
-    std::vector<acp::geo::Segment> all_segments;
-
-    for (const acp::EntityId id : g_app.document.ids()) {
-        if (!g_app.document.entity_visible(id)) {
-            continue;
-        }
-        const acp::Entity* entity = g_app.document.find(id);
-        if (entity == nullptr) {
-            continue;
-        }
-
-        std::visit([&](const auto& value) {
-            using T = std::decay_t<decltype(value)>;
-            if constexpr (std::is_same_v<T, LineEntity>) {
-                consider_snap(best, acp::snap::best_for_segment(
-                    value.segment, cursor, aperture, true));
-            } else if constexpr (std::is_same_v<T, CircleEntity>) {
-                consider_snap(best, acp::snap::best_for_circle(
-                    value.circle, cursor, aperture));
-            } else if constexpr (std::is_same_v<T, ArcEntity>) {
-                consider_snap(best, acp::snap::best_for_arc(
-                    value.arc, cursor, aperture, true));
-            } else if constexpr (std::is_same_v<T, PolylineEntity>) {
-                const auto segments = snap_segments_for_entity(*entity);
-                for (const auto& segment : segments) {
-                    consider_snap(best, acp::snap::best_for_segment(
-                        segment, cursor, aperture, true));
-                }
-            }
-        }, *entity);
-
-        const auto segments = snap_segments_for_entity(*entity);
-        all_segments.insert(all_segments.end(), segments.begin(), segments.end());
-    }
-
-    for (std::size_t i = 0; i < all_segments.size(); ++i) {
-        for (std::size_t j = i + 1; j < all_segments.size(); ++j) {
-            consider_snap(best, acp::snap::intersection_for_segments(
-                all_segments[i], all_segments[j], cursor, aperture));
-        }
-    }
-
-    return best;
+    return acp::snap::best_for_document(
+        g_app.document,
+        &g_app.blocks,
+        cursor,
+        aperture,
+        true);
 }
 
 Vec2 resolved_input_point(HWND hwnd, POINT point) {

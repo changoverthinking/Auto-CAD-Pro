@@ -5,6 +5,11 @@
 #include <optional>
 #include <vector>
 
+namespace acp {
+class Document;
+class BlockLibrary;
+}
+
 namespace acp::snap {
 
 enum class Kind {
@@ -43,5 +48,12 @@ struct Candidate {
     const geo::Segment& rhs,
     geo::Vec2 cursor,
     double aperture) noexcept;
+
+[[nodiscard]] std::optional<Candidate> best_for_document(
+    const Document& document,
+    const BlockLibrary* blocks,
+    geo::Vec2 cursor,
+    double aperture,
+    bool include_nearest = true) noexcept;
 
 } // namespace acp::snap
