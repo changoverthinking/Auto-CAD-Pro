@@ -12,6 +12,7 @@
 #include "acp/persistence.hpp"
 #include "acp/selection.hpp"
 #include "acp/snap.hpp"
+#include "acp/svg.hpp"
 #include "acp/transform.hpp"
 
 #include <algorithm>
@@ -99,6 +100,7 @@ constexpr int kMenuToggleLayerLock = 1011;
 constexpr int kMenuToggleEntityVisible = 1012;
 constexpr int kMenuCycleEntityWeight = 1013;
 constexpr int kMenuToggleSnap = 1014;
+constexpr int kMenuExportSvg = 1015;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -1101,6 +1103,28 @@ void import_dxf(HWND hwnd) {
     fit_drawing(hwnd);
 }
 
+
+void export_svg(HWND hwnd) {
+    const auto path = choose_file(
+        hwnd, true,
+        L"Scalable Vector Graphics (*.svg)\0*.svg\0All Files (*.*)\0*.*\0\0",
+        L"svg");
+    if (!path.has_value()) {
+        return;
+    }
+
+    const auto data = acp::svg::export_document(
+        g_app.document, &g_app.blocks, 10.0);
+    if (!data.has_value()) {
+        show_file_error(hwnd, L"Nothing exportable was found in the drawing.");
+        return;
+    }
+
+    if (!write_text_file(*path, *data)) {
+        show_file_error(hwnd, L"Could not export the SVG drawing.");
+    }
+}
+
 void export_dxf(HWND hwnd) {
     const auto path = choose_file(
         hwnd, true,
@@ -1559,6 +1583,9 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 case kMenuExportDxf:
                     export_dxf(hwnd);
                     return 0;
+                case kMenuExportSvg:
+                    export_svg(hwnd);
+                    return 0;
                 case kMenuZoomExtents:
                     fit_drawing(hwnd);
                     return 0;
@@ -1921,6 +1948,7 @@ HMENU create_app_menu() {
     AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(file, MF_STRING, kMenuImportDxf, L"&Import DXF...");
     AppendMenuW(file, MF_STRING, kMenuExportDxf, L"&Export DXF...");
+    AppendMenuW(file, MF_STRING, kMenuExportSvg, L"Export &SVG...");
     AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(file, MF_STRING, kMenuExit, L"E&xit");
 

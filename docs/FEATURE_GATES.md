@@ -41,7 +41,7 @@ A feature may be labeled production only when all of the following are true:
 | Windows desktop GUI | prototype | canvas/grid, zoom/pan, object snap, Line/Circle/Polyline/Arc/Text, selection/grips, Move/Copy/Rotate/Scale/Mirror, Trim/Extend/Offset, Dimension/Hatch creation, layers/properties panel, Delete, Undo/Redo, project/DXF workflow, Text/Dimension/Hatch/Block rendering |
 | Windows executable artifact | prototype | CI uploads AutoCADPro-Windows-x64 after push build/test using Node 24-native actions |
 | constraints | planned | FreeCAD Sketcher upstream audit required |
-| SVG/PDF export | planned | export pipeline not yet implemented |
+| SVG/PDF export | prototype | SVG core exporter + Windows GUI command implemented and regression-tested; PDF remains planned |
 | full GUI editing workflow | prototype | selection/transforms/edit2d/history/file workflow, object snap, text creation, layers panel and core entity rendering active; richer annotation styling and richer properties editing remain |
 
 ## 2026-09-19 GUI audit fixes
@@ -61,3 +61,5 @@ A feature may be labeled production only when all of the following are true:
 
 - Object snap input resolution is kept separate from entity hit-testing so Select/Trim/Extend target acquisition uses the real cursor location instead of a snapped point.
 - Text input uses the Windows Unicode character stream and converts to UTF-8 on commit, including surrogate-pair-safe backspace handling.
+
+- SVG export serializes visible 2D geometry, instantiated blocks, text, dimensions, hatches and effective line weights with XML escaping and drawing bounds-derived viewBox.

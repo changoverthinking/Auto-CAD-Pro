@@ -10,6 +10,7 @@
 #include "acp/hatch.hpp"
 #include "acp/persistence.hpp"
 #include "acp/snap.hpp"
+#include "acp/svg.hpp"
 #include "acp/selection.hpp"
 #include "acp/transform.hpp"
 
@@ -932,6 +933,61 @@ int main() {
            "reject duplicate layer name command");
     expect(propertyDoc.layer(propertyLayer)->name == "PropertyLayer",
            "failed layer update keeps original name");
+
+    Document svgDoc;
+    const EntityId svgLineId =
+        svgDoc.insert(LineEntity{{{0, 0}, {100, 0}}});
+    expect(svgDoc.properties(svgLineId) != nullptr, "svg line properties exist");
+    svgDoc.properties(svgLineId)->line_weight_override = 0.50;
+    (void)svgDoc.insert(CircleEntity{{{50, 25}, 10.0}});
+    (void)svgDoc.insert(ArcEntity{{
+        {50, 25}, 20.0, 0.0, std::numbers::pi / 2.0, true}});
+    (void)svgDoc.insert(PolylineEntity{{
+        {0, 0}, {0, 50}, {40, 50}}, false});
+    (void)svgDoc.insert(TextEntity{{5, 15}, "A&B<1>", 3.0, 0.0});
+    (void)svgDoc.insert(LinearDimensionEntity{
+        {0, 0}, {100, 0}, {0, -10}, std::nullopt});
+    (void)svgDoc.insert(HatchEntity{
+        {{10, 10}, {30, 10}, {30, 30}, {10, 30}},
+        "SOLID", 0.0, 1.0, true});
+
+    BlockLibrary svgBlocks;
+    const BlockId svgBlockId = svgBlocks.create(
+        "SVG_BLOCK", {0, 0},
+        std::vector<BlockPrimitive>{
+            LineEntity{{{0, 0}, {5, 5}}},
+            CircleEntity{{{5, 5}, 2.0}}
+        });
+    (void)svgDoc.insert(BlockReferenceEntity{
+        svgBlockId, {80, 40}, 0.0, 1.0});
+
+    const EntityId hiddenSvgId =
+        svgDoc.insert(TextEntity{{999, 999}, "HIDDEN_SENTINEL", 2.5, 0.0});
+    svgDoc.properties(hiddenSvgId)->visible = false;
+
+    const auto svgText = svg::export_document(svgDoc, &svgBlocks, 5.0);
+    expect(svgText.has_value(), "svg export succeeds");
+    if (svgText.has_value()) {
+        expect(svgText->find("<svg") != std::string::npos,
+               "svg root emitted");
+        expect(svgText->find("<line") != std::string::npos &&
+               svgText->find("<circle") != std::string::npos &&
+               svgText->find("<path") != std::string::npos &&
+               svgText->find("<polyline") != std::string::npos &&
+               svgText->find("<polygon") != std::string::npos &&
+               svgText->find("<text") != std::string::npos,
+               "svg emits supported primitives");
+        expect(svgText->find("A&amp;B&lt;1&gt;") != std::string::npos,
+               "svg escapes text");
+        expect(svgText->find("stroke-width=\"0.5\"") != std::string::npos,
+               "svg preserves effective line weight");
+        expect(svgText->find("HIDDEN_SENTINEL") == std::string::npos,
+               "svg excludes hidden entities");
+    }
+    expect(!svg::export_document(Document{}).has_value(),
+           "svg rejects empty drawing");
+    expect(!svg::export_document(svgDoc, &svgBlocks, -1.0).has_value(),
+           "svg rejects invalid margin");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
