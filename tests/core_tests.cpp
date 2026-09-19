@@ -616,8 +616,12 @@ int main() {
                std::get<BlockReferenceEntity>(*loadedBlockRefEntity).block_id == savedBlock,
                "roundtrip preserves block reference");
 
+        const geo::Vec2 loadedBlockProbe{
+            20.0 + 3.0 * std::cos(0.25),
+            30.0 + 3.0 * std::sin(0.25) + 0.1
+        };
         const auto blockRoundtripHit = selection::hit_test(
-            loadedDoc, loadedBlocks, {23, 30.1}, 0.5);
+            loadedDoc, loadedBlocks, loadedBlockProbe, 0.5);
         expect(blockRoundtripHit.has_value() && blockRoundtripHit->id == persistedBlockId,
                "loaded block reference remains selectable");
 
