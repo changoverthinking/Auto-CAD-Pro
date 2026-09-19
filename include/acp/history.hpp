@@ -3,6 +3,7 @@
 #include "acp/document.hpp"
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace acp {
@@ -28,9 +29,9 @@ private:
     bool executed_{false};
 };
 
-class DeleteEntityCommand final : public Command {
+class RemoveEntityCommand final : public Command {
 public:
-    explicit DeleteEntityCommand(EntityId id);
+    explicit RemoveEntityCommand(EntityId id);
 
     bool execute(Document& document) override;
     void undo(Document& document) override;
