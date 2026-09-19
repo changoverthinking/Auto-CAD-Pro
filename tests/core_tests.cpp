@@ -2,6 +2,7 @@
 #include "acp/block.hpp"
 #include "acp/document.hpp"
 #include "acp/edit2d.hpp"
+#include "acp/dxf.hpp"
 #include "acp/geometry2d.hpp"
 #include "acp/history.hpp"
 #include "acp/hatch.hpp"
@@ -654,6 +655,67 @@ int main() {
         "E 1 1 1 0 0 BLOCKREF 999 0 0 0 1\n"
         "END\n").has_value(),
         "reject missing block reference on load");
+
+
+    Document dxfDoc;
+    const LayerId dxfWalls = dxfDoc.create_layer("Walls");
+    const EntityId dxfLineId = dxfDoc.insert(LineEntity{{{1, 2}, {11, 2}}});
+    expect(dxfDoc.set_entity_layer(dxfLineId, dxfWalls), "assign dxf line layer");
+    dxfDoc.insert(CircleEntity{{{5, 5}, 2.5}});
+    dxfDoc.insert(ArcEntity{{{10, 10}, 4.0, 0.0, std::numbers::pi / 2.0, true}});
+    dxfDoc.insert(PolylineEntity{{{0, 0}, {3, 0}, {3, 4}}, true});
+    dxfDoc.insert(TextEntity{{2, 8}, "DXF NOTE", 2.0, 0.25});
+
+    const std::string dxfText = dxf::export_ascii(dxfDoc);
+    expect(dxfText.find("LWPOLYLINE") != std::string::npos &&
+           dxfText.find("DXF NOTE") != std::string::npos,
+           "export dxf ascii entity records");
+
+    const auto dxfLoaded = dxf::import_ascii(dxfText);
+    expect(dxfLoaded.has_value() && dxfLoaded->imported == 5 && dxfLoaded->skipped == 0,
+           "import exported dxf ascii");
+    if (dxfLoaded.has_value()) {
+        expect(dxfLoaded->document.size() == 5, "dxf roundtrip entity count");
+        bool foundWallsLayer = false;
+        for (const LayerId layerId : dxfLoaded->document.layer_ids()) {
+            const Layer* layerValue = dxfLoaded->document.layer(layerId);
+            if (layerValue != nullptr && layerValue->name == "Walls") {
+                foundWallsLayer = true;
+                break;
+            }
+        }
+        expect(foundWallsLayer, "dxf import creates source layer");
+
+        bool foundText = false;
+        bool foundArc = false;
+        for (const EntityId entityId : dxfLoaded->document.ids()) {
+            const Entity* loadedEntity = dxfLoaded->document.find(entityId);
+            if (loadedEntity == nullptr) continue;
+            if (std::holds_alternative<TextEntity>(*loadedEntity) &&
+                std::get<TextEntity>(*loadedEntity).text == "DXF NOTE") {
+                foundText = true;
+            }
+            if (std::holds_alternative<ArcEntity>(*loadedEntity)) {
+                const auto& loadedArc = std::get<ArcEntity>(*loadedEntity).arc;
+                foundArc = geo::nearly_equal(loadedArc.radius, 4.0) &&
+                           geo::nearly_equal(loadedArc.end_angle, std::numbers::pi / 2.0, 1e-8);
+            }
+        }
+        expect(foundText, "dxf roundtrip preserves text");
+        expect(foundArc, "dxf roundtrip preserves arc angles");
+    }
+
+    const auto dxfUnsupported = dxf::import_ascii(
+        "0\nSECTION\n2\nENTITIES\n"
+        "0\nSPLINE\n8\n0\n"
+        "0\nENDSEC\n0\nEOF\n");
+    expect(dxfUnsupported.has_value() &&
+           dxfUnsupported->imported == 0 &&
+           dxfUnsupported->skipped == 1,
+           "dxf import skips unsupported entity");
+
+    expect(!dxf::import_ascii("0\nSECTION\n2\nENTITIES\n0\nLINE\n10\n1\n").has_value(),
+           "dxf import rejects truncated pair stream");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
