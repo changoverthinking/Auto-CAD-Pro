@@ -1,5 +1,6 @@
 #include "acp/annotation.hpp"
 #include "acp/block.hpp"
+#include "acp/bounds.hpp"
 #include "acp/document.hpp"
 #include "acp/edit2d.hpp"
 #include "acp/dxf.hpp"
@@ -716,6 +717,74 @@ int main() {
 
     expect(!dxf::import_ascii("0\nSECTION\n2\nENTITIES\n0\nLINE\n10\n1\n").has_value(),
            "dxf import rejects truncated pair stream");
+
+
+    const auto circleBounds = bounds::entity_bounds(
+        Entity{CircleEntity{{{5, 6}, 2.0}}});
+    expect(circleBounds.has_value() &&
+           geo::nearly_equal(circleBounds->min, {3, 4}) &&
+           geo::nearly_equal(circleBounds->max, {7, 8}),
+           "circle bounds exact");
+
+    const auto arcBounds = bounds::entity_bounds(
+        Entity{ArcEntity{{{0, 0}, 10.0, 0.0, std::numbers::pi, true}}});
+    expect(arcBounds.has_value() &&
+           geo::nearly_equal(arcBounds->min, {-10, 0}, 1e-8) &&
+           geo::nearly_equal(arcBounds->max, {10, 10}, 1e-8),
+           "arc bounds include quadrants");
+
+    const auto rotatedTextBounds = bounds::entity_bounds(
+        Entity{TextEntity{{0, 0}, "AB", 5.0, std::numbers::pi / 2.0}});
+    expect(rotatedTextBounds.has_value() &&
+           geo::nearly_equal(rotatedTextBounds->min.x, -5.0, 1e-8) &&
+           geo::nearly_equal(rotatedTextBounds->max.x, 0.0, 1e-8) &&
+           rotatedTextBounds->max.y > 0.0,
+           "rotated text bounds");
+
+    BlockLibrary boundsBlocks;
+    const BlockId boundsBlockId = boundsBlocks.create(
+        "BoundsBlock",
+        {0, 0},
+        std::vector<BlockPrimitive>{
+            LineEntity{{{0, 0}, {10, 0}}},
+            CircleEntity{{{5, 5}, 2}}
+        });
+    const auto blockBounds = bounds::entity_bounds(
+        Entity{BlockReferenceEntity{
+            boundsBlockId, {100, 50}, std::numbers::pi / 2.0, 2.0}},
+        &boundsBlocks);
+    expect(blockBounds.has_value() &&
+           geo::nearly_equal(blockBounds->min, {86, 50}, 1e-8) &&
+           geo::nearly_equal(blockBounds->max, {100, 70}, 1e-8),
+           "transformed block bounds");
+
+    Document boundsDoc;
+    const EntityId visibleBoundsId = boundsDoc.insert(
+        LineEntity{{{-5, -2}, {15, 8}}});
+    const EntityId hiddenBoundsId = boundsDoc.insert(
+        CircleEntity{{{1000, 1000}, 100}});
+    boundsDoc.properties(hiddenBoundsId)->visible = false;
+    const auto drawingBounds = bounds::drawing_bounds(boundsDoc);
+    expect(drawingBounds.has_value() &&
+           geo::nearly_equal(drawingBounds->min, {-5, -2}) &&
+           geo::nearly_equal(drawingBounds->max, {15, 8}) &&
+           boundsDoc.find(visibleBoundsId) != nullptr,
+           "drawing bounds ignore hidden entities");
+
+    const auto fittedView = bounds::fit_to_aspect(*drawingBounds, 16.0 / 9.0, 0.10);
+    expect(fittedView.has_value() &&
+           geo::nearly_equal(fittedView->center, {5, 3}) &&
+           geo::nearly_equal(
+               fittedView->world_width / fittedView->world_height,
+               16.0 / 9.0,
+               1e-8) &&
+           fittedView->world_width >= drawingBounds->width() &&
+           fittedView->world_height >= drawingBounds->height(),
+           "fit bounds preserves viewport aspect and margin");
+
+    bounds::Bounds2 invalidBounds;
+    expect(!bounds::fit_to_aspect(invalidBounds, 1.0).has_value(),
+           "reject invalid viewport bounds");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
