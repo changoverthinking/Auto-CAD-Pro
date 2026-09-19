@@ -1,5 +1,6 @@
 #pragma once
 
+#include "acp/annotation.hpp"
 #include "acp/block_types.hpp"
 #include "acp/geometry2d.hpp"
 
@@ -30,7 +31,9 @@ using Entity = std::variant<
     CircleEntity,
     ArcEntity,
     PolylineEntity,
-    BlockReferenceEntity>;
+    BlockReferenceEntity,
+    TextEntity,
+    LinearDimensionEntity>;
 
 struct Layer {
     LayerId id{};

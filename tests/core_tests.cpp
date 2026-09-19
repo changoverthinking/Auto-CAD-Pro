@@ -1,3 +1,4 @@
+#include "acp/annotation.hpp"
 #include "acp/block.hpp"
 #include "acp/document.hpp"
 #include "acp/edit2d.hpp"
@@ -448,6 +449,59 @@ int main() {
     const auto& mirroredBlockRef = std::get<BlockReferenceEntity>(mirroredBlock);
     expect(geo::nearly_equal(mirroredBlockRef.insertion_point, {-5, 2}, 1e-8),
            "mirror block insertion point");
+
+
+    const TextEntity note{{10, 20}, "ROOM", 5.0, 0.0};
+    expect(annotation::valid_text(note), "valid text entity");
+    expect(geo::nearly_equal(annotation::estimated_text_width(note), 12.0),
+           "estimated text width");
+    const auto noteBaseline = annotation::text_baseline(note);
+    expect(geo::nearly_equal(noteBaseline.a, {10, 20}) &&
+           geo::nearly_equal(noteBaseline.b, {22, 20}),
+           "text baseline geometry");
+
+    const LinearDimensionEntity dim{{0, 0}, {10, 0}, {0, 5}, std::nullopt};
+    expect(annotation::valid_linear_dimension(dim), "valid linear dimension");
+    expect(geo::nearly_equal(annotation::measurement(dim), 10.0),
+           "linear dimension measurement");
+    const auto dimLine = annotation::dimension_line(dim);
+    expect(geo::nearly_equal(dimLine.a, {0, 5}) &&
+           geo::nearly_equal(dimLine.b, {10, 5}),
+           "linear dimension line placement");
+
+    Document annotationDoc;
+    const EntityId textId = annotationDoc.insert(note);
+    const EntityId dimId = annotationDoc.insert(dim);
+
+    const auto textHit = selection::hit_test(annotationDoc, {16, 20.2}, 0.5);
+    expect(textHit.has_value() && textHit->id == textId,
+           "select text baseline");
+
+    const auto dimHit = selection::hit_test(annotationDoc, {6, 5.2}, 0.5);
+    expect(dimHit.has_value() && dimHit->id == dimId,
+           "select dimension line");
+
+    Entity textTransform = note;
+    transform::translate(textTransform, {5, -5});
+    transform::rotate(textTransform, {0, 0}, std::numbers::pi / 2.0);
+    const auto& transformedText = std::get<TextEntity>(textTransform);
+    expect(geo::nearly_equal(transformedText.position, {-15, 15}, 1e-8) &&
+           geo::nearly_equal(transformedText.rotation, std::numbers::pi / 2.0, 1e-8),
+           "transform text entity");
+
+    expect(transform::scale_uniform(textTransform, {0, 0}, 2.0),
+           "scale text entity");
+    const auto& scaledText = std::get<TextEntity>(textTransform);
+    expect(geo::nearly_equal(scaledText.height, 10.0),
+           "scale text height");
+
+    Entity dimensionTransform = dim;
+    transform::translate(dimensionTransform, {2, 3});
+    const auto& movedDim = std::get<LinearDimensionEntity>(dimensionTransform);
+    expect(geo::nearly_equal(movedDim.first, {2, 3}) &&
+           geo::nearly_equal(movedDim.second, {12, 3}) &&
+           geo::nearly_equal(movedDim.line_point, {2, 8}),
+           "translate dimension entity");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
