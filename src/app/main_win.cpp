@@ -11,6 +11,7 @@
 #include "acp/edit2d.hpp"
 #include "acp/persistence.hpp"
 #include "acp/selection.hpp"
+#include "acp/snap.hpp"
 #include "acp/transform.hpp"
 
 #include <algorithm>
@@ -52,7 +53,8 @@ enum class Tool {
     Scale,
     Mirror,
     Dimension,
-    Hatch
+    Hatch,
+    Text
 };
 
 struct AppState {
@@ -73,6 +75,9 @@ struct AppState {
     bool panning{false};
     POINT last_mouse{};
     POINT cursor{};
+    bool snap_enabled{true};
+    std::optional<acp::snap::Candidate> snap_candidate;
+    std::string text_buffer;
 };
 
 AppState g_app;
@@ -93,6 +98,7 @@ constexpr int kMenuToggleLayerVisible = 1010;
 constexpr int kMenuToggleLayerLock = 1011;
 constexpr int kMenuToggleEntityVisible = 1012;
 constexpr int kMenuCycleEntityWeight = 1013;
+constexpr int kMenuToggleSnap = 1014;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -108,6 +114,7 @@ constexpr int kToolScale = 2012;
 constexpr int kToolMirror = 2013;
 constexpr int kToolDimension = 2014;
 constexpr int kToolHatch = 2015;
+constexpr int kToolText = 2016;
 
 const wchar_t* tool_name(Tool tool) {
     switch (tool) {
@@ -126,6 +133,7 @@ const wchar_t* tool_name(Tool tool) {
         case Tool::Mirror: return L"Mirror";
         case Tool::Dimension: return L"Dimension";
         case Tool::Hatch: return L"Hatch";
+        case Tool::Text: return L"Text";
     }
     return L"Select";
 }
@@ -164,6 +172,7 @@ void set_tool(HWND hwnd, Tool tool) {
     g_app.has_first_point = false;
     g_app.has_second_point = false;
     g_app.auxiliary_entity.reset();
+    g_app.text_buffer.clear();
     if (tool != Tool::Polyline) {
         g_app.polyline_points.clear();
     }
@@ -188,6 +197,152 @@ void reset_interaction_state() {
     g_app.polyline_points.clear();
     g_app.has_first_point = false;
     g_app.has_second_point = false;
+    g_app.snap_candidate.reset();
+    g_app.text_buffer.clear();
+}
+
+
+int snap_priority(acp::snap::Kind kind) {
+    switch (kind) {
+        case acp::snap::Kind::Endpoint:
+        case acp::snap::Kind::Intersection: return 0;
+        case acp::snap::Kind::Midpoint:
+        case acp::snap::Kind::Center: return 1;
+        case acp::snap::Kind::Nearest: return 10;
+    }
+    return 100;
+}
+
+void consider_snap(
+    std::optional<acp::snap::Candidate>& best,
+    const std::optional<acp::snap::Candidate>& candidate) {
+
+    if (!candidate.has_value()) {
+        return;
+    }
+    if (!best.has_value() ||
+        snap_priority(candidate->kind) < snap_priority(best->kind) ||
+        (snap_priority(candidate->kind) == snap_priority(best->kind) &&
+         candidate->distance_to_cursor < best->distance_to_cursor)) {
+        best = candidate;
+    }
+}
+
+std::vector<acp::geo::Segment> snap_segments_for_entity(const acp::Entity& entity) {
+    std::vector<acp::geo::Segment> segments;
+    std::visit([&](const auto& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, LineEntity>) {
+            segments.push_back(value.segment);
+        } else if constexpr (std::is_same_v<T, PolylineEntity>) {
+            if (value.points.size() < 2) return;
+            for (std::size_t i = 1; i < value.points.size(); ++i) {
+                segments.push_back({value.points[i - 1], value.points[i]});
+            }
+            if (value.closed && value.points.size() > 2) {
+                segments.push_back({value.points.back(), value.points.front()});
+            }
+        }
+    }, entity);
+    return segments;
+}
+
+std::optional<acp::snap::Candidate> best_document_snap(
+    Vec2 cursor,
+    double aperture) {
+
+    if (!g_app.snap_enabled) {
+        return std::nullopt;
+    }
+
+    std::optional<acp::snap::Candidate> best;
+    std::vector<acp::geo::Segment> all_segments;
+
+    for (const acp::EntityId id : g_app.document.ids()) {
+        if (!g_app.document.entity_visible(id)) {
+            continue;
+        }
+        const acp::Entity* entity = g_app.document.find(id);
+        if (entity == nullptr) {
+            continue;
+        }
+
+        std::visit([&](const auto& value) {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, LineEntity>) {
+                consider_snap(best, acp::snap::best_for_segment(
+                    value.segment, cursor, aperture, true));
+            } else if constexpr (std::is_same_v<T, CircleEntity>) {
+                consider_snap(best, acp::snap::best_for_circle(
+                    value.circle, cursor, aperture));
+            } else if constexpr (std::is_same_v<T, ArcEntity>) {
+                consider_snap(best, acp::snap::best_for_arc(
+                    value.arc, cursor, aperture, true));
+            } else if constexpr (std::is_same_v<T, PolylineEntity>) {
+                const auto segments = snap_segments_for_entity(*entity);
+                for (const auto& segment : segments) {
+                    consider_snap(best, acp::snap::best_for_segment(
+                        segment, cursor, aperture, true));
+                }
+            }
+        }, *entity);
+
+        const auto segments = snap_segments_for_entity(*entity);
+        all_segments.insert(all_segments.end(), segments.begin(), segments.end());
+    }
+
+    for (std::size_t i = 0; i < all_segments.size(); ++i) {
+        for (std::size_t j = i + 1; j < all_segments.size(); ++j) {
+            consider_snap(best, acp::snap::intersection_for_segments(
+                all_segments[i], all_segments[j], cursor, aperture));
+        }
+    }
+
+    return best;
+}
+
+Vec2 resolved_input_point(HWND hwnd, POINT point) {
+    const Vec2 raw = screen_to_world(hwnd, point);
+    g_app.snap_candidate = best_document_snap(
+        raw, 10.0 / std::max(g_app.zoom, 0.02));
+    return g_app.snap_candidate.has_value()
+        ? g_app.snap_candidate->point
+        : raw;
+}
+
+const wchar_t* snap_kind_name(acp::snap::Kind kind) {
+    switch (kind) {
+        case acp::snap::Kind::Endpoint: return L"END";
+        case acp::snap::Kind::Intersection: return L"INT";
+        case acp::snap::Kind::Midpoint: return L"MID";
+        case acp::snap::Kind::Center: return L"CEN";
+        case acp::snap::Kind::Nearest: return L"NEA";
+    }
+    return L"";
+}
+
+void draw_snap_marker(HWND hwnd, HDC dc) {
+    if (!g_app.snap_candidate.has_value()) {
+        return;
+    }
+
+    const POINT p = world_to_screen(hwnd, g_app.snap_candidate->point);
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(255, 214, 70));
+    HGDIOBJ old_pen = SelectObject(dc, pen);
+    HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+
+    Rectangle(dc, p.x - 5, p.y - 5, p.x + 6, p.y + 6);
+
+    const wchar_t* label = snap_kind_name(g_app.snap_candidate->kind);
+    const int old_mode = SetBkMode(dc, TRANSPARENT);
+    const COLORREF old_color = SetTextColor(dc, RGB(255, 214, 70));
+    TextOutW(dc, p.x + 8, p.y - 16, label, static_cast<int>(wcslen(label)));
+    SetTextColor(dc, old_color);
+    SetBkMode(dc, old_mode);
+
+    SelectObject(dc, old_brush);
+    SelectObject(dc, old_pen);
+    DeleteObject(pen);
 }
 
 void draw_grid(HWND hwnd, HDC dc, const RECT& rc) {
@@ -516,7 +671,19 @@ void draw_preview(HWND hwnd, HDC dc) {
     const POINT first = world_to_screen(hwnd, g_app.first_point);
     const POINT second = world_to_screen(hwnd, current);
 
-    if (g_app.tool == Tool::Line ||
+    if (g_app.tool == Tool::Text) {
+        const POINT p = world_to_screen(hwnd, g_app.first_point);
+        std::wstring preview;
+        preview.reserve(g_app.text_buffer.size() + 1);
+        for (char ch : g_app.text_buffer) {
+            preview.push_back(static_cast<unsigned char>(ch));
+        }
+        preview.push_back(L'_');
+        const int old_mode = SetBkMode(dc, TRANSPARENT);
+        TextOutW(dc, p.x, p.y - 16, preview.c_str(),
+                 static_cast<int>(preview.size()));
+        SetBkMode(dc, old_mode);
+    } else     if (g_app.tool == Tool::Line ||
         g_app.tool == Tool::Move ||
         g_app.tool == Tool::Copy ||
         g_app.tool == Tool::Rotate ||
@@ -569,7 +736,8 @@ void draw_toolbar(HDC dc, const RECT& client) {
         {{190, 43, 255, 73}, L"Scale", Tool::Scale},
         {{262, 43, 337, 73}, L"Mirror", Tool::Mirror},
         {{344, 43, 439, 73}, L"Dimension", Tool::Dimension},
-        {{446, 43, 511, 73}, L"Hatch", Tool::Hatch}
+        {{446, 43, 511, 73}, L"Hatch", Tool::Hatch},
+        {{518, 43, 583, 73}, L"Text", Tool::Text}
     };
 
     for (const auto& button : buttons) {
@@ -638,7 +806,8 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
               L"Click layer: activate\nV: visibility   L: lock\n"
               L"Layer menu: create/assign\n\n"
               L"Selected entity properties appear\nin the status bar.\n"
-              L"Entity menu: visibility/weight.",
+              L"Entity menu: visibility/weight.\n"
+              L"F3 toggles Object Snap.",
               -1, &hint, DT_LEFT | DT_TOP | DT_WORDBREAK);
 
     (void)hwnd;
@@ -731,17 +900,18 @@ void draw_status(HWND hwnd, HDC dc, const RECT& client) {
     const Vec2 cursor_world = screen_to_world(hwnd, g_app.cursor);
     wchar_t buffer[256]{};
     const acp::Layer* active_layer = g_app.document.layer(g_app.active_layer);
+    const wchar_t* snap_state = g_app.snap_enabled ? L"ON" : L"OFF";
     const wchar_t* layer_state =
         active_layer == nullptr ? L"MISSING" :
         active_layer->locked ? L"LOCKED" :
         !active_layer->visible ? L"HIDDEN" :
         L"ACTIVE";
-    swprintf_s(buffer, L"Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu    Selected: %llu    Layer: %u (%s)    Undo: %zu",
+    swprintf_s(buffer, L"Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu    Selected: %llu    Layer: %u (%s)    SNAP: %s    Undo: %zu",
                tool_name(g_app.tool), cursor_world.x, cursor_world.y,
                g_app.zoom * 100.0, g_app.document.size(),
                static_cast<unsigned long long>(g_app.selected.value_or(0)),
                static_cast<unsigned>(g_app.active_layer), layer_state,
-               g_app.history.undo_size());
+               snap_state, g_app.history.undo_size());
 
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, RGB(190, 195, 205));
@@ -926,6 +1096,7 @@ void handle_left_click(HWND hwnd, POINT point) {
             else if (point.x >= 262 && point.x <= 337) set_tool(hwnd, Tool::Mirror);
             else if (point.x >= 344 && point.x <= 439) set_tool(hwnd, Tool::Dimension);
             else if (point.x >= 446 && point.x <= 511) set_tool(hwnd, Tool::Hatch);
+            else if (point.x >= 518 && point.x <= 583) set_tool(hwnd, Tool::Text);
             return;
         }
         if (point.x >= 190 && point.x <= 265) set_tool(hwnd, Tool::Select);
@@ -947,13 +1118,14 @@ void handle_left_click(HWND hwnd, POINT point) {
         return;
     }
 
-    const Vec2 world = screen_to_world(hwnd, point);
+    const Vec2 world = resolved_input_point(hwnd, point);
 
     if ((g_app.tool == Tool::Line ||
          g_app.tool == Tool::Circle ||
          g_app.tool == Tool::Polyline ||
          g_app.tool == Tool::Arc ||
-         g_app.tool == Tool::Dimension) &&
+         g_app.tool == Tool::Dimension ||
+         g_app.tool == Tool::Text) &&
         !active_layer_writable()) {
         return;
     }
@@ -965,6 +1137,17 @@ void handle_left_click(HWND hwnd, POINT point) {
         g_app.selected = hit.has_value()
             ? std::optional<acp::EntityId>{hit->id}
             : std::nullopt;
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
+
+    if (g_app.tool == Tool::Text) {
+        if (!g_app.has_first_point) {
+            g_app.first_point = world;
+            g_app.has_first_point = true;
+            g_app.text_buffer.clear();
+        }
         InvalidateRect(hwnd, nullptr, FALSE);
         return;
     }
@@ -1379,6 +1562,11 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                         }
                     }
                     return 0;
+                case kMenuToggleSnap:
+                    g_app.snap_enabled = !g_app.snap_enabled;
+                    g_app.snap_candidate.reset();
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
                 case kMenuCycleEntityWeight:
                     if (selected_editable()) {
                         if (const acp::EntityProperties* props =
@@ -1429,6 +1617,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 case kToolMirror: set_tool(hwnd, Tool::Mirror); return 0;
                 case kToolDimension: set_tool(hwnd, Tool::Dimension); return 0;
                 case kToolHatch: set_tool(hwnd, Tool::Hatch); return 0;
+                case kToolText: set_tool(hwnd, Tool::Text); return 0;
                 default: break;
             }
             break;
@@ -1469,6 +1658,26 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 g_app.polyline_points.clear();
                 g_app.auxiliary_entity.reset();
                 set_tool(hwnd, Tool::Select);
+                return 0;
+            }
+            if (w_param == VK_RETURN && g_app.tool == Tool::Text) {
+                if (g_app.has_first_point &&
+                    !g_app.text_buffer.empty() &&
+                    active_layer_writable()) {
+                    auto command = std::make_unique<acp::AddEntityCommand>(
+                        acp::TextEntity{
+                            g_app.first_point, g_app.text_buffer, 2.5, 0.0});
+                    auto* command_ptr = command.get();
+                    if (g_app.history.apply(
+                            g_app.document, std::move(command))) {
+                        g_app.document.set_entity_layer(
+                            command_ptr->id(), g_app.active_layer);
+                        g_app.selected = command_ptr->id();
+                    }
+                }
+                g_app.text_buffer.clear();
+                g_app.has_first_point = false;
+                InvalidateRect(hwnd, nullptr, FALSE);
                 return 0;
             }
             if (w_param == VK_RETURN && g_app.tool == Tool::Polyline) {
@@ -1546,6 +1755,31 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 set_tool(hwnd, Tool::Hatch);
                 return 0;
             }
+            if (w_param == 'X') {
+                set_tool(hwnd, Tool::Text);
+                return 0;
+            }
+            if (w_param == VK_F3) {
+                g_app.snap_enabled = !g_app.snap_enabled;
+                g_app.snap_candidate.reset();
+                InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+            break;
+
+        case WM_CHAR:
+            if (g_app.tool == Tool::Text && g_app.has_first_point) {
+                if (w_param == VK_BACK) {
+                    if (!g_app.text_buffer.empty()) {
+                        g_app.text_buffer.pop_back();
+                    }
+                } else if (w_param >= 32 && w_param <= 126) {
+                    g_app.text_buffer.push_back(
+                        static_cast<char>(w_param));
+                }
+                InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
             break;
 
         case WM_LBUTTONDOWN: {
@@ -1568,6 +1802,11 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
         case WM_MOUSEMOVE: {
             const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
             g_app.cursor = p;
+            if (!g_app.panning) {
+                const Vec2 raw = screen_to_world(hwnd, p);
+                g_app.snap_candidate = best_document_snap(
+                    raw, 10.0 / std::max(g_app.zoom, 0.02));
+            }
             if (g_app.panning) {
                 const LONG dx = p.x - g_app.last_mouse.x;
                 const LONG dy = p.y - g_app.last_mouse.y;
@@ -1608,6 +1847,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             draw_document(hwnd, memory);
             draw_selection_overlay(hwnd, memory);
             draw_preview(hwnd, memory);
+            draw_snap_marker(hwnd, memory);
             draw_toolbar(memory, client);
             draw_layer_panel(hwnd, memory, client);
             draw_status(hwnd, memory, client);
@@ -1665,9 +1905,11 @@ HMENU create_app_menu() {
     AppendMenuW(draw, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(draw, MF_STRING, kToolDimension, L"&Dimension\tD");
     AppendMenuW(draw, MF_STRING, kToolHatch, L"&Hatch\tH");
+    AppendMenuW(draw, MF_STRING, kToolText, L"Te&xt\tX");
 
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"&File");
     AppendMenuW(view, MF_STRING, kMenuZoomExtents, L"Zoom &Extents");
+    AppendMenuW(view, MF_STRING, kMenuToggleSnap, L"Toggle Object &Snap\tF3");
     AppendMenuW(layer, MF_STRING, kMenuNewLayer, L"&New Layer");
     AppendMenuW(layer, MF_STRING, kMenuAssignLayer, L"&Assign Selected to Active");
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerVisible, L"Toggle &Visibility");

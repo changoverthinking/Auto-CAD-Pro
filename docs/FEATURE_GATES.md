@@ -38,11 +38,11 @@ A feature may be labeled production only when all of the following are true:
 | DXF ASCII import/export subset | verified | controlled 2D entity round-trip tests |
 | drawing bounds/viewport fit | verified | bounds/aspect tests |
 | page setup/print scale model | verified | A-series page and fixed-scale tests |
-| Windows desktop GUI | prototype | canvas/grid, zoom/pan, Line/Circle/Polyline/Arc, selection/grips, Move/Copy/Rotate/Scale/Mirror, Trim/Extend/Offset, Dimension/Hatch creation, layers/properties panel, Delete, Undo/Redo, project/DXF workflow, Text/Dimension/Hatch/Block rendering |
+| Windows desktop GUI | prototype | canvas/grid, zoom/pan, object snap, Line/Circle/Polyline/Arc/Text, selection/grips, Move/Copy/Rotate/Scale/Mirror, Trim/Extend/Offset, Dimension/Hatch creation, layers/properties panel, Delete, Undo/Redo, project/DXF workflow, Text/Dimension/Hatch/Block rendering |
 | Windows executable artifact | prototype | CI uploads AutoCADPro-Windows-x64 after push build/test using Node 24-native actions |
 | constraints | planned | FreeCAD Sketcher upstream audit required |
 | SVG/PDF export | planned | export pipeline not yet implemented |
-| full GUI editing workflow | prototype | selection/transforms/edit2d/history/file workflow, layers panel and core entity rendering active; text creation, richer annotation styling and richer properties editing remain |
+| full GUI editing workflow | prototype | selection/transforms/edit2d/history/file workflow, object snap, text creation, layers panel and core entity rendering active; richer annotation styling and richer properties editing remain |
 
 ## 2026-09-19 GUI audit fixes
 
@@ -55,3 +55,6 @@ A feature may be labeled production only when all of the following are true:
 - Upgrade checkout/upload CI actions to Node 24-native majors to remove runner deprecation warnings.
 
 - Property and layer mutations now participate in command history so Ctrl+Z/Ctrl+Y covers entity layer assignment, visibility, line-weight overrides, and layer visibility/lock toggles.
+
+- GUI Object Snap now resolves visible Line/Polyline/Circle/Arc geometry using the tested snap core, including segment intersections, and can be toggled with F3.
+- Text creation is reachable in the real GUI: choose Text, click insertion point, type ASCII text, press Enter to commit through History.
