@@ -67,3 +67,5 @@ A feature may be labeled production only when all of the following are true:
 - Unsaved-change protection tracks command mutations, layer creation, DXF import, Undo and Redo; New/Open/Import/Exit/WM_CLOSE now require explicit discard confirmation when dirty, while successful project Save clears the dirty flag.
 
 - Document-level Object Snap moved into acp_core with tests for intersections, hidden entities, centers and instantiated block geometry; intersection pairing is limited to segments already within the snap aperture to avoid global O(n²) mouse-move scans.
+
+- Project file workflow now remembers the current .acp path, separates Save from Save As, maps Ctrl+S/Ctrl+Shift+S/Ctrl+O/Ctrl+N correctly, and delays discard confirmation until a chosen Open/Import file has been successfully parsed.

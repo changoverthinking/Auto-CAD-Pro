@@ -80,6 +80,7 @@ struct AppState {
     std::optional<acp::snap::Candidate> snap_candidate;
     std::wstring text_buffer;
     bool dirty{false};
+    std::optional<std::filesystem::path> project_path;
 };
 
 AppState g_app;
@@ -102,6 +103,7 @@ constexpr int kMenuToggleEntityVisible = 1012;
 constexpr int kMenuCycleEntityWeight = 1013;
 constexpr int kMenuToggleSnap = 1014;
 constexpr int kMenuExportSvg = 1015;
+constexpr int kMenuSaveAs = 1016;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -965,9 +967,6 @@ void fit_drawing(HWND hwnd) {
 }
 
 void open_project(HWND hwnd) {
-    if (!confirm_discard_unsaved(hwnd)) {
-        return;
-    }
     const auto path = choose_file(
         hwnd, false,
         L"Auto CAD Pro Project (*.acp)\0*.acp\0All Files (*.*)\0*.*\0\0",
@@ -987,23 +986,30 @@ void open_project(HWND hwnd) {
         show_file_error(hwnd, L"The project file is invalid or unsupported.");
         return;
     }
+    if (!confirm_discard_unsaved(hwnd)) {
+        return;
+    }
 
     g_app.document = std::move(project->document);
     g_app.blocks = std::move(project->blocks);
     g_app.history = acp::History{};
     g_app.active_layer = acp::kDefaultLayerId;
     g_app.dirty = false;
+    g_app.project_path = *path;
     reset_interaction_state();
     fit_drawing(hwnd);
 }
 
-void save_project(HWND hwnd) {
-    const auto path = choose_file(
-        hwnd, true,
-        L"Auto CAD Pro Project (*.acp)\0*.acp\0All Files (*.*)\0*.*\0\0",
-        L"acp");
-    if (!path.has_value()) {
-        return;
+void save_project(HWND hwnd, bool save_as = false) {
+    std::optional<std::filesystem::path> path = g_app.project_path;
+    if (save_as || !path.has_value()) {
+        path = choose_file(
+            hwnd, true,
+            L"Auto CAD Pro Project (*.acp)\0*.acp\0All Files (*.*)\0*.*\0\0",
+            L"acp");
+        if (!path.has_value()) {
+            return;
+        }
     }
 
     const std::string data =
@@ -1012,13 +1018,12 @@ void save_project(HWND hwnd) {
         show_file_error(hwnd, L"Could not save the project.");
         return;
     }
+
+    g_app.project_path = *path;
     g_app.dirty = false;
 }
 
 void import_dxf(HWND hwnd) {
-    if (!confirm_discard_unsaved(hwnd)) {
-        return;
-    }
     const auto path = choose_file(
         hwnd, false,
         L"DXF Drawing (*.dxf)\0*.dxf\0All Files (*.*)\0*.*\0\0",
@@ -1038,12 +1043,16 @@ void import_dxf(HWND hwnd) {
         show_file_error(hwnd, L"The DXF file is invalid or unsupported.");
         return;
     }
+    if (!confirm_discard_unsaved(hwnd)) {
+        return;
+    }
 
     g_app.document = std::move(result->document);
     g_app.blocks = acp::BlockLibrary{};
     g_app.history = acp::History{};
     g_app.active_layer = acp::kDefaultLayerId;
     g_app.dirty = true;
+    g_app.project_path.reset();
     reset_interaction_state();
     fit_drawing(hwnd);
 }
@@ -1505,6 +1514,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     g_app.blocks = acp::BlockLibrary{};
                     g_app.active_layer = acp::kDefaultLayerId;
                     g_app.dirty = false;
+                    g_app.project_path.reset();
                     reset_interaction_state();
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
@@ -1512,7 +1522,10 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     open_project(hwnd);
                     return 0;
                 case kMenuSave:
-                    save_project(hwnd);
+                    save_project(hwnd, false);
+                    return 0;
+                case kMenuSaveAs:
+                    save_project(hwnd, true);
                     return 0;
                 case kMenuImportDxf:
                     import_dxf(hwnd);
@@ -1611,8 +1624,24 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             }
             break;
 
-        case WM_KEYDOWN:
-            if ((GetKeyState(VK_CONTROL) & 0x8000) != 0 && w_param == 'Z') {
+        case WM_KEYDOWN: {
+            const bool control_down =
+                (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+            const bool shift_down =
+                (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+            if (control_down && w_param == 'S') {
+                save_project(hwnd, shift_down);
+                return 0;
+            }
+            if (control_down && w_param == 'O') {
+                open_project(hwnd);
+                return 0;
+            }
+            if (control_down && w_param == 'N') {
+                SendMessageW(hwnd, WM_COMMAND, kMenuNew, 0);
+                return 0;
+            }
+            if (control_down && w_param == 'Z') {
                 if (g_app.history.undo(g_app.document)) {
                     g_app.dirty = true;
                     if (g_app.selected.has_value() &&
@@ -1623,7 +1652,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 }
                 return 0;
             }
-            if ((GetKeyState(VK_CONTROL) & 0x8000) != 0 && w_param == 'Y') {
+            if (control_down && w_param == 'Y') {
                 if (g_app.history.redo(g_app.document)) {
                     g_app.dirty = true;
                     InvalidateRect(hwnd, nullptr, FALSE);
@@ -1759,6 +1788,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 return 0;
             }
             break;
+        }
 
         case WM_CHAR:
             if (g_app.tool == Tool::Text && g_app.has_first_point) {
@@ -1879,8 +1909,9 @@ HMENU create_app_menu() {
     HMENU entity = CreatePopupMenu();
 
     AppendMenuW(file, MF_STRING, kMenuNew, L"&New");
-    AppendMenuW(file, MF_STRING, kMenuOpen, L"&Open Project...");
-    AppendMenuW(file, MF_STRING, kMenuSave, L"&Save Project...");
+    AppendMenuW(file, MF_STRING, kMenuOpen, L"&Open Project...\tCtrl+O");
+    AppendMenuW(file, MF_STRING, kMenuSave, L"&Save Project\tCtrl+S");
+    AppendMenuW(file, MF_STRING, kMenuSaveAs, L"Save Project &As...\tCtrl+Shift+S");
     AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(file, MF_STRING, kMenuImportDxf, L"&Import DXF...");
     AppendMenuW(file, MF_STRING, kMenuExportDxf, L"&Export DXF...");
