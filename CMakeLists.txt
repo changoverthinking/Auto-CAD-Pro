@@ -18,6 +18,7 @@ add_library(acp_core
     src/core/block.cpp
     src/core/annotation.cpp
     src/core/hatch.cpp
+    src/core/persistence.cpp
 )
 target_include_directories(acp_core PUBLIC include)
 target_compile_features(acp_core PUBLIC cxx_std_20)

@@ -71,6 +71,7 @@ public:
     [[nodiscard]] double effective_line_weight(EntityId id) const noexcept;
 
     [[nodiscard]] LayerId create_layer(std::string name);
+    bool insert_layer_with_id(Layer layer);
     [[nodiscard]] const Layer* layer(LayerId id) const noexcept;
     [[nodiscard]] Layer* layer(LayerId id) noexcept;
     [[nodiscard]] std::vector<LayerId> layer_ids() const;
