@@ -52,6 +52,8 @@ struct Arc {
 [[nodiscard]] double arc_length(const Arc& arc) noexcept;
 [[nodiscard]] Vec2 arc_start_point(const Arc& arc) noexcept;
 [[nodiscard]] Vec2 arc_end_point(const Arc& arc) noexcept;
+[[nodiscard]] bool angle_on_arc(const Arc& arc, double angle, double eps = kEpsilon) noexcept;
+[[nodiscard]] Vec2 nearest_point(const Arc& arc, Vec2 p) noexcept;
 
 [[nodiscard]] std::vector<Vec2> rectangle_from_corners(Vec2 first, Vec2 opposite);
 

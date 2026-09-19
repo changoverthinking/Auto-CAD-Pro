@@ -12,20 +12,15 @@ namespace acp {
 
 using EntityId = std::uint64_t;
 
-struct LineEntity {
-    geo::Segment segment;
-};
-
-struct CircleEntity {
-    geo::Circle circle;
-};
-
+struct LineEntity { geo::Segment segment; };
+struct CircleEntity { geo::Circle circle; };
+struct ArcEntity { geo::Arc arc; };
 struct PolylineEntity {
     std::vector<geo::Vec2> points;
     bool closed{false};
 };
 
-using Entity = std::variant<LineEntity, CircleEntity, PolylineEntity>;
+using Entity = std::variant<LineEntity, CircleEntity, ArcEntity, PolylineEntity>;
 
 class Document {
 public:
