@@ -11,6 +11,7 @@
 #include "acp/persistence.hpp"
 #include "acp/snap.hpp"
 #include "acp/svg.hpp"
+#include "acp/pdf.hpp"
 #include "acp/selection.hpp"
 #include "acp/transform.hpp"
 
@@ -1044,6 +1045,26 @@ int main() {
            "svg rejects empty drawing");
     expect(!svg::export_document(svgDoc, &svgBlocks, -1.0).has_value(),
            "svg rejects invalid margin");
+
+
+    const auto pdfText = pdf::export_document(svgDoc, &svgBlocks);
+    expect(pdfText.has_value(), "pdf export succeeds");
+    if (pdfText.has_value()) {
+        expect(pdfText->starts_with("%PDF-1.4"),
+               "pdf header emitted");
+        expect(pdfText->find("/Type /Page") != std::string::npos &&
+               pdfText->find("xref") != std::string::npos &&
+               pdfText->find("startxref") != std::string::npos,
+               "pdf document structure emitted");
+        expect(pdfText->find(" m ") != std::string::npos &&
+               pdfText->find(" l ") != std::string::npos &&
+               pdfText->find("BT /F1") != std::string::npos,
+               "pdf emits vector geometry and text");
+        expect(pdfText->find("HIDDEN_SENTINEL") == std::string::npos,
+               "pdf excludes hidden entities");
+    }
+    expect(!pdf::export_document(Document{}).has_value(),
+           "pdf rejects empty drawing");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";

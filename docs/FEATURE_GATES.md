@@ -41,7 +41,7 @@ A feature may be labeled production only when all of the following are true:
 | Windows desktop GUI | prototype | canvas/grid, zoom/pan, object snap, Line/Circle/Polyline/Arc/Text, selection/grips, Move/Copy/Rotate/Scale/Mirror, Trim/Extend/Offset, Dimension/Hatch creation, layers/properties panel, Delete, Undo/Redo, project/DXF workflow, Text/Dimension/Hatch/Block rendering |
 | Windows executable artifact | prototype | CI uploads AutoCADPro-Windows-x64 after push build/test using Node 24-native actions |
 | constraints | planned | FreeCAD Sketcher upstream audit required |
-| SVG/PDF export | prototype | SVG core exporter + Windows GUI command implemented and regression-tested; PDF remains planned |
+| SVG/PDF export | prototype | SVG and vector PDF core exporters + Windows GUI commands implemented and regression-tested |
 | full GUI editing workflow | prototype | selection/transforms/edit2d/history/file workflow, object snap, text creation, layers panel and core entity rendering active; richer annotation styling and richer properties editing remain |
 
 ## 2026-09-19 GUI audit fixes
@@ -69,3 +69,5 @@ A feature may be labeled production only when all of the following are true:
 - Document-level Object Snap moved into acp_core with tests for intersections, hidden entities, centers and instantiated block geometry; intersection pairing is limited to segments already within the snap aperture to avoid global O(n²) mouse-move scans.
 
 - Project file workflow now remembers the current .acp path, separates Save from Save As, maps Ctrl+S/Ctrl+Shift+S/Ctrl+O/Ctrl+N correctly, and delays discard confirmation until a chosen Open/Import file has been successfully parsed.
+
+- Vector PDF export fits visible drawing geometry to the configured A4 landscape page model, preserves effective line weights, emits blocks/dimensions/hatches/text, and writes a self-contained PDF 1.4 file.

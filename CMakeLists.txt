@@ -30,6 +30,7 @@ add_library(acp_core
     src/core/bounds.cpp
     src/core/layout.cpp
     src/core/svg.cpp
+    src/core/pdf.cpp
 )
 target_include_directories(acp_core PUBLIC include)
 target_compile_features(acp_core PUBLIC cxx_std_20)

@@ -10,6 +10,7 @@
 #include "acp/dxf.hpp"
 #include "acp/edit2d.hpp"
 #include "acp/persistence.hpp"
+#include "acp/pdf.hpp"
 #include "acp/selection.hpp"
 #include "acp/snap.hpp"
 #include "acp/svg.hpp"
@@ -104,6 +105,7 @@ constexpr int kMenuCycleEntityWeight = 1013;
 constexpr int kMenuToggleSnap = 1014;
 constexpr int kMenuExportSvg = 1015;
 constexpr int kMenuSaveAs = 1016;
+constexpr int kMenuExportPdf = 1017;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -1079,6 +1081,21 @@ void export_svg(HWND hwnd) {
     }
 }
 
+void export_pdf(HWND hwnd) {
+    const auto path = choose_file(
+        hwnd, true,
+        L"PDF document (*.pdf)\0*.pdf\0All files (*.*)\0*.*\0\0",
+        L"pdf");
+    if (!path.has_value()) return;
+
+    const auto data = acp::pdf::export_document(
+        g_app.document, &g_app.blocks);
+    if (!data.has_value() || !write_text_file(*path, *data)) {
+        show_file_error(hwnd, L"Could not export PDF.");
+    }
+}
+
+
 void export_dxf(HWND hwnd) {
     const auto path = choose_file(
         hwnd, true,
@@ -1536,6 +1553,9 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 case kMenuExportSvg:
                     export_svg(hwnd);
                     return 0;
+                case kMenuExportPdf:
+                    export_pdf(hwnd);
+                    return 0;
                 case kMenuZoomExtents:
                     fit_drawing(hwnd);
                     return 0;
@@ -1916,6 +1936,7 @@ HMENU create_app_menu() {
     AppendMenuW(file, MF_STRING, kMenuImportDxf, L"&Import DXF...");
     AppendMenuW(file, MF_STRING, kMenuExportDxf, L"&Export DXF...");
     AppendMenuW(file, MF_STRING, kMenuExportSvg, L"Export &SVG...");
+    AppendMenuW(file, MF_STRING, kMenuExportPdf, L"Export &PDF...");
     AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(file, MF_STRING, kMenuExit, L"E&xit");
 
