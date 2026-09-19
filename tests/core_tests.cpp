@@ -1,3 +1,4 @@
+#include "acp/block.hpp"
 #include "acp/document.hpp"
 #include "acp/edit2d.hpp"
 #include "acp/geometry2d.hpp"
@@ -331,6 +332,41 @@ int main() {
     expect(!layerDoc.remove_layer(wallsLayer), "cannot remove layer in use");
     expect(layerDoc.remove_layer(dimsLayer), "remove unused layer");
     expect(!layerDoc.remove_layer(kDefaultLayerId), "cannot remove default layer");
+
+
+    BlockLibrary blocks;
+    std::vector<BlockPrimitive> doorGeometry{
+        LineEntity{{{0, 0}, {10, 0}}},
+        ArcEntity{{{0, 0}, 10.0, 0.0, std::numbers::pi / 2.0, true}}
+    };
+    const BlockId doorBlock = blocks.create("Door", {0, 0}, doorGeometry);
+    expect(doorBlock != 0 && blocks.find(doorBlock) != nullptr, "create block definition");
+    expect(blocks.create("Door", {0, 0}, doorGeometry) == 0, "reject duplicate block name");
+    expect(blocks.rename(doorBlock, "Door-900"), "rename block definition");
+
+    const auto placedDoor = blocks.instantiate(
+        BlockInstance{doorBlock, {100, 200}, std::numbers::pi / 2.0, 2.0});
+    expect(placedDoor.size() == 2, "instantiate block geometry");
+    const auto& placedDoorLine = std::get<LineEntity>(placedDoor[0]);
+    expect(geo::nearly_equal(placedDoorLine.segment.a, {100, 200}, 1e-8) &&
+           geo::nearly_equal(placedDoorLine.segment.b, {100, 220}, 1e-8),
+           "block instance transforms line");
+
+    const auto& placedDoorArc = std::get<ArcEntity>(placedDoor[1]);
+    expect(geo::nearly_equal(placedDoorArc.arc.center, {100, 200}, 1e-8) &&
+           geo::nearly_equal(placedDoorArc.arc.radius, 20.0) &&
+           geo::nearly_equal(placedDoorArc.arc.start_angle, std::numbers::pi / 2.0, 1e-8),
+           "block instance transforms arc");
+
+    const auto* sourceDoor = blocks.find(doorBlock);
+    expect(sourceDoor != nullptr &&
+           geo::nearly_equal(std::get<LineEntity>(sourceDoor->geometry[0]).segment.b, {10, 0}),
+           "block instancing preserves definition");
+
+    expect(blocks.instantiate(BlockInstance{doorBlock, {0, 0}, 0.0, 0.0}).empty(),
+           "reject invalid block scale");
+    expect(blocks.remove(doorBlock) && blocks.find(doorBlock) == nullptr,
+           "remove block definition");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
