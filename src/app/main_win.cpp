@@ -181,6 +181,15 @@ bool selected_editable() {
            !g_app.document.entity_locked(*g_app.selected);
 }
 
+void reset_interaction_state() {
+    g_app.tool = Tool::Select;
+    g_app.selected.reset();
+    g_app.auxiliary_entity.reset();
+    g_app.polyline_points.clear();
+    g_app.has_first_point = false;
+    g_app.has_second_point = false;
+}
+
 void draw_grid(HWND hwnd, HDC dc, const RECT& rc) {
     const double desired_pixels = 60.0;
     const double raw_step = desired_pixels / g_app.zoom;
@@ -843,8 +852,7 @@ void open_project(HWND hwnd) {
     g_app.blocks = std::move(project->blocks);
     g_app.history = acp::History{};
     g_app.active_layer = acp::kDefaultLayerId;
-    g_app.selected.reset();
-    g_app.has_first_point = false;
+    reset_interaction_state();
     fit_drawing(hwnd);
 }
 
@@ -889,8 +897,7 @@ void import_dxf(HWND hwnd) {
     g_app.blocks = acp::BlockLibrary{};
     g_app.history = acp::History{};
     g_app.active_layer = acp::kDefaultLayerId;
-    g_app.selected.reset();
-    g_app.has_first_point = false;
+    reset_interaction_state();
     fit_drawing(hwnd);
 }
 
@@ -1267,15 +1274,22 @@ void handle_left_click(HWND hwnd, POINT point) {
                     std::make_unique<acp::UpdateEntityCommand>(
                         *g_app.selected, replacement));
             } else if (g_app.tool == Tool::Copy) {
+                const acp::EntityProperties* source_properties_ptr =
+                    g_app.document.properties(*g_app.selected);
+                const std::optional<acp::EntityProperties> source_properties =
+                    source_properties_ptr != nullptr
+                        ? std::optional<acp::EntityProperties>{*source_properties_ptr}
+                        : std::nullopt;
                 const acp::Entity copy =
                     acp::transform::translated_copy(*source, world - g_app.first_point);
                 auto command = std::make_unique<acp::AddEntityCommand>(copy);
                 auto* command_ptr = command.get();
                 if (g_app.history.apply(g_app.document, std::move(command))) {
-                    const acp::EntityProperties* props =
-                        g_app.document.properties(*g_app.selected);
-                    if (props != nullptr) {
-                        g_app.document.set_entity_layer(command_ptr->id(), props->layer_id);
+                    if (source_properties.has_value()) {
+                        if (acp::EntityProperties* copied_properties =
+                                g_app.document.properties(command_ptr->id())) {
+                            *copied_properties = *source_properties;
+                        }
                     }
                     g_app.selected = command_ptr->id();
                 }
@@ -1315,11 +1329,8 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     g_app.document = Document{};
                     g_app.history = acp::History{};
                     g_app.blocks = acp::BlockLibrary{};
-                    g_app.selected.reset();
                     g_app.active_layer = acp::kDefaultLayerId;
-                    g_app.polyline_points.clear();
-                    g_app.has_first_point = false;
-                    g_app.has_second_point = false;
+                    reset_interaction_state();
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
                 case kMenuOpen:

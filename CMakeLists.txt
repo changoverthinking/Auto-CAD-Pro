@@ -5,6 +5,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(MSVC)
+    # Produce a self-contained Windows executable that does not depend on
+    # a separately installed Visual C++ runtime.
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 option(ACP_BUILD_TESTS "Build Auto CAD Pro tests" ON)
 option(ACP_BUILD_APP "Build Auto CAD Pro Windows desktop application" ON)
 
