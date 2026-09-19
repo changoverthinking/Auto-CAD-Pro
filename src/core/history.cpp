@@ -33,7 +33,7 @@ void AddEntityCommand::undo(Document& document) {
     if (const auto* props = document.properties(id_)) {
         properties_ = *props;
     }
-    document.erase(id_);
+    (void)document.erase(id_);
 }
 
 RemoveEntityCommand::RemoveEntityCommand(EntityId id)

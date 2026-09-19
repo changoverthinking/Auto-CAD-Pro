@@ -43,26 +43,22 @@ void write_primitive(std::ostream& out, const BlockPrimitive& primitive) {
         if constexpr (std::is_same_v<T, LineEntity>) {
             out << "P LINE "
                 << value.segment.a.x << ' ' << value.segment.a.y << ' '
-                << value.segment.b.x << ' ' << value.segment.b.y << '
-';
+                << value.segment.b.x << ' ' << value.segment.b.y << '\\n';
         } else if constexpr (std::is_same_v<T, CircleEntity>) {
             out << "P CIRCLE "
                 << value.circle.center.x << ' ' << value.circle.center.y << ' '
-                << value.circle.radius << '
-';
+                << value.circle.radius << '\\n';
         } else if constexpr (std::is_same_v<T, ArcEntity>) {
             out << "P ARC "
                 << value.arc.center.x << ' ' << value.arc.center.y << ' '
                 << value.arc.radius << ' '
                 << value.arc.start_angle << ' '
                 << value.arc.end_angle << ' '
-                << (value.arc.counter_clockwise ? 1 : 0) << '
-';
+                << (value.arc.counter_clockwise ? 1 : 0) << '\\n';
         } else if constexpr (std::is_same_v<T, PolylineEntity>) {
             out << "P POLY " << (value.closed ? 1 : 0) << ' ';
             write_points(out, value.points);
-            out << '
-';
+            out << '\\n';
         }
     }, primitive);
 }
@@ -257,8 +253,7 @@ bool read_entity_payload(std::istream& in, const BlockLibrary& blocks, Entity& e
 std::string serialize_project(const Document& document, const BlockLibrary& blocks) {
     std::ostringstream out;
     out << std::setprecision(17);
-    out << "ACP2D 1
-";
+    out << "ACP2D 1\\n";
 
     for (const LayerId id : document.layer_ids()) {
         const Layer* layer = document.layer(id);
@@ -266,8 +261,7 @@ std::string serialize_project(const Document& document, const BlockLibrary& bloc
         out << "L " << layer->id << ' ' << std::quoted(layer->name) << ' '
             << (layer->visible ? 1 : 0) << ' '
             << (layer->locked ? 1 : 0) << ' '
-            << layer->line_weight << '
-';
+            << layer->line_weight << '\\n';
     }
 
     for (const BlockId id : blocks.ids()) {
@@ -275,8 +269,7 @@ std::string serialize_project(const Document& document, const BlockLibrary& bloc
         if (block == nullptr) continue;
         out << "B " << block->id << ' ' << std::quoted(block->name) << ' '
             << block->base_point.x << ' ' << block->base_point.y << ' '
-            << block->geometry.size() << '
-';
+            << block->geometry.size() << '\\n';
         for (const auto& primitive : block->geometry) write_primitive(out, primitive);
     }
 
@@ -290,12 +283,10 @@ std::string serialize_project(const Document& document, const BlockLibrary& bloc
             << (properties->line_weight_override.has_value() ? 1 : 0) << ' '
             << properties->line_weight_override.value_or(0.0) << ' ';
         write_entity_payload(out, *entity);
-        out << '
-';
+        out << '\\n';
     }
 
-    out << "END
-";
+    out << "END\\n";
     return out.str();
 }
 
