@@ -1,14 +1,18 @@
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
+#include <windowsx.h>
 
 #include "acp/document.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cwchar>
 #include <numbers>
 #include <string>
 #include <variant>
+#include <type_traits>
 
 namespace {
 
