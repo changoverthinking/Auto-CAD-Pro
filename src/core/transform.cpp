@@ -49,6 +49,8 @@ void translate(Entity& entity, geo::Vec2 delta) noexcept {
             value.first = value.first + delta;
             value.second = value.second + delta;
             value.line_point = value.line_point + delta;
+        } else if constexpr (std::is_same_v<T, HatchEntity>) {
+            for (auto& point : value.boundary) point = point + delta;
         }
     }, entity);
 }
@@ -77,6 +79,9 @@ void rotate(Entity& entity, geo::Vec2 origin, double radians) noexcept {
             value.first = rotate_point(value.first, origin, radians);
             value.second = rotate_point(value.second, origin, radians);
             value.line_point = rotate_point(value.line_point, origin, radians);
+        } else if constexpr (std::is_same_v<T, HatchEntity>) {
+            for (auto& point : value.boundary) point = rotate_point(point, origin, radians);
+            value.angle += radians;
         }
     }, entity);
 }
@@ -107,6 +112,9 @@ bool scale_uniform(Entity& entity, geo::Vec2 origin, double factor) noexcept {
             value.first = scale_point(value.first, origin, factor);
             value.second = scale_point(value.second, origin, factor);
             value.line_point = scale_point(value.line_point, origin, factor);
+        } else if constexpr (std::is_same_v<T, HatchEntity>) {
+            for (auto& point : value.boundary) point = scale_point(point, origin, factor);
+            value.spacing *= factor;
         }
     }, entity);
 
@@ -149,6 +157,10 @@ bool mirror(Entity& entity, geo::Segment axis) noexcept {
             value.first = mirror_point(value.first, axis);
             value.second = mirror_point(value.second, axis);
             value.line_point = mirror_point(value.line_point, axis);
+        } else if constexpr (std::is_same_v<T, HatchEntity>) {
+            const double axis_angle = std::atan2(direction.y, direction.x);
+            for (auto& point : value.boundary) point = mirror_point(point, axis);
+            value.angle = 2.0 * axis_angle - value.angle;
         }
     }, entity);
 

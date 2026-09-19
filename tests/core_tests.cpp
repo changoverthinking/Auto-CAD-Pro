@@ -4,6 +4,7 @@
 #include "acp/edit2d.hpp"
 #include "acp/geometry2d.hpp"
 #include "acp/history.hpp"
+#include "acp/hatch.hpp"
 #include "acp/snap.hpp"
 #include "acp/selection.hpp"
 #include "acp/transform.hpp"
@@ -502,6 +503,45 @@ int main() {
            geo::nearly_equal(movedDim.second, {12, 3}) &&
            geo::nearly_equal(movedDim.line_point, {2, 8}),
            "translate dimension entity");
+
+
+    HatchEntity hatchEntity{
+        {{0, 0}, {10, 0}, {10, 5}, {0, 5}},
+        "ANSI31",
+        0.0,
+        1.0,
+        false
+    };
+    expect(hatch::valid(hatchEntity), "valid hatch entity");
+    expect(geo::nearly_equal(hatch::perimeter(hatchEntity), 30.0),
+           "hatch boundary perimeter");
+
+    Document hatchDoc;
+    const EntityId hatchId = hatchDoc.insert(hatchEntity);
+    const auto hatchHit = selection::hit_test(hatchDoc, {5, 0.2}, 0.5);
+    expect(hatchHit.has_value() && hatchHit->id == hatchId,
+           "select hatch boundary");
+
+    Entity hatchTransform = hatchEntity;
+    transform::translate(hatchTransform, {2, 3});
+    const auto& movedHatch = std::get<HatchEntity>(hatchTransform);
+    expect(geo::nearly_equal(movedHatch.boundary[0], {2, 3}) &&
+           geo::nearly_equal(movedHatch.boundary[2], {12, 8}),
+           "translate hatch");
+
+    transform::rotate(hatchTransform, {0, 0}, std::numbers::pi / 2.0);
+    const auto& rotatedHatch = std::get<HatchEntity>(hatchTransform);
+    expect(geo::nearly_equal(rotatedHatch.angle, std::numbers::pi / 2.0, 1e-8),
+           "rotate hatch pattern angle");
+
+    expect(transform::scale_uniform(hatchTransform, {0, 0}, 2.0),
+           "scale hatch");
+    const auto& scaledHatch = std::get<HatchEntity>(hatchTransform);
+    expect(geo::nearly_equal(scaledHatch.spacing, 2.0),
+           "scale hatch spacing");
+
+    HatchEntity invalidHatch{{{0, 0}, {1, 0}}, "ANSI31", 0.0, 1.0, false};
+    expect(!hatch::valid(invalidHatch), "reject hatch with open undersized boundary");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";

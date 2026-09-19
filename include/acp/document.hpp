@@ -3,6 +3,7 @@
 #include "acp/annotation.hpp"
 #include "acp/block_types.hpp"
 #include "acp/geometry2d.hpp"
+#include "acp/hatch.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -33,7 +34,8 @@ using Entity = std::variant<
     PolylineEntity,
     BlockReferenceEntity,
     TextEntity,
-    LinearDimensionEntity>;
+    LinearDimensionEntity,
+    HatchEntity>;
 
 struct Layer {
     LayerId id{};
