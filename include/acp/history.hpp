@@ -1,0 +1,57 @@
+#pragma once
+
+#include "acp/document.hpp"
+
+#include <memory>
+#include <vector>
+
+namespace acp {
+
+class Command {
+public:
+    virtual ~Command() = default;
+    virtual bool execute(Document& document) = 0;
+    virtual void undo(Document& document) = 0;
+};
+
+class AddEntityCommand final : public Command {
+public:
+    explicit AddEntityCommand(Entity entity);
+
+    bool execute(Document& document) override;
+    void undo(Document& document) override;
+    [[nodiscard]] EntityId id() const noexcept { return id_; }
+
+private:
+    Entity entity_;
+    EntityId id_{0};
+    bool executed_{false};
+};
+
+class DeleteEntityCommand final : public Command {
+public:
+    explicit DeleteEntityCommand(EntityId id);
+
+    bool execute(Document& document) override;
+    void undo(Document& document) override;
+
+private:
+    EntityId id_;
+    std::optional<Entity> backup_;
+};
+
+class History {
+public:
+    bool apply(Document& document, std::unique_ptr<Command> command);
+    bool undo(Document& document);
+    bool redo(Document& document);
+
+    [[nodiscard]] std::size_t undo_size() const noexcept { return undo_.size(); }
+    [[nodiscard]] std::size_t redo_size() const noexcept { return redo_.size(); }
+
+private:
+    std::vector<std::unique_ptr<Command>> undo_;
+    std::vector<std::unique_ptr<Command>> redo_;
+};
+
+} // namespace acp
