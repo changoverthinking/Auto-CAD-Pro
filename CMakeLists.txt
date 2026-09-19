@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ACP_BUILD_TESTS "Build Auto CAD Pro tests" ON)
+option(ACP_BUILD_APP "Build Auto CAD Pro Windows desktop app" ON)
 
 add_library(acp_core
     src/core/geometry2d.cpp
@@ -37,4 +38,15 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_core_tests tests/core_tests.cpp)
     target_link_libraries(acp_core_tests PRIVATE acp_core)
     add_test(NAME acp_core_tests COMMAND acp_core_tests)
+endif()
+
+if(WIN32 AND ACP_BUILD_APP)
+    add_executable(auto_cad_pro WIN32
+        src/app/main_win32.cpp
+    )
+    target_link_libraries(auto_cad_pro PRIVATE acp_core comdlg32)
+    target_compile_features(auto_cad_pro PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(auto_cad_pro PRIVATE /W4 /permissive- /EHsc)
+    endif()
 endif()
