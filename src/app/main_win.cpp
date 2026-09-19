@@ -653,9 +653,19 @@ bool handle_layer_panel_click(HWND hwnd, POINT point) {
         RECT row{panel_left + 8, y, client.right - 8, y + 28};
         if (PtInRect(&row, point)) {
             if (point.x >= row.right - 68 && point.x < row.right - 38) {
-                (void)g_app.document.set_layer_visible(id, !layer->visible);
+                acp::Layer replacement = *layer;
+                replacement.visible = !replacement.visible;
+                (void)g_app.history.apply(
+                    g_app.document,
+                    std::make_unique<acp::UpdateLayerCommand>(
+                        id, replacement));
             } else if (point.x >= row.right - 34) {
-                (void)g_app.document.set_layer_locked(id, !layer->locked);
+                acp::Layer replacement = *layer;
+                replacement.locked = !replacement.locked;
+                (void)g_app.history.apply(
+                    g_app.document,
+                    std::make_unique<acp::UpdateLayerCommand>(
+                        id, replacement));
             } else {
                 g_app.active_layer = id;
             }
@@ -685,8 +695,20 @@ void create_layer(HWND hwnd) {
 }
 
 void assign_selected_to_active_layer(HWND hwnd) {
-    if (selected_editable() && active_layer_writable()) {
-        (void)g_app.document.set_entity_layer(*g_app.selected, g_app.active_layer);
+    if (!selected_editable() || !active_layer_writable()) {
+        return;
+    }
+    const acp::EntityProperties* current =
+        g_app.document.properties(*g_app.selected);
+    if (current == nullptr) {
+        return;
+    }
+    acp::EntityProperties replacement = *current;
+    replacement.layer_id = g_app.active_layer;
+    if (g_app.history.apply(
+            g_app.document,
+            std::make_unique<acp::UpdateEntityPropertiesCommand>(
+                *g_app.selected, replacement))) {
         InvalidateRect(hwnd, nullptr, FALSE);
     }
 }
@@ -1323,23 +1345,32 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     return 0;
                 case kMenuToggleLayerVisible:
                     if (const acp::Layer* layer = g_app.document.layer(g_app.active_layer)) {
-                        (void)g_app.document.set_layer_visible(
-                            g_app.active_layer, !layer->visible);
+                        acp::Layer replacement = *layer;
+                        replacement.visible = !replacement.visible;
+                        (void)g_app.history.apply(
+                            g_app.document,
+                            std::make_unique<acp::UpdateLayerCommand>(
+                                g_app.active_layer, replacement));
                         InvalidateRect(hwnd, nullptr, FALSE);
                     }
                     return 0;
                 case kMenuToggleEntityVisible:
-                    if (g_app.selected.has_value()) {
-                        if (acp::EntityProperties* props =
+                    if (selected_editable()) {
+                        if (const acp::EntityProperties* props =
                                 g_app.document.properties(*g_app.selected)) {
-                            props->visible = !props->visible;
+                            acp::EntityProperties replacement = *props;
+                            replacement.visible = !replacement.visible;
+                            (void)g_app.history.apply(
+                                g_app.document,
+                                std::make_unique<acp::UpdateEntityPropertiesCommand>(
+                                    *g_app.selected, replacement));
                             InvalidateRect(hwnd, nullptr, FALSE);
                         }
                     }
                     return 0;
                 case kMenuCycleEntityWeight:
-                    if (g_app.selected.has_value()) {
-                        if (acp::EntityProperties* props =
+                    if (selected_editable()) {
+                        if (const acp::EntityProperties* props =
                                 g_app.document.properties(*g_app.selected)) {
                             const double current =
                                 props->line_weight_override.value_or(
@@ -1348,15 +1379,24 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                             if (current < 0.18) next = 0.25;
                             else if (current < 0.35) next = 0.50;
                             else if (current < 0.75) next = 1.00;
-                            props->line_weight_override = next;
+                            acp::EntityProperties replacement = *props;
+                            replacement.line_weight_override = next;
+                            (void)g_app.history.apply(
+                                g_app.document,
+                                std::make_unique<acp::UpdateEntityPropertiesCommand>(
+                                    *g_app.selected, replacement));
                             InvalidateRect(hwnd, nullptr, FALSE);
                         }
                     }
                     return 0;
                 case kMenuToggleLayerLock:
                     if (const acp::Layer* layer = g_app.document.layer(g_app.active_layer)) {
-                        (void)g_app.document.set_layer_locked(
-                            g_app.active_layer, !layer->locked);
+                        acp::Layer replacement = *layer;
+                        replacement.locked = !replacement.locked;
+                        (void)g_app.history.apply(
+                            g_app.document,
+                            std::make_unique<acp::UpdateLayerCommand>(
+                                g_app.active_layer, replacement));
                         InvalidateRect(hwnd, nullptr, FALSE);
                     }
                     return 0;

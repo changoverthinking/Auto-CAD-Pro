@@ -88,6 +88,58 @@ void UpdateEntityCommand::undo(Document& document) {
     }
 }
 
+UpdateEntityPropertiesCommand::UpdateEntityPropertiesCommand(
+    EntityId id,
+    EntityProperties replacement)
+    : id_(id), replacement_(std::move(replacement)) {}
+
+bool UpdateEntityPropertiesCommand::execute(Document& document) {
+    EntityProperties* existing = document.properties(id_);
+    if (existing == nullptr || document.layer(replacement_.layer_id) == nullptr) {
+        return false;
+    }
+
+    if (!original_.has_value()) {
+        original_ = *existing;
+    }
+    *existing = replacement_;
+    return true;
+}
+
+void UpdateEntityPropertiesCommand::undo(Document& document) {
+    if (!original_.has_value()) {
+        return;
+    }
+    if (EntityProperties* existing = document.properties(id_)) {
+        *existing = *original_;
+    }
+}
+
+UpdateLayerCommand::UpdateLayerCommand(LayerId id, Layer replacement)
+    : id_(id), replacement_(std::move(replacement)) {}
+
+bool UpdateLayerCommand::execute(Document& document) {
+    Layer* existing = document.layer(id_);
+    if (existing == nullptr || replacement_.id != id_) {
+        return false;
+    }
+
+    if (!original_.has_value()) {
+        original_ = *existing;
+    }
+    *existing = replacement_;
+    return true;
+}
+
+void UpdateLayerCommand::undo(Document& document) {
+    if (!original_.has_value()) {
+        return;
+    }
+    if (Layer* existing = document.layer(id_)) {
+        *existing = *original_;
+    }
+}
+
 bool History::apply(Document& document, std::unique_ptr<Command> command) {
     if (!command || !command->execute(document)) {
         return false;

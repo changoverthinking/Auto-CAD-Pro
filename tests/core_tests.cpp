@@ -859,6 +859,59 @@ int main() {
                "update entity redo reapplies geometry");
     }
 
+    Document propertyDoc;
+    const EntityId propertyId =
+        propertyDoc.insert(LineEntity{{{0, 0}, {5, 0}}});
+    const LayerId propertyLayer = propertyDoc.create_layer("PropertyLayer");
+    History propertyHistory;
+
+    EntityProperties propertyReplacement = *propertyDoc.properties(propertyId);
+    propertyReplacement.layer_id = propertyLayer;
+    propertyReplacement.visible = false;
+    propertyReplacement.line_weight_override = 0.50;
+    expect(propertyHistory.apply(
+               propertyDoc,
+               std::make_unique<UpdateEntityPropertiesCommand>(
+                   propertyId, propertyReplacement)),
+           "entity properties command apply");
+    expect(propertyDoc.properties(propertyId)->layer_id == propertyLayer &&
+           !propertyDoc.properties(propertyId)->visible &&
+           propertyDoc.properties(propertyId)->line_weight_override.has_value(),
+           "entity properties command changes properties");
+    expect(propertyHistory.undo(propertyDoc),
+           "entity properties command undo");
+    expect(propertyDoc.properties(propertyId)->layer_id == kDefaultLayerId &&
+           propertyDoc.properties(propertyId)->visible &&
+           !propertyDoc.properties(propertyId)->line_weight_override.has_value(),
+           "entity properties undo restores properties");
+    expect(propertyHistory.redo(propertyDoc),
+           "entity properties command redo");
+    expect(propertyDoc.properties(propertyId)->layer_id == propertyLayer &&
+           !propertyDoc.properties(propertyId)->visible,
+           "entity properties redo reapplies properties");
+
+    Layer layerReplacement = *propertyDoc.layer(propertyLayer);
+    layerReplacement.visible = false;
+    layerReplacement.locked = true;
+    layerReplacement.line_weight = 0.70;
+    expect(propertyHistory.apply(
+               propertyDoc,
+               std::make_unique<UpdateLayerCommand>(
+                   propertyLayer, layerReplacement)),
+           "layer update command apply");
+    expect(!propertyDoc.layer(propertyLayer)->visible &&
+           propertyDoc.layer(propertyLayer)->locked &&
+           geo::nearly_equal(propertyDoc.layer(propertyLayer)->line_weight, 0.70),
+           "layer update command changes layer");
+    expect(propertyHistory.undo(propertyDoc), "layer update command undo");
+    expect(propertyDoc.layer(propertyLayer)->visible &&
+           !propertyDoc.layer(propertyLayer)->locked,
+           "layer update undo restores layer");
+    expect(propertyHistory.redo(propertyDoc), "layer update command redo");
+    expect(!propertyDoc.layer(propertyLayer)->visible &&
+           propertyDoc.layer(propertyLayer)->locked,
+           "layer update redo reapplies layer");
+
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return EXIT_FAILURE;

@@ -53,3 +53,5 @@ A feature may be labeled production only when all of the following are true:
 - Render effective entity/layer line weight instead of one fixed pen width.
 - Add Shift+Enter closed-polyline completion so Hatch creation is reachable from the GUI.
 - Upgrade checkout/upload CI actions to Node 24-native majors to remove runner deprecation warnings.
+
+- Property and layer mutations now participate in command history so Ctrl+Z/Ctrl+Y covers entity layer assignment, visibility, line-weight overrides, and layer visibility/lock toggles.

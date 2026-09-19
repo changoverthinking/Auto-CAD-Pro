@@ -56,6 +56,32 @@ private:
     std::optional<Entity> original_;
 };
 
+class UpdateEntityPropertiesCommand final : public Command {
+public:
+    UpdateEntityPropertiesCommand(EntityId id, EntityProperties replacement);
+
+    bool execute(Document& document) override;
+    void undo(Document& document) override;
+
+private:
+    EntityId id_{};
+    EntityProperties replacement_;
+    std::optional<EntityProperties> original_;
+};
+
+class UpdateLayerCommand final : public Command {
+public:
+    UpdateLayerCommand(LayerId id, Layer replacement);
+
+    bool execute(Document& document) override;
+    void undo(Document& document) override;
+
+private:
+    LayerId id_{};
+    Layer replacement_;
+    std::optional<Layer> original_;
+};
+
 class History {
 public:
     bool apply(Document& document, std::unique_ptr<Command> command);
