@@ -24,6 +24,7 @@ public:
         std::string name,
         geo::Vec2 base_point,
         std::vector<BlockPrimitive> geometry);
+    bool insert_with_id(BlockDefinition definition);
 
     [[nodiscard]] const BlockDefinition* find(BlockId id) const noexcept;
     [[nodiscard]] BlockDefinition* find(BlockId id) noexcept;

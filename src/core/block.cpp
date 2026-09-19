@@ -65,6 +65,23 @@ BlockId BlockLibrary::create(
     return id;
 }
 
+bool BlockLibrary::insert_with_id(BlockDefinition definition) {
+    if (definition.id == 0 ||
+        definition.name.empty() ||
+        definition.geometry.empty() ||
+        blocks_.contains(definition.id) ||
+        name_exists(definition.name)) {
+        return false;
+    }
+
+    const BlockId id = definition.id;
+    blocks_.emplace(id, std::move(definition));
+    if (id >= next_id_) {
+        next_id_ = id + 1;
+    }
+    return true;
+}
+
 const BlockDefinition* BlockLibrary::find(BlockId id) const noexcept {
     const auto it = blocks_.find(id);
     return it == blocks_.end() ? nullptr : &it->second;

@@ -121,6 +121,24 @@ LayerId Document::create_layer(std::string name) {
     return id;
 }
 
+bool Document::insert_layer_with_id(Layer value) {
+    if (value.id == 0 ||
+        value.name.empty() ||
+        layers_.contains(value.id) ||
+        layer_name_exists(value.name) ||
+        !std::isfinite(value.line_weight) ||
+        value.line_weight < 0.0) {
+        return false;
+    }
+
+    const LayerId id = value.id;
+    layers_.emplace(id, std::move(value));
+    if (id >= next_layer_id_) {
+        next_layer_id_ = id + 1;
+    }
+    return true;
+}
+
 const Layer* Document::layer(LayerId id) const noexcept {
     const auto it = layers_.find(id);
     return it == layers_.end() ? nullptr : &it->second;

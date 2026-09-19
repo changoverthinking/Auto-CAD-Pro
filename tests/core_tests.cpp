@@ -5,6 +5,7 @@
 #include "acp/geometry2d.hpp"
 #include "acp/history.hpp"
 #include "acp/hatch.hpp"
+#include "acp/persistence.hpp"
 #include "acp/snap.hpp"
 #include "acp/selection.hpp"
 #include "acp/transform.hpp"
@@ -542,6 +543,113 @@ int main() {
 
     HatchEntity invalidHatch{{{0, 0}, {1, 0}}, "ANSI31", 0.0, 1.0, false};
     expect(!hatch::valid(invalidHatch), "reject hatch with open undersized boundary");
+
+
+    Document persistDoc;
+    const LayerId temporaryLayer = persistDoc.create_layer("Temporary");
+    expect(temporaryLayer != 0 && persistDoc.remove_layer(temporaryLayer),
+           "create and remove layer to create id gap");
+    const LayerId savedLayer = persistDoc.create_layer("Saved Layer");
+    expect(savedLayer != 0, "create persisted layer");
+    expect(persistDoc.set_layer_locked(savedLayer, true) &&
+           persistDoc.set_layer_line_weight(savedLayer, 0.65),
+           "configure persisted layer");
+
+    BlockLibrary persistBlocks;
+    const BlockId temporaryBlock = persistBlocks.create(
+        "TemporaryBlock", {0, 0},
+        std::vector<BlockPrimitive>{LineEntity{{{0, 0}, {1, 0}}}});
+    expect(temporaryBlock != 0 && persistBlocks.remove(temporaryBlock),
+           "create and remove block to create id gap");
+    const BlockId savedBlock = persistBlocks.create(
+        "SavedBlock", {0, 0},
+        std::vector<BlockPrimitive>{
+            LineEntity{{{0, 0}, {4, 0}}},
+            CircleEntity{{{2, 2}, 1.5}}
+        });
+    expect(savedBlock != 0, "create persisted block");
+
+    const EntityId persistedLineId = persistDoc.insert(LineEntity{{{1, 2}, {9, 2}}});
+    expect(persistDoc.set_entity_layer(persistedLineId, savedLayer), "assign persisted line layer");
+    persistDoc.properties(persistedLineId)->visible = false;
+    persistDoc.properties(persistedLineId)->line_weight_override = 0.95;
+
+    const EntityId persistedBlockId = persistDoc.insert(
+        BlockReferenceEntity{savedBlock, {20, 30}, 0.25, 1.5});
+    const EntityId persistedTextId = persistDoc.insert(
+        TextEntity{{5, 6}, "Room A", 3.5, 0.15});
+    const EntityId persistedDimId = persistDoc.insert(
+        LinearDimensionEntity{{0, 0}, {12, 0}, {0, 4}, std::string{"1200"}});
+    const EntityId persistedHatchId = persistDoc.insert(
+        HatchEntity{{{0, 0}, {8, 0}, {8, 4}, {0, 4}}, "ANSI31", 0.4, 2.0, false});
+
+    const std::string savedProject = persistence::serialize_project(persistDoc, persistBlocks);
+    const auto loadedProject = persistence::deserialize_project(savedProject);
+    expect(loadedProject.has_value(), "project save open roundtrip parses");
+
+    if (loadedProject.has_value()) {
+        const auto& loadedDoc = loadedProject->document;
+        const auto& loadedBlocks = loadedProject->blocks;
+
+        expect(loadedDoc.layer(savedLayer) != nullptr &&
+               loadedDoc.layer(savedLayer)->name == "Saved Layer" &&
+               loadedDoc.layer(savedLayer)->locked &&
+               geo::nearly_equal(loadedDoc.layer(savedLayer)->line_weight, 0.65),
+               "roundtrip preserves layer id and properties");
+
+        expect(loadedBlocks.find(savedBlock) != nullptr &&
+               loadedBlocks.find(savedBlock)->name == "SavedBlock" &&
+               loadedBlocks.find(savedBlock)->geometry.size() == 2,
+               "roundtrip preserves block id and definition");
+
+        expect(loadedDoc.find(persistedLineId) != nullptr &&
+               loadedDoc.properties(persistedLineId) != nullptr &&
+               loadedDoc.properties(persistedLineId)->layer_id == savedLayer &&
+               !loadedDoc.properties(persistedLineId)->visible &&
+               loadedDoc.properties(persistedLineId)->line_weight_override.has_value() &&
+               geo::nearly_equal(*loadedDoc.properties(persistedLineId)->line_weight_override, 0.95),
+               "roundtrip preserves entity id and properties");
+
+        const auto* loadedBlockRefEntity = loadedDoc.find(persistedBlockId);
+        expect(loadedBlockRefEntity != nullptr &&
+               std::holds_alternative<BlockReferenceEntity>(*loadedBlockRefEntity) &&
+               std::get<BlockReferenceEntity>(*loadedBlockRefEntity).block_id == savedBlock,
+               "roundtrip preserves block reference");
+
+        const auto blockRoundtripHit = selection::hit_test(
+            loadedDoc, loadedBlocks, {23, 30.1}, 0.5);
+        expect(blockRoundtripHit.has_value() && blockRoundtripHit->id == persistedBlockId,
+               "loaded block reference remains selectable");
+
+        const auto* loadedTextEntity = loadedDoc.find(persistedTextId);
+        expect(loadedTextEntity != nullptr &&
+               std::holds_alternative<TextEntity>(*loadedTextEntity) &&
+               std::get<TextEntity>(*loadedTextEntity).text == "Room A",
+               "roundtrip preserves text");
+
+        const auto* loadedDimEntity = loadedDoc.find(persistedDimId);
+        expect(loadedDimEntity != nullptr &&
+               std::holds_alternative<LinearDimensionEntity>(*loadedDimEntity) &&
+               std::get<LinearDimensionEntity>(*loadedDimEntity).text_override.has_value() &&
+               *std::get<LinearDimensionEntity>(*loadedDimEntity).text_override == "1200",
+               "roundtrip preserves dimension override");
+
+        const auto* loadedHatchEntity = loadedDoc.find(persistedHatchId);
+        expect(loadedHatchEntity != nullptr &&
+               std::holds_alternative<HatchEntity>(*loadedHatchEntity) &&
+               std::get<HatchEntity>(*loadedHatchEntity).pattern == "ANSI31" &&
+               geo::nearly_equal(std::get<HatchEntity>(*loadedHatchEntity).spacing, 2.0),
+               "roundtrip preserves hatch");
+    }
+
+    expect(!persistence::deserialize_project("ACP2D 99\nEND\n").has_value(),
+           "reject unsupported project version");
+    expect(!persistence::deserialize_project(
+        "ACP2D 1\n"
+        "L 1 \"0\" 1 0 0.25\n"
+        "E 1 1 1 0 0 BLOCKREF 999 0 0 0 1\n"
+        "END\n").has_value(),
+        "reject missing block reference on load");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
