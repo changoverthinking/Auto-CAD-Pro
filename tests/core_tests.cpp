@@ -2,10 +2,14 @@
 #include "acp/geometry2d.hpp"
 #include "acp/history.hpp"
 #include "acp/snap.hpp"
+#include "acp/transform.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <numbers>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -51,6 +55,39 @@ int main() {
     expect(history.apply(doc, std::make_unique<RemoveEntityCommand>(lineId)), "history remove");
     expect(doc.find(lineId) == nullptr, "remove result");
     expect(history.undo(doc) && doc.find(lineId) != nullptr, "undo remove");
+
+    Entity moving = LineEntity{{{1, 2}, {3, 4}}};
+    transform::translate(moving, {10, -2});
+    const auto& movedLine = std::get<LineEntity>(moving);
+    expect(geo::nearly_equal(movedLine.segment.a, {11, 0}) &&
+           geo::nearly_equal(movedLine.segment.b, {13, 2}), "translate line");
+
+    Entity rotating = LineEntity{{{1, 0}, {2, 0}}};
+    transform::rotate(rotating, {0, 0}, std::numbers::pi / 2.0);
+    const auto& rotatedLine = std::get<LineEntity>(rotating);
+    expect(geo::nearly_equal(rotatedLine.segment.a, {0, 1}, 1e-8) &&
+           geo::nearly_equal(rotatedLine.segment.b, {0, 2}, 1e-8), "rotate line 90 degrees");
+
+    Entity circle = CircleEntity{{{2, 2}, 4}};
+    expect(transform::scale_uniform(circle, {0, 0}, 2.0), "scale circle accepted");
+    const auto& scaledCircle = std::get<CircleEntity>(circle);
+    expect(geo::nearly_equal(scaledCircle.circle.center, {4, 4}) &&
+           geo::nearly_equal(scaledCircle.circle.radius, 8.0), "scale circle geometry");
+
+    const Entity circleBeforeInvalidScale = circle;
+    expect(!transform::scale_uniform(circle, {0, 0}, 0.0), "reject zero scale");
+    const auto& circleAfterInvalidScale = std::get<CircleEntity>(circle);
+    const auto& circleBefore = std::get<CircleEntity>(circleBeforeInvalidScale);
+    expect(geo::nearly_equal(circleAfterInvalidScale.circle.center, circleBefore.circle.center) &&
+           geo::nearly_equal(circleAfterInvalidScale.circle.radius, circleBefore.circle.radius),
+           "invalid scale leaves entity unchanged");
+
+    Entity polyline = PolylineEntity{{{0, 0}, {1, 0}, {1, 1}}, false};
+    transform::translate(polyline, {-1, 2});
+    const auto& movedPolyline = std::get<PolylineEntity>(polyline);
+    expect(movedPolyline.points.size() == 3 &&
+           geo::nearly_equal(movedPolyline.points[0], {-1, 2}) &&
+           geo::nearly_equal(movedPolyline.points[2], {0, 3}), "translate polyline");
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
