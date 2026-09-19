@@ -68,6 +68,9 @@ std::optional<Hit> hit_test(const Document& document, geo::Vec2 point, double ap
     if (!std::isfinite(aperture) || aperture < 0.0) return std::nullopt;
     std::optional<Hit> best;
     for (const EntityId id : document.ids()) {
+        if (!document.entity_visible(id)) {
+            continue;
+        }
         const Entity* entity = document.find(id);
         if (entity == nullptr) continue;
         const auto result = nearest_on_entity(*entity, point);
