@@ -39,7 +39,17 @@ A feature may be labeled production only when all of the following are true:
 | drawing bounds/viewport fit | verified | bounds/aspect tests |
 | page setup/print scale model | verified | A-series page and fixed-scale tests |
 | Windows desktop GUI | prototype | canvas/grid, zoom/pan, Line/Circle/Polyline/Arc, selection/grips, Move/Copy/Rotate/Scale/Mirror, Trim/Extend/Offset, Dimension/Hatch creation, layers/properties panel, Delete, Undo/Redo, project/DXF workflow, Text/Dimension/Hatch/Block rendering |
-| Windows executable artifact | prototype | CI uploads AutoCADPro-Windows-x64 after push build/test |
+| Windows executable artifact | prototype | CI uploads AutoCADPro-Windows-x64 after push build/test using Node 24-native actions |
 | constraints | planned | FreeCAD Sketcher upstream audit required |
 | SVG/PDF export | planned | export pipeline not yet implemented |
 | full GUI editing workflow | prototype | selection/transforms/edit2d/history/file workflow, layers panel and core entity rendering active; text creation, richer annotation styling and richer properties editing remain |
+
+## 2026-09-19 GUI audit fixes
+
+- Enforce layer locks for geometry edits and Delete.
+- Reject new geometry on hidden/locked active layers instead of creating invisible or immediately uneditable entities.
+- Reset the active layer after project open and DXF import to avoid stale layer IDs.
+- Hide selection grips when the selected entity is not visible.
+- Render effective entity/layer line weight instead of one fixed pen width.
+- Add Shift+Enter closed-polyline completion so Hatch creation is reachable from the GUI.
+- Upgrade checkout/upload CI actions to Node 24-native majors to remove runner deprecation warnings.

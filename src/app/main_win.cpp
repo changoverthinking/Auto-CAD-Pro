@@ -170,6 +170,17 @@ void set_tool(HWND hwnd, Tool tool) {
     InvalidateRect(hwnd, nullptr, FALSE);
 }
 
+bool active_layer_writable() {
+    const acp::Layer* layer = g_app.document.layer(g_app.active_layer);
+    return layer != nullptr && layer->visible && !layer->locked;
+}
+
+bool selected_editable() {
+    return g_app.selected.has_value() &&
+           g_app.document.find(*g_app.selected) != nullptr &&
+           !g_app.document.entity_locked(*g_app.selected);
+}
+
 void draw_grid(HWND hwnd, HDC dc, const RECT& rc) {
     const double desired_pixels = 60.0;
     const double raw_step = desired_pixels / g_app.zoom;
@@ -381,8 +392,6 @@ void draw_block_primitive(HWND hwnd, HDC dc, const acp::BlockPrimitive& primitiv
 }
 
 void draw_document(HWND hwnd, HDC dc) {
-    HPEN entity_pen = CreatePen(PS_SOLID, 2, RGB(229, 232, 239));
-    HGDIOBJ old_pen = SelectObject(dc, entity_pen);
     HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
     const COLORREF old_text_color = SetTextColor(dc, RGB(229, 232, 239));
 
@@ -394,6 +403,17 @@ void draw_document(HWND hwnd, HDC dc) {
         if (entity == nullptr) {
             continue;
         }
+
+        const double weight = std::clamp(
+            g_app.document.effective_line_weight(id), 0.05, 2.0);
+        const int pen_width = std::clamp(
+            static_cast<int>(std::lround(weight * 4.0)), 1, 8);
+        const COLORREF entity_color = g_app.document.entity_locked(id)
+            ? RGB(145, 151, 162)
+            : RGB(229, 232, 239);
+        HPEN entity_pen = CreatePen(PS_SOLID, pen_width, entity_color);
+        HGDIOBJ previous_pen = SelectObject(dc, entity_pen);
+        SetTextColor(dc, entity_color);
 
         std::visit([&](const auto& item) {
             using T = std::decay_t<decltype(item)>;
@@ -417,12 +437,13 @@ void draw_document(HWND hwnd, HDC dc) {
                 draw_hatch(hwnd, dc, item);
             }
         }, *entity);
+
+        SelectObject(dc, previous_pen);
+        DeleteObject(entity_pen);
     }
 
     SetTextColor(dc, old_text_color);
     SelectObject(dc, old_brush);
-    SelectObject(dc, old_pen);
-    DeleteObject(entity_pen);
 }
 
 void draw_selection_overlay(HWND hwnd, HDC dc) {
@@ -430,7 +451,7 @@ void draw_selection_overlay(HWND hwnd, HDC dc) {
         return;
     }
     const acp::Entity* entity = g_app.document.find(*g_app.selected);
-    if (entity == nullptr) {
+    if (entity == nullptr || !g_app.document.entity_visible(*g_app.selected)) {
         return;
     }
     const auto box = acp::bounds::entity_bounds(*entity, &g_app.blocks);
@@ -664,7 +685,7 @@ void create_layer(HWND hwnd) {
 }
 
 void assign_selected_to_active_layer(HWND hwnd) {
-    if (g_app.selected.has_value()) {
+    if (selected_editable() && active_layer_writable()) {
         (void)g_app.document.set_entity_layer(*g_app.selected, g_app.active_layer);
         InvalidateRect(hwnd, nullptr, FALSE);
     }
@@ -679,8 +700,11 @@ void draw_status(HWND hwnd, HDC dc, const RECT& client) {
     const Vec2 cursor_world = screen_to_world(hwnd, g_app.cursor);
     wchar_t buffer[256]{};
     const acp::Layer* active_layer = g_app.document.layer(g_app.active_layer);
-    const wchar_t* layer_state = active_layer != nullptr && active_layer->locked
-        ? L"LOCKED" : L"ACTIVE";
+    const wchar_t* layer_state =
+        active_layer == nullptr ? L"MISSING" :
+        active_layer->locked ? L"LOCKED" :
+        !active_layer->visible ? L"HIDDEN" :
+        L"ACTIVE";
     swprintf_s(buffer, L"Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu    Selected: %llu    Layer: %u (%s)    Undo: %zu",
                tool_name(g_app.tool), cursor_world.x, cursor_world.y,
                g_app.zoom * 100.0, g_app.document.size(),
@@ -796,6 +820,7 @@ void open_project(HWND hwnd) {
     g_app.document = std::move(project->document);
     g_app.blocks = std::move(project->blocks);
     g_app.history = acp::History{};
+    g_app.active_layer = acp::kDefaultLayerId;
     g_app.selected.reset();
     g_app.has_first_point = false;
     fit_drawing(hwnd);
@@ -841,6 +866,7 @@ void import_dxf(HWND hwnd) {
     g_app.document = std::move(result->document);
     g_app.blocks = acp::BlockLibrary{};
     g_app.history = acp::History{};
+    g_app.active_layer = acp::kDefaultLayerId;
     g_app.selected.reset();
     g_app.has_first_point = false;
     fit_drawing(hwnd);
@@ -893,6 +919,15 @@ void handle_left_click(HWND hwnd, POINT point) {
     }
 
     const Vec2 world = screen_to_world(hwnd, point);
+
+    if ((g_app.tool == Tool::Line ||
+         g_app.tool == Tool::Circle ||
+         g_app.tool == Tool::Polyline ||
+         g_app.tool == Tool::Arc ||
+         g_app.tool == Tool::Dimension) &&
+        !active_layer_writable()) {
+        return;
+    }
 
     if (g_app.tool == Tool::Select) {
         const auto hit = acp::selection::hit_test(
@@ -965,6 +1000,9 @@ void handle_left_click(HWND hwnd, POINT point) {
     }
 
     if (g_app.tool == Tool::Trim && g_app.selected.has_value()) {
+        if (!selected_editable()) {
+            return;
+        }
         const acp::Entity* target = g_app.document.find(*g_app.selected);
         if (target == nullptr || !std::holds_alternative<LineEntity>(*target)) {
             return;
@@ -1002,6 +1040,9 @@ void handle_left_click(HWND hwnd, POINT point) {
     }
 
     if (g_app.tool == Tool::Extend && g_app.selected.has_value()) {
+        if (!selected_editable()) {
+            return;
+        }
         const acp::Entity* target = g_app.document.find(*g_app.selected);
         const auto hit = acp::selection::hit_test(
             g_app.document, g_app.blocks, world,
@@ -1028,6 +1069,9 @@ void handle_left_click(HWND hwnd, POINT point) {
     }
 
     if (g_app.tool == Tool::Offset && g_app.selected.has_value()) {
+        if (!selected_editable() || !active_layer_writable()) {
+            return;
+        }
         const acp::Entity* source = g_app.document.find(*g_app.selected);
         if (source != nullptr && std::holds_alternative<LineEntity>(*source)) {
             const auto& segment = std::get<LineEntity>(*source).segment;
@@ -1054,6 +1098,9 @@ void handle_left_click(HWND hwnd, POINT point) {
     }
 
     if (g_app.tool == Tool::Hatch && g_app.selected.has_value()) {
+        if (!selected_editable() || !active_layer_writable()) {
+            return;
+        }
         const acp::Entity* source = g_app.document.find(*g_app.selected);
         if (source != nullptr && std::holds_alternative<PolylineEntity>(*source)) {
             const auto& polyline = std::get<PolylineEntity>(*source);
@@ -1072,6 +1119,9 @@ void handle_left_click(HWND hwnd, POINT point) {
     }
 
     if (g_app.tool == Tool::Mirror && g_app.selected.has_value()) {
+        if (!selected_editable()) {
+            return;
+        }
         if (!g_app.has_first_point) {
             g_app.first_point = world;
             g_app.has_first_point = true;
@@ -1094,6 +1144,9 @@ void handle_left_click(HWND hwnd, POINT point) {
     }
 
     if (g_app.tool == Tool::Scale && g_app.selected.has_value()) {
+        if (!selected_editable()) {
+            return;
+        }
         if (!g_app.has_first_point) {
             g_app.first_point = world;
             g_app.has_first_point = true;
@@ -1177,6 +1230,11 @@ void handle_left_click(HWND hwnd, POINT point) {
             }
         }
     } else if (g_app.selected.has_value()) {
+        if (!selected_editable()) {
+            g_app.has_first_point = false;
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return;
+        }
         const acp::Entity* source = g_app.document.find(*g_app.selected);
         if (source != nullptr) {
             if (g_app.tool == Tool::Move) {
@@ -1342,6 +1400,9 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 return 0;
             }
             if (w_param == VK_DELETE && g_app.selected.has_value()) {
+                if (!selected_editable()) {
+                    return 0;
+                }
                 const acp::EntityId id = *g_app.selected;
                 if (g_app.history.apply(
                         g_app.document,
@@ -1360,9 +1421,13 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 return 0;
             }
             if (w_param == VK_RETURN && g_app.tool == Tool::Polyline) {
-                if (g_app.polyline_points.size() >= 2) {
+                const bool close_polyline =
+                    (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+                const std::size_t minimum_points = close_polyline ? 3u : 2u;
+                if (g_app.polyline_points.size() >= minimum_points &&
+                    active_layer_writable()) {
                     auto command = std::make_unique<acp::AddEntityCommand>(
-                        PolylineEntity{g_app.polyline_points, false});
+                        PolylineEntity{g_app.polyline_points, close_polyline});
                     auto* command_ptr = command.get();
                     if (g_app.history.apply(g_app.document, std::move(command))) {
                         g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
