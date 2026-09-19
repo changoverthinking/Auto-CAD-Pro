@@ -38,8 +38,8 @@ A feature may be labeled production only when all of the following are true:
 | DXF ASCII import/export subset | verified | controlled 2D entity round-trip tests |
 | drawing bounds/viewport fit | verified | bounds/aspect tests |
 | page setup/print scale model | verified | A-series page and fixed-scale tests |
-| Windows desktop GUI | prototype | real Win32 executable linked to acp_core; canvas, grid, zoom, pan, Line/Circle tools |
+| Windows desktop GUI | prototype | real Win32 executable linked to acp_core; canvas, grid, zoom, pan, Line/Circle, selection, grips, Move/Copy/Rotate, Delete, Undo/Redo |
 | Windows executable artifact | prototype | CI uploads AutoCADPro-Windows-x64 after push build/test |
 | constraints | planned | FreeCAD Sketcher upstream audit required |
 | SVG/PDF export | planned | export pipeline not yet implemented |
-| full GUI editing workflow | planned | selection/grips/properties/file commands still to integrate |
+| full GUI editing workflow | prototype | selection/grips and transform/history integration active; properties/file/layers/annotation commands remain |

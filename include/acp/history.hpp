@@ -43,6 +43,19 @@ private:
     std::optional<EntityProperties> backup_properties_;
 };
 
+class UpdateEntityCommand final : public Command {
+public:
+    UpdateEntityCommand(EntityId id, Entity replacement);
+
+    bool execute(Document& document) override;
+    void undo(Document& document) override;
+
+private:
+    EntityId id_{};
+    Entity replacement_;
+    std::optional<Entity> original_;
+};
+
 class History {
 public:
     bool apply(Document& document, std::unique_ptr<Command> command);

@@ -4,12 +4,18 @@
 #include <windowsx.h>
 
 #include "acp/document.hpp"
+#include "acp/bounds.hpp"
+#include "acp/history.hpp"
+#include "acp/selection.hpp"
+#include "acp/transform.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cwchar>
 #include <numbers>
+#include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 #include <type_traits>
@@ -26,11 +32,16 @@ using acp::geo::Vec2;
 enum class Tool {
     Select,
     Line,
-    Circle
+    Circle,
+    Move,
+    Copy,
+    Rotate
 };
 
 struct AppState {
     Document document;
+    acp::History history;
+    std::optional<acp::EntityId> selected;
     Tool tool{Tool::Select};
     double zoom{1.0};
     Vec2 view_center{0.0, 0.0};
@@ -50,12 +61,18 @@ constexpr int kMenuExit = 1002;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
+constexpr int kToolMove = 2004;
+constexpr int kToolCopy = 2005;
+constexpr int kToolRotate = 2006;
 
 const wchar_t* tool_name(Tool tool) {
     switch (tool) {
         case Tool::Select: return L"Select";
         case Tool::Line: return L"Line";
         case Tool::Circle: return L"Circle";
+        case Tool::Move: return L"Move";
+        case Tool::Copy: return L"Copy";
+        case Tool::Rotate: return L"Rotate";
     }
     return L"Select";
 }
@@ -213,6 +230,55 @@ void draw_document(HWND hwnd, HDC dc) {
     DeleteObject(entity_pen);
 }
 
+
+void draw_selection_overlay(HWND hwnd, HDC dc) {
+    if (!g_app.selected.has_value()) {
+        return;
+    }
+    const acp::Entity* entity = g_app.document.find(*g_app.selected);
+    if (entity == nullptr) {
+        return;
+    }
+    const auto box = acp::bounds::entity_bounds(*entity);
+    if (!box.has_value()) {
+        return;
+    }
+
+    const POINT min_point = world_to_screen(hwnd, box->min);
+    const POINT max_point = world_to_screen(hwnd, box->max);
+    RECT selection_rect{
+        std::min(min_point.x, max_point.x),
+        std::min(min_point.y, max_point.y),
+        std::max(min_point.x, max_point.x),
+        std::max(min_point.y, max_point.y)
+    };
+
+    HPEN pen = CreatePen(PS_DOT, 1, RGB(255, 190, 70));
+    HGDIOBJ old_pen = SelectObject(dc, pen);
+    HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+    Rectangle(dc, selection_rect.left, selection_rect.top, selection_rect.right, selection_rect.bottom);
+
+    const POINT grips[] = {
+        {selection_rect.left, selection_rect.top},
+        {selection_rect.right, selection_rect.top},
+        {selection_rect.right, selection_rect.bottom},
+        {selection_rect.left, selection_rect.bottom},
+        {(selection_rect.left + selection_rect.right) / 2,
+         (selection_rect.top + selection_rect.bottom) / 2}
+    };
+
+    HBRUSH grip_brush = CreateSolidBrush(RGB(255, 190, 70));
+    SelectObject(dc, grip_brush);
+    for (const POINT grip : grips) {
+        Rectangle(dc, grip.x - 3, grip.y - 3, grip.x + 4, grip.y + 4);
+    }
+
+    SelectObject(dc, old_brush);
+    SelectObject(dc, old_pen);
+    DeleteObject(grip_brush);
+    DeleteObject(pen);
+}
+
 void draw_preview(HWND hwnd, HDC dc) {
     if (!g_app.has_first_point || g_app.tool == Tool::Select) {
         return;
@@ -226,7 +292,10 @@ void draw_preview(HWND hwnd, HDC dc) {
     const POINT first = world_to_screen(hwnd, g_app.first_point);
     const POINT second = world_to_screen(hwnd, current);
 
-    if (g_app.tool == Tool::Line) {
+    if (g_app.tool == Tool::Line ||
+        g_app.tool == Tool::Move ||
+        g_app.tool == Tool::Copy ||
+        g_app.tool == Tool::Rotate) {
         MoveToEx(dc, first.x, first.y, nullptr);
         LineTo(dc, second.x, second.y);
     } else if (g_app.tool == Tool::Circle) {
@@ -256,7 +325,10 @@ void draw_toolbar(HDC dc, const RECT& client) {
     const Button buttons[] = {
         {{190, 7, 265, 37}, L"Select", Tool::Select},
         {{272, 7, 337, 37}, L"Line", Tool::Line},
-        {{344, 7, 419, 37}, L"Circle", Tool::Circle}
+        {{344, 7, 419, 37}, L"Circle", Tool::Circle},
+        {{426, 7, 491, 37}, L"Move", Tool::Move},
+        {{498, 7, 563, 37}, L"Copy", Tool::Copy},
+        {{570, 7, 645, 37}, L"Rotate", Tool::Rotate}
     };
 
     for (const auto& button : buttons) {
@@ -277,9 +349,11 @@ void draw_status(HWND hwnd, HDC dc, const RECT& client) {
 
     const Vec2 cursor_world = screen_to_world(hwnd, g_app.cursor);
     wchar_t buffer[256]{};
-    swprintf_s(buffer, L"Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu",
+    swprintf_s(buffer, L"Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu    Selected: %llu    Undo: %zu",
                tool_name(g_app.tool), cursor_world.x, cursor_world.y,
-               g_app.zoom * 100.0, g_app.document.size());
+               g_app.zoom * 100.0, g_app.document.size(),
+               static_cast<unsigned long long>(g_app.selected.value_or(0)),
+               g_app.history.undo_size());
 
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, RGB(190, 195, 205));
@@ -292,15 +366,42 @@ void handle_left_click(HWND hwnd, POINT point) {
         if (point.x >= 190 && point.x <= 265) set_tool(hwnd, Tool::Select);
         else if (point.x >= 272 && point.x <= 337) set_tool(hwnd, Tool::Line);
         else if (point.x >= 344 && point.x <= 419) set_tool(hwnd, Tool::Circle);
+        else if (point.x >= 426 && point.x <= 491) set_tool(hwnd, Tool::Move);
+        else if (point.x >= 498 && point.x <= 563) set_tool(hwnd, Tool::Copy);
+        else if (point.x >= 570 && point.x <= 645) set_tool(hwnd, Tool::Rotate);
         return;
     }
 
     const RECT canvas = canvas_rect(hwnd);
-    if (!PtInRect(&canvas, point) || g_app.tool == Tool::Select) {
+    if (!PtInRect(&canvas, point)) {
         return;
     }
 
     const Vec2 world = screen_to_world(hwnd, point);
+
+    if (g_app.tool == Tool::Select) {
+        const auto hit = acp::selection::hit_test(
+            g_app.document, world, 8.0 / std::max(g_app.zoom, 0.02));
+        g_app.selected = hit.has_value()
+            ? std::optional<acp::EntityId>{hit->id}
+            : std::nullopt;
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
+    if ((g_app.tool == Tool::Move ||
+         g_app.tool == Tool::Copy ||
+         g_app.tool == Tool::Rotate) &&
+        !g_app.selected.has_value()) {
+        const auto hit = acp::selection::hit_test(
+            g_app.document, world, 8.0 / std::max(g_app.zoom, 0.02));
+        if (hit.has_value()) {
+            g_app.selected = hit->id;
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
     if (!g_app.has_first_point) {
         g_app.first_point = world;
         g_app.has_first_point = true;
@@ -310,12 +411,49 @@ void handle_left_click(HWND hwnd, POINT point) {
 
     if (g_app.tool == Tool::Line) {
         if (acp::geo::distance(g_app.first_point, world) > acp::geo::kEpsilon) {
-            (void)g_app.document.insert(LineEntity{{g_app.first_point, world}});
+            (void)g_app.history.apply(
+                g_app.document,
+                std::make_unique<acp::AddEntityCommand>(
+                    LineEntity{{g_app.first_point, world}}));
         }
     } else if (g_app.tool == Tool::Circle) {
         const double radius = acp::geo::distance(g_app.first_point, world);
         if (radius > acp::geo::kEpsilon) {
-            (void)g_app.document.insert(CircleEntity{{g_app.first_point, radius}});
+            (void)g_app.history.apply(
+                g_app.document,
+                std::make_unique<acp::AddEntityCommand>(
+                    CircleEntity{{g_app.first_point, radius}}));
+        }
+    } else if (g_app.selected.has_value()) {
+        const acp::Entity* source = g_app.document.find(*g_app.selected);
+        if (source != nullptr) {
+            if (g_app.tool == Tool::Move) {
+                acp::Entity replacement = *source;
+                acp::transform::translate(replacement, world - g_app.first_point);
+                (void)g_app.history.apply(
+                    g_app.document,
+                    std::make_unique<acp::UpdateEntityCommand>(
+                        *g_app.selected, replacement));
+            } else if (g_app.tool == Tool::Copy) {
+                const acp::Entity copy =
+                    acp::transform::translated_copy(*source, world - g_app.first_point);
+                auto command = std::make_unique<acp::AddEntityCommand>(copy);
+                auto* command_ptr = command.get();
+                if (g_app.history.apply(g_app.document, std::move(command))) {
+                    g_app.selected = command_ptr->id();
+                }
+            } else if (g_app.tool == Tool::Rotate) {
+                const Vec2 direction = world - g_app.first_point;
+                if (acp::geo::length(direction) > acp::geo::kEpsilon) {
+                    acp::Entity replacement = *source;
+                    const double radians = std::atan2(direction.y, direction.x);
+                    acp::transform::rotate(replacement, g_app.first_point, radians);
+                    (void)g_app.history.apply(
+                        g_app.document,
+                        std::make_unique<acp::UpdateEntityCommand>(
+                            *g_app.selected, replacement));
+                }
+            }
         }
     }
 
@@ -338,6 +476,8 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             switch (LOWORD(w_param)) {
                 case kMenuNew:
                     g_app.document = Document{};
+                    g_app.history = acp::History{};
+                    g_app.selected.reset();
                     g_app.has_first_point = false;
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
@@ -347,11 +487,40 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 case kToolSelect: set_tool(hwnd, Tool::Select); return 0;
                 case kToolLine: set_tool(hwnd, Tool::Line); return 0;
                 case kToolCircle: set_tool(hwnd, Tool::Circle); return 0;
+                case kToolMove: set_tool(hwnd, Tool::Move); return 0;
+                case kToolCopy: set_tool(hwnd, Tool::Copy); return 0;
+                case kToolRotate: set_tool(hwnd, Tool::Rotate); return 0;
                 default: break;
             }
             break;
 
         case WM_KEYDOWN:
+            if ((GetKeyState(VK_CONTROL) & 0x8000) != 0 && w_param == 'Z') {
+                if (g_app.history.undo(g_app.document)) {
+                    if (g_app.selected.has_value() &&
+                        g_app.document.find(*g_app.selected) == nullptr) {
+                        g_app.selected.reset();
+                    }
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                }
+                return 0;
+            }
+            if ((GetKeyState(VK_CONTROL) & 0x8000) != 0 && w_param == 'Y') {
+                if (g_app.history.redo(g_app.document)) {
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                }
+                return 0;
+            }
+            if (w_param == VK_DELETE && g_app.selected.has_value()) {
+                const acp::EntityId id = *g_app.selected;
+                if (g_app.history.apply(
+                        g_app.document,
+                        std::make_unique<acp::RemoveEntityCommand>(id))) {
+                    g_app.selected.reset();
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                }
+                return 0;
+            }
             if (w_param == VK_ESCAPE) {
                 g_app.has_first_point = false;
                 set_tool(hwnd, Tool::Select);
@@ -363,6 +532,18 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             }
             if (w_param == 'C') {
                 set_tool(hwnd, Tool::Circle);
+                return 0;
+            }
+            if (w_param == 'M') {
+                set_tool(hwnd, Tool::Move);
+                return 0;
+            }
+            if (w_param == 'P') {
+                set_tool(hwnd, Tool::Copy);
+                return 0;
+            }
+            if (w_param == 'R') {
+                set_tool(hwnd, Tool::Rotate);
                 return 0;
             }
             break;
@@ -425,6 +606,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             const RECT canvas = canvas_rect(hwnd);
             draw_grid(hwnd, memory, canvas);
             draw_document(hwnd, memory);
+            draw_selection_overlay(hwnd, memory);
             draw_preview(hwnd, memory);
             draw_toolbar(memory, client);
             draw_status(hwnd, memory, client);
@@ -459,6 +641,10 @@ HMENU create_app_menu() {
     AppendMenuW(draw, MF_STRING, kToolSelect, L"&Select\tEsc");
     AppendMenuW(draw, MF_STRING, kToolLine, L"&Line\tL");
     AppendMenuW(draw, MF_STRING, kToolCircle, L"&Circle\tC");
+    AppendMenuW(draw, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(draw, MF_STRING, kToolMove, L"&Move\tM");
+    AppendMenuW(draw, MF_STRING, kToolCopy, L"Co&py\tP");
+    AppendMenuW(draw, MF_STRING, kToolRotate, L"&Rotate\tR");
 
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"&File");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(draw), L"&Draw");

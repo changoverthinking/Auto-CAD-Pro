@@ -63,6 +63,31 @@ void RemoveEntityCommand::undo(Document& document) {
     }
 }
 
+UpdateEntityCommand::UpdateEntityCommand(EntityId id, Entity replacement)
+    : id_(id), replacement_(std::move(replacement)) {}
+
+bool UpdateEntityCommand::execute(Document& document) {
+    Entity* existing = document.find(id_);
+    if (existing == nullptr) {
+        return false;
+    }
+
+    if (!original_.has_value()) {
+        original_ = *existing;
+    }
+    *existing = replacement_;
+    return true;
+}
+
+void UpdateEntityCommand::undo(Document& document) {
+    if (!original_.has_value()) {
+        return;
+    }
+    if (Entity* existing = document.find(id_)) {
+        *existing = *original_;
+    }
+}
+
 bool History::apply(Document& document, std::unique_ptr<Command> command) {
     if (!command || !command->execute(document)) {
         return false;

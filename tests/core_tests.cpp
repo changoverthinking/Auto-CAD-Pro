@@ -829,6 +829,36 @@ int main() {
     expect(!layout::printable_size_mm(invalidPage).has_value(),
            "reject page margins larger than paper");
 
+    Document updateDoc;
+    const EntityId updateId = updateDoc.insert(LineEntity{{{0, 0}, {10, 0}}});
+    History updateHistory;
+    Entity updatedLine = *updateDoc.find(updateId);
+    transform::translate(updatedLine, {5, 7});
+    expect(updateHistory.apply(
+               updateDoc,
+               std::make_unique<UpdateEntityCommand>(updateId, updatedLine)),
+           "update entity command apply");
+    {
+        const auto& segment = std::get<LineEntity>(*updateDoc.find(updateId)).segment;
+        expect(geo::nearly_equal(segment.a, {5, 7}) &&
+               geo::nearly_equal(segment.b, {15, 7}),
+               "update entity command changes geometry");
+    }
+    expect(updateHistory.undo(updateDoc), "update entity undo");
+    {
+        const auto& segment = std::get<LineEntity>(*updateDoc.find(updateId)).segment;
+        expect(geo::nearly_equal(segment.a, {0, 0}) &&
+               geo::nearly_equal(segment.b, {10, 0}),
+               "update entity undo restores geometry");
+    }
+    expect(updateHistory.redo(updateDoc), "update entity redo");
+    {
+        const auto& segment = std::get<LineEntity>(*updateDoc.find(updateId)).segment;
+        expect(geo::nearly_equal(segment.a, {5, 7}) &&
+               geo::nearly_equal(segment.b, {15, 7}),
+               "update entity redo reapplies geometry");
+    }
+
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return EXIT_FAILURE;
