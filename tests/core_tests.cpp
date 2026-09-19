@@ -109,6 +109,41 @@ int main() {
     expect(!selection::hit_test(selectionDoc, {100, 100}, 1.0).has_value(), "selection miss outside aperture");
     expect(!selection::hit_test(selectionDoc, {0, 0}, -1.0).has_value(), "reject negative selection aperture");
 
+
+    const Entity sourceCopy = LineEntity{{{1, 1}, {4, 1}}};
+    const Entity offsetCopy = transform::translated_copy(sourceCopy, {10, 5});
+    const auto& originalCopyLine = std::get<LineEntity>(sourceCopy);
+    const auto& offsetCopyLine = std::get<LineEntity>(offsetCopy);
+    expect(geo::nearly_equal(originalCopyLine.segment.a, {1, 1}) &&
+           geo::nearly_equal(originalCopyLine.segment.b, {4, 1}),
+           "copy preserves source");
+    expect(geo::nearly_equal(offsetCopyLine.segment.a, {11, 6}) &&
+           geo::nearly_equal(offsetCopyLine.segment.b, {14, 6}),
+           "copy applies offset");
+
+    Entity mirroredLine = LineEntity{{{2, 1}, {4, 3}}};
+    expect(transform::mirror(mirroredLine, {{0, 0}, {0, 10}}), "mirror line accepted");
+    const auto& mirroredLineValue = std::get<LineEntity>(mirroredLine);
+    expect(geo::nearly_equal(mirroredLineValue.segment.a, {-2, 1}) &&
+           geo::nearly_equal(mirroredLineValue.segment.b, {-4, 3}),
+           "mirror line across y axis");
+
+    Entity mirroredCircle = CircleEntity{{{3, 4}, 2}};
+    expect(transform::mirror(mirroredCircle, {{0, 0}, {10, 0}}), "mirror circle accepted");
+    const auto& mirroredCircleValue = std::get<CircleEntity>(mirroredCircle);
+    expect(geo::nearly_equal(mirroredCircleValue.circle.center, {3, -4}) &&
+           geo::nearly_equal(mirroredCircleValue.circle.radius, 2.0),
+           "mirror circle preserves radius");
+
+    Entity invalidMirror = LineEntity{{{1, 2}, {3, 4}}};
+    const Entity invalidMirrorBefore = invalidMirror;
+    expect(!transform::mirror(invalidMirror, {{5, 5}, {5, 5}}), "reject degenerate mirror axis");
+    const auto& invalidMirrorLine = std::get<LineEntity>(invalidMirror);
+    const auto& invalidMirrorLineBefore = std::get<LineEntity>(invalidMirrorBefore);
+    expect(geo::nearly_equal(invalidMirrorLine.segment.a, invalidMirrorLineBefore.segment.a) &&
+           geo::nearly_equal(invalidMirrorLine.segment.b, invalidMirrorLineBefore.segment.b),
+           "degenerate mirror leaves entity unchanged");
+
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return EXIT_FAILURE;
