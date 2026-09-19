@@ -13,6 +13,7 @@ add_library(acp_core
     src/core/document.cpp
     src/core/history.cpp
     src/core/transform.cpp
+    src/core/selection.cpp
 )
 target_include_directories(acp_core PUBLIC include)
 target_compile_features(acp_core PUBLIC cxx_std_20)
