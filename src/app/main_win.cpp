@@ -88,10 +88,22 @@ struct AppState {
 
 AppState g_app;
 
-constexpr int kToolbarHeight = 68;
 constexpr int kStatusHeight = 26;
-constexpr int kLayerPanelWidth = 248;
-constexpr int kLeftToolRailWidth = 40;
+
+int toolbar_height(const RECT& client) {
+    const LONG height = std::max<LONG>(1, client.bottom - client.top);
+    return static_cast<int>(std::max<LONG>(34, height / 20));
+}
+
+int layer_panel_width(const RECT& client) {
+    const LONG width = std::max<LONG>(1, client.right - client.left);
+    return static_cast<int>(std::max<LONG>(180, (width * 2) / 10));
+}
+
+int left_tool_rail_width(const RECT& client) {
+    const LONG width = std::max<LONG>(1, client.right - client.left);
+    return static_cast<int>(std::max<LONG>(32, width / 25));
+}
 constexpr int kMenuNew = 1001;
 constexpr int kMenuExit = 1002;
 constexpr int kMenuOpen = 1003;
@@ -150,38 +162,45 @@ const wchar_t* tool_name(Tool tool) {
     return L"Select";
 }
 struct ToolbarButton {
-    RECT rect;
     const wchar_t* text;
     Tool tool;
 };
 
 constexpr std::array<ToolbarButton, 17> kToolbarButtons{{
-    {{6, 30, 60, 65}, L"Select", Tool::Select},
-    {{62, 30, 112, 65}, L"Line", Tool::Line},
-    {{114, 30, 178, 65}, L"Polyline", Tool::Polyline},
-    {{180, 30, 236, 65}, L"Circle", Tool::Circle},
-    {{238, 30, 286, 65}, L"Arc", Tool::Arc},
-    {{288, 30, 350, 65}, L"Rectangle", Tool::Rectangle},
-    {{352, 30, 406, 65}, L"Move", Tool::Move},
-    {{408, 30, 462, 65}, L"Copy", Tool::Copy},
-    {{464, 30, 522, 65}, L"Rotate", Tool::Rotate},
-    {{524, 30, 578, 65}, L"Scale", Tool::Scale},
-    {{580, 30, 636, 65}, L"Mirror", Tool::Mirror},
-    {{638, 30, 688, 65}, L"Trim", Tool::Trim},
-    {{690, 30, 748, 65}, L"Extend", Tool::Extend},
-    {{750, 30, 806, 65}, L"Offset", Tool::Offset},
-    {{808, 30, 878, 65}, L"Dimension", Tool::Dimension},
-    {{880, 30, 932, 65}, L"Hatch", Tool::Hatch},
-    {{934, 30, 980, 65}, L"Text", Tool::Text}
+    {L"Select", Tool::Select},
+    {L"Line", Tool::Line},
+    {L"Polyline", Tool::Polyline},
+    {L"Circle", Tool::Circle},
+    {L"Arc", Tool::Arc},
+    {L"Rectangle", Tool::Rectangle},
+    {L"Move", Tool::Move},
+    {L"Copy", Tool::Copy},
+    {L"Rotate", Tool::Rotate},
+    {L"Scale", Tool::Scale},
+    {L"Mirror", Tool::Mirror},
+    {L"Trim", Tool::Trim},
+    {L"Extend", Tool::Extend},
+    {L"Offset", Tool::Offset},
+    {L"Dimension", Tool::Dimension},
+    {L"Hatch", Tool::Hatch},
+    {L"Text", Tool::Text}
 }};
+
+RECT toolbar_button_rect(std::size_t index, const RECT& client) {
+    const int height = toolbar_height(client);
+    const int size = std::clamp(height - 4, 28, 34);
+    const int gap = 2;
+    const int left = 4 + static_cast<int>(index) * (size + gap);
+    return RECT{left, 2, left + size, std::max(3, height - 2)};
+}
 
 
 RECT canvas_rect(HWND hwnd) {
     RECT rc{};
     GetClientRect(hwnd, &rc);
-    rc.top += kToolbarHeight;
-    rc.left += kLeftToolRailWidth;
-    rc.right = std::max(rc.left, rc.right - kLayerPanelWidth);
+    rc.top += toolbar_height(rc);
+    rc.left += left_tool_rail_width(rc);
+    rc.right = std::max<LONG>(rc.left, rc.right - layer_panel_width(rc));
     rc.bottom = std::max(rc.top, rc.bottom - kStatusHeight);
     return rc;
 }
@@ -722,7 +741,7 @@ void draw_preview(HWND hwnd, HDC dc) {
 
 void draw_tool_icon(HDC dc, Tool tool, RECT area, COLORREF color) {
     const int cx = (area.left + area.right) / 2;
-    const int cy = area.top + 9;
+    const int cy = (area.top + area.bottom) / 2;
     HPEN pen = CreatePen(PS_SOLID, 2, color);
     HGDIOBJ old_pen = SelectObject(dc, pen);
     HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
@@ -827,59 +846,26 @@ void draw_tool_icon(HDC dc, Tool tool, RECT area, COLORREF color) {
 }
 
 void draw_toolbar(HDC dc, const RECT& client) {
-    RECT bar{client.left, client.top, client.right, client.top + kToolbarHeight};
+    const int height = toolbar_height(client);
+    RECT bar{client.left, client.top, client.right, client.top + height};
     HBRUSH background = CreateSolidBrush(RGB(27, 43, 57));
     FillRect(dc, &bar, background);
     DeleteObject(background);
 
     HPEN divider = CreatePen(PS_SOLID, 1, RGB(57, 76, 94));
     HGDIOBJ old_pen = SelectObject(dc, divider);
-    MoveToEx(dc, 0, 27, nullptr);
-    LineTo(dc, client.right, 27);
+    MoveToEx(dc, 0, height - 1, nullptr);
+    LineTo(dc, client.right, height - 1);
     SelectObject(dc, old_pen);
     DeleteObject(divider);
 
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(219, 228, 236));
 
-    const wchar_t* tabs[] = {
-        L"Home", L"Draw", L"Modify", L"Annotate",
-        L"Layers", L"View", L"Export"
-    };
-    int tab_x = 12;
-    for (std::size_t i = 0; i < std::size(tabs); ++i) {
-        const int width = i == 3 ? 78 : 62;
-        RECT tab{tab_x, 2, tab_x + width, 26};
-        if (i == 0) {
-            HBRUSH active = CreateSolidBrush(RGB(37, 91, 137));
-            FillRect(dc, &tab, active);
-            DeleteObject(active);
-        }
-        DrawTextW(dc, tabs[i], -1, &tab,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        tab_x += width + 2;
-    }
-
-    RECT search{
-        std::max<LONG>(tab_x + 12, client.right - 300),
-        3,
-        client.right - 12,
-        25
-    };
-    if (search.right - search.left > 120) {
-        HBRUSH search_brush = CreateSolidBrush(RGB(20, 35, 48));
-        FillRect(dc, &search, search_brush);
-        DeleteObject(search_brush);
-        SetTextColor(dc, RGB(151, 169, 184));
-        RECT search_text{search.left + 10, search.top, search.right - 6, search.bottom};
-        DrawTextW(dc, L"Type a command or search...", -1, &search_text,
-                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-        SetTextColor(dc, RGB(219, 228, 236));
-    }
-
-    for (const auto& button : kToolbarButtons) {
-        RECT rect = button.rect;
+    for (std::size_t i = 0; i < kToolbarButtons.size(); ++i) {
+        const auto& button = kToolbarButtons[i];
+        RECT rect = toolbar_button_rect(i, client);
         const bool active = g_app.tool == button.tool;
+
         HBRUSH button_brush = CreateSolidBrush(
             active ? RGB(28, 103, 163) : RGB(34, 52, 67));
         FillRect(dc, &rect, button_brush);
@@ -895,36 +881,36 @@ void draw_toolbar(HDC dc, const RECT& client) {
             DeleteObject(edge);
         }
 
-        RECT icon_rect{rect.left, rect.top + 1, rect.right, rect.top + 19};
-        draw_tool_icon(dc, button.tool, icon_rect,
-                       active ? RGB(235, 247, 255) : RGB(111, 205, 255));
-        RECT label_rect{rect.left + 1, rect.top + 18, rect.right - 1, rect.bottom - 1};
-        DrawTextW(dc, button.text, -1, &label_rect,
-                  DT_CENTER | DT_BOTTOM | DT_SINGLELINE | DT_END_ELLIPSIS);
+        draw_tool_icon(dc, button.tool, rect,
+                       active ? RGB(240, 250, 255) : RGB(111, 205, 255));
     }
 }
 
 bool handle_toolbar_click(HWND hwnd, POINT point) {
-    if (point.y < 28 || point.y >= kToolbarHeight) {
-        return false;
-    }
     RECT client{};
     GetClientRect(hwnd, &client);
-    for (const auto& button : kToolbarButtons) {
-        if (PtInRect(&button.rect, point)) {
-            set_tool(hwnd, button.tool);
+    const int height = toolbar_height(client);
+    if (point.y < 0 || point.y >= height) {
+        return false;
+    }
+    for (std::size_t i = 0; i < kToolbarButtons.size(); ++i) {
+        const RECT rect = toolbar_button_rect(i, client);
+        if (PtInRect(&rect, point)) {
+            set_tool(hwnd, kToolbarButtons[i].tool);
             return true;
         }
     }
-    return point.y < kToolbarHeight;
+    return true;
 }
 
 
-void draw_left_tool_rail(HDC dc, const RECT& client) {
+void draw_left_tool_rail(HDC dc, const RECT& client) {void draw_left_tool_rail(HDC dc, const RECT& client) {
+    const int top = toolbar_height(client);
+    const int width = left_tool_rail_width(client);
     RECT rail{
         client.left,
-        kToolbarHeight,
-        client.left + kLeftToolRailWidth,
+        top,
+        client.left + width,
         client.bottom - kStatusHeight
     };
     HBRUSH background = CreateSolidBrush(RGB(25, 40, 53));
@@ -938,45 +924,60 @@ void draw_left_tool_rail(HDC dc, const RECT& client) {
     };
 
     SetBkMode(dc, TRANSPARENT);
-    int y = rail.top + 6;
+    const int cell_height = std::clamp(width - 8, 26, 34);
+    const int gap = 3;
+    int y = rail.top + 4;
     for (const Tool item : items) {
-        RECT cell{rail.left + 4, y, rail.right - 4, y + 30};
+        RECT cell{rail.left + 3, y, rail.right - 3, y + cell_height};
         HBRUSH brush = CreateSolidBrush(
             g_app.tool == item ? RGB(28, 103, 163) : RGB(33, 51, 66));
         FillRect(dc, &cell, brush);
         DeleteObject(brush);
         draw_tool_icon(dc, item, cell,
                        g_app.tool == item ? RGB(240, 250, 255) : RGB(111, 205, 255));
-        y += 34;
+        y += cell_height + gap;
     }
 }
 
 bool handle_left_tool_rail_click(HWND hwnd, POINT point) {
-    if (point.x < 0 || point.x >= kLeftToolRailWidth ||
-        point.y < kToolbarHeight || point.y >= kToolbarHeight + 380) {
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    const int top = toolbar_height(client);
+    const int width = left_tool_rail_width(client);
+    if (point.x < client.left || point.x >= client.left + width ||
+        point.y < top || point.y >= client.bottom - kStatusHeight) {
         return false;
     }
+
     constexpr Tool tools[] = {
         Tool::Select, Tool::Line, Tool::Polyline, Tool::Circle, Tool::Arc,
         Tool::Rectangle, Tool::Move, Tool::Trim, Tool::Dimension,
         Tool::Hatch, Tool::Text
     };
-    const int index = (point.y - (kToolbarHeight + 6)) / 34;
-    if (index >= 0 && index < static_cast<int>(std::size(tools))) {
-        const int local_y = (point.y - (kToolbarHeight + 6)) % 34;
-        if (local_y < 30) {
+    const int cell_height = std::clamp(width - 8, 26, 34);
+    const int stride = cell_height + 3;
+    const int relative = point.y - (top + 4);
+    if (relative >= 0) {
+        const int index = relative / stride;
+        const int local_y = relative % stride;
+        if (index >= 0 && index < static_cast<int>(std::size(tools)) &&
+            local_y < cell_height) {
             set_tool(hwnd, tools[index]);
             return true;
         }
     }
-    return point.x < kLeftToolRailWidth;
+    return true;
 }
 
 
+
+
 void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
+    const int top = toolbar_height(client);
+    const int width = layer_panel_width(client);
     RECT panel{
-        std::max<LONG>(client.left, client.right - kLayerPanelWidth),
-        kToolbarHeight,
+        std::max<LONG>(client.left, client.right - width),
+        top,
         client.right,
         client.bottom - kStatusHeight
     };
@@ -1081,13 +1082,14 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
 bool handle_layer_panel_click(HWND hwnd, POINT point) {
     RECT client{};
     GetClientRect(hwnd, &client);
-    const int panel_left = client.right - kLayerPanelWidth;
-    if (point.x < panel_left || point.y < kToolbarHeight ||
+    const int top = toolbar_height(client);
+    const int panel_left = client.right - layer_panel_width(client);
+    if (point.x < panel_left || point.y < top ||
         point.y >= client.bottom - kStatusHeight) {
         return false;
     }
 
-    int y = kToolbarHeight + 32;
+    int y = top + 32;
     for (const acp::LayerId id : g_app.document.layer_ids()) {
         const acp::Layer* layer = g_app.document.layer(id);
         if (layer == nullptr) {
