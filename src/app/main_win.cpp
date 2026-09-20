@@ -904,7 +904,7 @@ bool handle_toolbar_click(HWND hwnd, POINT point) {
 }
 
 
-void draw_left_tool_rail(HDC dc, const RECT& client) {void draw_left_tool_rail(HDC dc, const RECT& client) {
+void draw_left_tool_rail(HDC dc, const RECT& client) {
     const int top = toolbar_height(client);
     const int width = left_tool_rail_width(client);
     RECT rail{
