@@ -17,6 +17,7 @@
 #include "acp/transform.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cwchar>
@@ -86,9 +87,10 @@ struct AppState {
 
 AppState g_app;
 
-constexpr int kToolbarHeight = 78;
-constexpr int kStatusHeight = 24;
-constexpr int kLayerPanelWidth = 230;
+constexpr int kToolbarHeight = 68;
+constexpr int kStatusHeight = 26;
+constexpr int kLayerPanelWidth = 248;
+constexpr int kLeftToolRailWidth = 40;
 constexpr int kMenuNew = 1001;
 constexpr int kMenuExit = 1002;
 constexpr int kMenuOpen = 1003;
@@ -144,11 +146,37 @@ const wchar_t* tool_name(Tool tool) {
     }
     return L"Select";
 }
+struct ToolbarButton {
+    RECT rect;
+    const wchar_t* text;
+    Tool tool;
+};
+
+constexpr std::array<ToolbarButton, 16> kToolbarButtons{{
+    {{8, 31, 66, 64}, L"Select", Tool::Select},
+    {{68, 31, 120, 64}, L"Line", Tool::Line},
+    {{122, 31, 188, 64}, L"Polyline", Tool::Polyline},
+    {{190, 31, 248, 64}, L"Circle", Tool::Circle},
+    {{250, 31, 298, 64}, L"Arc", Tool::Arc},
+    {{300, 31, 356, 64}, L"Move", Tool::Move},
+    {{358, 31, 414, 64}, L"Copy", Tool::Copy},
+    {{416, 31, 476, 64}, L"Rotate", Tool::Rotate},
+    {{478, 31, 534, 64}, L"Scale", Tool::Scale},
+    {{536, 31, 594, 64}, L"Mirror", Tool::Mirror},
+    {{596, 31, 648, 64}, L"Trim", Tool::Trim},
+    {{650, 31, 710, 64}, L"Extend", Tool::Extend},
+    {{712, 31, 770, 64}, L"Offset", Tool::Offset},
+    {{772, 31, 844, 64}, L"Dimension", Tool::Dimension},
+    {{846, 31, 902, 64}, L"Hatch", Tool::Hatch},
+    {{904, 31, 956, 64}, L"Text", Tool::Text}
+}};
+
 
 RECT canvas_rect(HWND hwnd) {
     RECT rc{};
     GetClientRect(hwnd, &rc);
     rc.top += kToolbarHeight;
+    rc.left += kLeftToolRailWidth;
     rc.right = std::max(rc.left, rc.right - kLayerPanelWidth);
     rc.bottom = std::max(rc.top, rc.bottom - kStatusHeight);
     return rc;
@@ -685,108 +713,259 @@ void draw_preview(HWND hwnd, HDC dc) {
 
 void draw_toolbar(HDC dc, const RECT& client) {
     RECT bar{client.left, client.top, client.right, client.top + kToolbarHeight};
-    HBRUSH brush = CreateSolidBrush(RGB(39, 43, 50));
-    FillRect(dc, &bar, brush);
-    DeleteObject(brush);
+    HBRUSH background = CreateSolidBrush(RGB(27, 43, 57));
+    FillRect(dc, &bar, background);
+    DeleteObject(background);
+
+    HPEN divider = CreatePen(PS_SOLID, 1, RGB(57, 76, 94));
+    HGDIOBJ old_pen = SelectObject(dc, divider);
+    MoveToEx(dc, 0, 27, nullptr);
+    LineTo(dc, client.right, 27);
+    SelectObject(dc, old_pen);
+    DeleteObject(divider);
 
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(235, 237, 242));
+    SetTextColor(dc, RGB(219, 228, 236));
 
-    RECT title{12, 0, 180, kToolbarHeight};
-    DrawTextW(dc, L"AUTO CAD PRO", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    const wchar_t* tabs[] = {
+        L"Home", L"Draw", L"Modify", L"Annotate",
+        L"Layers", L"View", L"Export"
+    };
+    int tab_x = 12;
+    for (std::size_t i = 0; i < std::size(tabs); ++i) {
+        const int width = i == 3 ? 78 : 62;
+        RECT tab{tab_x, 2, tab_x + width, 26};
+        if (i == 0) {
+            HBRUSH active = CreateSolidBrush(RGB(37, 91, 137));
+            FillRect(dc, &tab, active);
+            DeleteObject(active);
+        }
+        DrawTextW(dc, tabs[i], -1, &tab,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        tab_x += width + 2;
+    }
 
-    struct Button { RECT rect; const wchar_t* text; Tool tool; };
-    const Button buttons[] = {
-        {{190, 7, 265, 37}, L"Select", Tool::Select},
-        {{272, 7, 337, 37}, L"Line", Tool::Line},
-        {{344, 7, 419, 37}, L"Circle", Tool::Circle},
-        {{426, 7, 501, 37}, L"Polyline", Tool::Polyline},
-        {{508, 7, 563, 37}, L"Arc", Tool::Arc},
-        {{570, 7, 625, 37}, L"Move", Tool::Move},
-        {{632, 7, 687, 37}, L"Copy", Tool::Copy},
-        {{694, 7, 759, 37}, L"Rotate", Tool::Rotate},
-        {{766, 7, 821, 37}, L"Trim", Tool::Trim},
-        {{828, 7, 893, 37}, L"Extend", Tool::Extend},
-        {{900, 7, 965, 37}, L"Offset", Tool::Offset},
-        {{190, 43, 255, 73}, L"Scale", Tool::Scale},
-        {{262, 43, 337, 73}, L"Mirror", Tool::Mirror},
-        {{344, 43, 439, 73}, L"Dimension", Tool::Dimension},
-        {{446, 43, 511, 73}, L"Hatch", Tool::Hatch},
-        {{518, 43, 583, 73}, L"Text", Tool::Text}
+    RECT search{
+        std::max<LONG>(tab_x + 12, client.right - 300),
+        3,
+        client.right - 12,
+        25
+    };
+    if (search.right - search.left > 120) {
+        HBRUSH search_brush = CreateSolidBrush(RGB(20, 35, 48));
+        FillRect(dc, &search, search_brush);
+        DeleteObject(search_brush);
+        SetTextColor(dc, RGB(151, 169, 184));
+        RECT search_text{search.left + 10, search.top, search.right - 6, search.bottom};
+        DrawTextW(dc, L"Type a command or search...", -1, &search_text,
+                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        SetTextColor(dc, RGB(219, 228, 236));
+    }
+
+    for (const auto& button : kToolbarButtons) {
+        RECT rect = button.rect;
+        const bool active = g_app.tool == button.tool;
+        HBRUSH button_brush = CreateSolidBrush(
+            active ? RGB(28, 103, 163) : RGB(34, 52, 67));
+        FillRect(dc, &rect, button_brush);
+        DeleteObject(button_brush);
+
+        if (active) {
+            HPEN edge = CreatePen(PS_SOLID, 1, RGB(58, 169, 239));
+            HGDIOBJ previous = SelectObject(dc, edge);
+            HGDIOBJ previous_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+            Rectangle(dc, rect.left, rect.top, rect.right, rect.bottom);
+            SelectObject(dc, previous_brush);
+            SelectObject(dc, previous);
+            DeleteObject(edge);
+        }
+
+        DrawTextW(dc, button.text, -1, &rect,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    }
+}
+
+bool handle_toolbar_click(HWND hwnd, POINT point) {
+    if (point.y < 28 || point.y >= kToolbarHeight) {
+        return false;
+    }
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    for (const auto& button : kToolbarButtons) {
+        if (PtInRect(&button.rect, point)) {
+            set_tool(hwnd, button.tool);
+            return true;
+        }
+    }
+    return point.y < kToolbarHeight;
+}
+
+
+void draw_left_tool_rail(HDC dc, const RECT& client) {
+    RECT rail{
+        client.left,
+        kToolbarHeight,
+        client.left + kLeftToolRailWidth,
+        client.bottom - kStatusHeight
+    };
+    HBRUSH background = CreateSolidBrush(RGB(25, 40, 53));
+    FillRect(dc, &rail, background);
+    DeleteObject(background);
+
+    struct RailItem { const wchar_t* label; Tool tool; };
+    const RailItem items[] = {
+        {L"S", Tool::Select},
+        {L"L", Tool::Line},
+        {L"P", Tool::Polyline},
+        {L"C", Tool::Circle},
+        {L"A", Tool::Arc},
+        {L"M", Tool::Move},
+        {L"T", Tool::Trim},
+        {L"D", Tool::Dimension},
+        {L"H", Tool::Hatch},
+        {L"X", Tool::Text}
     };
 
-    for (const auto& button : buttons) {
-        HBRUSH button_brush = CreateSolidBrush(
-            g_app.tool == button.tool ? RGB(58, 118, 181) : RGB(56, 61, 70));
-        FillRect(dc, &button.rect, button_brush);
-        DeleteObject(button_brush);
-        DrawTextW(dc, button.text, -1, const_cast<RECT*>(&button.rect),
+    SetBkMode(dc, TRANSPARENT);
+    int y = rail.top + 6;
+    for (const auto& item : items) {
+        RECT cell{rail.left + 4, y, rail.right - 4, y + 30};
+        HBRUSH brush = CreateSolidBrush(
+            g_app.tool == item.tool ? RGB(28, 103, 163) : RGB(33, 51, 66));
+        FillRect(dc, &cell, brush);
+        DeleteObject(brush);
+        SetTextColor(dc, RGB(220, 230, 238));
+        DrawTextW(dc, item.label, -1, &cell,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        y += 34;
     }
+}
+
+bool handle_left_tool_rail_click(HWND hwnd, POINT point) {
+    if (point.x < 0 || point.x >= kLeftToolRailWidth ||
+        point.y < kToolbarHeight || point.y >= kToolbarHeight + 346) {
+        return false;
+    }
+    constexpr Tool tools[] = {
+        Tool::Select, Tool::Line, Tool::Polyline, Tool::Circle, Tool::Arc,
+        Tool::Move, Tool::Trim, Tool::Dimension, Tool::Hatch, Tool::Text
+    };
+    const int index = (point.y - (kToolbarHeight + 6)) / 34;
+    if (index >= 0 && index < static_cast<int>(std::size(tools))) {
+        const int local_y = (point.y - (kToolbarHeight + 6)) % 34;
+        if (local_y < 30) {
+            set_tool(hwnd, tools[index]);
+            return true;
+        }
+    }
+    return point.x < kLeftToolRailWidth;
 }
 
 
 void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     RECT panel{
-        std::max(client.left, client.right - kLayerPanelWidth),
+        std::max<LONG>(client.left, client.right - kLayerPanelWidth),
         kToolbarHeight,
         client.right,
         client.bottom - kStatusHeight
     };
 
-    HBRUSH background = CreateSolidBrush(RGB(35, 39, 46));
+    HBRUSH background = CreateSolidBrush(RGB(28, 42, 54));
     FillRect(dc, &panel, background);
     DeleteObject(background);
 
-    SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(235, 237, 242));
+    HPEN separator = CreatePen(PS_SOLID, 1, RGB(58, 76, 92));
+    HGDIOBJ old_pen = SelectObject(dc, separator);
+    MoveToEx(dc, panel.left, panel.top, nullptr);
+    LineTo(dc, panel.left, panel.bottom);
+    SelectObject(dc, old_pen);
+    DeleteObject(separator);
 
-    RECT heading{panel.left + 12, panel.top + 8, panel.right - 8, panel.top + 34};
-    DrawTextW(dc, L"LAYERS / PROPERTIES", -1, &heading,
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(231, 237, 242));
+
+    RECT heading{panel.left + 10, panel.top + 4, panel.right - 8, panel.top + 28};
+    DrawTextW(dc, L"Layers", -1, &heading,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    int y = panel.top + 40;
+    int y = panel.top + 32;
     for (const acp::LayerId id : g_app.document.layer_ids()) {
         const acp::Layer* layer = g_app.document.layer(id);
-        if (layer == nullptr) {
-            continue;
-        }
+        if (layer == nullptr) continue;
 
-        RECT row{panel.left + 8, y, panel.right - 8, y + 28};
+        RECT row{panel.left + 6, y, panel.right - 6, y + 24};
         HBRUSH row_brush = CreateSolidBrush(
-            id == g_app.active_layer ? RGB(58, 76, 98) : RGB(46, 50, 58));
+            id == g_app.active_layer ? RGB(34, 90, 137) : RGB(35, 51, 64));
         FillRect(dc, &row, row_brush);
         DeleteObject(row_brush);
 
         wchar_t name[160]{};
         MultiByteToWideChar(CP_UTF8, 0, layer->name.c_str(), -1,
                             name, static_cast<int>(std::size(name)));
-        RECT name_rect{row.left + 8, row.top, row.right - 72, row.bottom};
-        DrawTextW(dc, name, -1, &name_rect,
-                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
-        RECT vis_rect{row.right - 68, row.top, row.right - 38, row.bottom};
-        RECT lock_rect{row.right - 34, row.top, row.right - 4, row.bottom};
+        RECT vis_rect{row.left + 2, row.top, row.left + 28, row.bottom};
+        RECT lock_rect{row.left + 30, row.top, row.left + 56, row.bottom};
+        RECT name_rect{row.left + 60, row.top, row.right - 4, row.bottom};
         DrawTextW(dc, layer->visible ? L"V" : L"-", -1, &vis_rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         DrawTextW(dc, layer->locked ? L"L" : L"-", -1, &lock_rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        y += 32;
+        DrawTextW(dc, name, -1, &name_rect,
+                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        y += 26;
     }
 
-    y += 8;
-    SetTextColor(dc, RGB(180, 186, 198));
-    RECT hint{panel.left + 10, y, panel.right - 10, panel.bottom};
-    DrawTextW(dc,
-              L"Click layer: activate\nV: visibility   L: lock\n"
-              L"Layer menu: create/assign\n\n"
-              L"Selected entity properties appear\nin the status bar.\n"
-              L"Entity menu: visibility/weight.\n"
-              L"F3 toggles Object Snap.",
-              -1, &hint, DT_LEFT | DT_TOP | DT_WORDBREAK);
+    const int properties_top = std::max<LONG>(y + 10, panel.top + (panel.bottom - panel.top) / 2);
+    RECT prop_header{panel.left, properties_top, panel.right, properties_top + 28};
+    HBRUSH prop_brush = CreateSolidBrush(RGB(32, 49, 63));
+    FillRect(dc, &prop_header, prop_brush);
+    DeleteObject(prop_brush);
+    RECT prop_title{panel.left + 10, properties_top, panel.right - 8, properties_top + 28};
+    DrawTextW(dc, L"Properties", -1, &prop_title,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    int py = properties_top + 34;
+    SetTextColor(dc, RGB(185, 198, 209));
+    auto draw_property = [&](const wchar_t* key, const wchar_t* value) {
+        RECT key_rect{panel.left + 10, py, panel.left + 100, py + 22};
+        RECT value_rect{panel.left + 104, py, panel.right - 8, py + 22};
+        DrawTextW(dc, key, -1, &key_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        SetTextColor(dc, RGB(232, 237, 241));
+        DrawTextW(dc, value, -1, &value_rect,
+                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        SetTextColor(dc, RGB(185, 198, 209));
+        py += 22;
+    };
+
+    wchar_t value[128]{};
+    if (g_app.selected.has_value()) {
+        swprintf_s(value, L"%llu",
+                   static_cast<unsigned long long>(*g_app.selected));
+        draw_property(L"Selected", value);
+        if (const acp::EntityProperties* props =
+                g_app.document.properties(*g_app.selected)) {
+            swprintf_s(value, L"%u", static_cast<unsigned>(props->layer_id));
+            draw_property(L"Layer", value);
+            swprintf_s(value, L"%.2f mm",
+                       g_app.document.effective_line_weight(*g_app.selected));
+            draw_property(L"Lineweight", value);
+            draw_property(L"Visible", props->visible ? L"Yes" : L"No");
+            draw_property(L"Locked",
+                          g_app.document.entity_locked(*g_app.selected) ? L"Yes" : L"No");
+        }
+    } else {
+        draw_property(L"Selected", L"None");
+        swprintf_s(value, L"%u", static_cast<unsigned>(g_app.active_layer));
+        draw_property(L"Layer", value);
+    }
+
+    swprintf_s(value, L"%.0f%%", g_app.zoom * 100.0);
+    draw_property(L"Zoom", value);
+    draw_property(L"Object snap", g_app.snap_enabled ? L"On (F3)" : L"Off (F3)");
 
     (void)hwnd;
 }
+
 
 bool handle_layer_panel_click(HWND hwnd, POINT point) {
     RECT client{};
@@ -797,20 +976,20 @@ bool handle_layer_panel_click(HWND hwnd, POINT point) {
         return false;
     }
 
-    int y = kToolbarHeight + 40;
+    int y = kToolbarHeight + 32;
     for (const acp::LayerId id : g_app.document.layer_ids()) {
         const acp::Layer* layer = g_app.document.layer(id);
         if (layer == nullptr) {
             continue;
         }
-        RECT row{panel_left + 8, y, client.right - 8, y + 28};
+        RECT row{panel_left + 6, y, client.right - 6, y + 24};
         if (PtInRect(&row, point)) {
-            if (point.x >= row.right - 68 && point.x < row.right - 38) {
+            if (point.x < row.left + 30) {
                 acp::Layer replacement = *layer;
                 replacement.visible = !replacement.visible;
                 (void)apply_history(std::make_unique<acp::UpdateLayerCommand>(
                         id, replacement));
-            } else if (point.x >= row.right - 34) {
+            } else if (point.x < row.left + 58) {
                 acp::Layer replacement = *layer;
                 replacement.locked = !replacement.locked;
                 (void)apply_history(std::make_unique<acp::UpdateLayerCommand>(
@@ -821,7 +1000,7 @@ bool handle_layer_panel_click(HWND hwnd, POINT point) {
             InvalidateRect(hwnd, nullptr, FALSE);
             return true;
         }
-        y += 32;
+        y += 26;
     }
     return true;
 }
@@ -1111,30 +1290,13 @@ void export_dxf(HWND hwnd) {
 }
 
 void handle_left_click(HWND hwnd, POINT point) {
-    if (handle_layer_panel_click(hwnd, point)) {
+    if (handle_toolbar_click(hwnd, point)) {
         return;
     }
-
-    if (point.y < kToolbarHeight) {
-        if (point.y >= 43) {
-            if (point.x >= 190 && point.x <= 255) set_tool(hwnd, Tool::Scale);
-            else if (point.x >= 262 && point.x <= 337) set_tool(hwnd, Tool::Mirror);
-            else if (point.x >= 344 && point.x <= 439) set_tool(hwnd, Tool::Dimension);
-            else if (point.x >= 446 && point.x <= 511) set_tool(hwnd, Tool::Hatch);
-            else if (point.x >= 518 && point.x <= 583) set_tool(hwnd, Tool::Text);
-            return;
-        }
-        if (point.x >= 190 && point.x <= 265) set_tool(hwnd, Tool::Select);
-        else if (point.x >= 272 && point.x <= 337) set_tool(hwnd, Tool::Line);
-        else if (point.x >= 344 && point.x <= 419) set_tool(hwnd, Tool::Circle);
-        else if (point.x >= 426 && point.x <= 501) set_tool(hwnd, Tool::Polyline);
-        else if (point.x >= 508 && point.x <= 563) set_tool(hwnd, Tool::Arc);
-        else if (point.x >= 570 && point.x <= 625) set_tool(hwnd, Tool::Move);
-        else if (point.x >= 632 && point.x <= 687) set_tool(hwnd, Tool::Copy);
-        else if (point.x >= 694 && point.x <= 759) set_tool(hwnd, Tool::Rotate);
-        else if (point.x >= 766 && point.x <= 821) set_tool(hwnd, Tool::Trim);
-        else if (point.x >= 828 && point.x <= 893) set_tool(hwnd, Tool::Extend);
-        else if (point.x >= 900 && point.x <= 965) set_tool(hwnd, Tool::Offset);
+    if (handle_left_tool_rail_click(hwnd, point)) {
+        return;
+    }
+    if (handle_layer_panel_click(hwnd, point)) {
         return;
     }
 
@@ -1893,6 +2055,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             draw_preview(hwnd, memory);
             draw_snap_marker(hwnd, memory);
             draw_toolbar(memory, client);
+            draw_left_tool_rail(memory, client);
             draw_layer_panel(hwnd, memory, client);
             draw_status(hwnd, memory, client);
 
