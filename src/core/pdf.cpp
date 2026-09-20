@@ -18,12 +18,35 @@ namespace {
 
 constexpr double kPointsPerMm = 72.0 / 25.4;
 
+bool pdf_text_supported(std::string_view text) noexcept {
+    for (const unsigned char ch : text) {
+        if (ch < 32 || ch > 126) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool entity_has_unsupported_text(const Entity& value) noexcept {
+    return std::visit([](const auto& item) noexcept {
+        using T = std::decay_t<decltype(item)>;
+        if constexpr (std::is_same_v<T, TextEntity>) {
+            return !pdf_text_supported(item.text);
+        } else if constexpr (std::is_same_v<T, LinearDimensionEntity>) {
+            return item.text_override.has_value() &&
+                   !pdf_text_supported(*item.text_override);
+        } else {
+            return false;
+        }
+    }, value);
+}
+
 std::string pdf_escape(std::string_view text) {
     std::string out;
     out.reserve(text.size());
-    for (unsigned char ch : text) {
+    for (const unsigned char ch : text) {
         if (ch == '(' || ch == ')' || ch == '\\') out.push_back('\\');
-        out.push_back(ch >= 32 && ch <= 126 ? static_cast<char>(ch) : '?');
+        out.push_back(static_cast<char>(ch));
     }
     return out;
 }
@@ -98,7 +121,7 @@ void text(
     const Transform& tx,
     const TextEntity& value) {
 
-    if (!annotation::valid_text(value)) return;
+    if (!annotation::valid_text(value) || !pdf_text_supported(value.text)) return;
     const auto p = tx.point(value.position);
     const double size = std::max(5.0, value.height * tx.scale);
     const double c = std::cos(value.rotation);
@@ -263,6 +286,9 @@ std::optional<std::string> export_document(
         if (!document.entity_visible(id)) continue;
         const Entity* value = document.find(id);
         if (value == nullptr) continue;
+        if (entity_has_unsupported_text(*value)) {
+            return std::nullopt;
+        }
         const double width_points = std::clamp(
             document.effective_line_weight(id), 0.05, 2.0) * kPointsPerMm;
         content << width_points << " w\n";
