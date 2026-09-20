@@ -22,7 +22,6 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Launch GUI and capture real window
-        if: github.event_name == 'push'
         shell: powershell
         run: |
           Add-Type -AssemblyName System.Drawing
@@ -97,7 +96,6 @@ jobs:
           }
 
       - name: Upload real GUI screenshot
-        if: github.event_name == 'push'
         uses: actions/upload-artifact@v6
         with:
           name: AutoCADPro-Real-UI
@@ -105,7 +103,6 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Windows application
-        if: github.event_name == 'push'
         uses: actions/upload-artifact@v6
         with:
           name: AutoCADPro-Windows-x64
