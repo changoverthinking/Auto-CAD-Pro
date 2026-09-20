@@ -152,22 +152,22 @@ struct ToolbarButton {
 };
 
 constexpr std::array<ToolbarButton, 16> kToolbarButtons{{
-    {{{8, 31, 72, 64}}, L"Select", Tool::Select},
-    {{{76, 31, 136, 64}}, L"Line", Tool::Line},
-    {{{140, 31, 212, 64}}, L"Polyline", Tool::Polyline},
-    {{{216, 31, 278, 64}}, L"Circle", Tool::Circle},
-    {{{282, 31, 336, 64}}, L"Arc", Tool::Arc},
-    {{{344, 31, 402, 64}}, L"Move", Tool::Move},
-    {{{406, 31, 464, 64}}, L"Copy", Tool::Copy},
-    {{{468, 31, 534, 64}}, L"Rotate", Tool::Rotate},
-    {{{538, 31, 596, 64}}, L"Scale", Tool::Scale},
-    {{{600, 31, 660, 64}}, L"Mirror", Tool::Mirror},
-    {{{668, 31, 724, 64}}, L"Trim", Tool::Trim},
-    {{{728, 31, 790, 64}}, L"Extend", Tool::Extend},
-    {{{794, 31, 856, 64}}, L"Offset", Tool::Offset},
-    {{{864, 31, 948, 64}}, L"Dimension", Tool::Dimension},
-    {{{952, 31, 1014, 64}}, L"Hatch", Tool::Hatch},
-    {{{1018, 31, 1076, 64}}, L"Text", Tool::Text}
+    {{8, 31, 72, 64}, L"Select", Tool::Select},
+    {{76, 31, 136, 64}, L"Line", Tool::Line},
+    {{140, 31, 212, 64}, L"Polyline", Tool::Polyline},
+    {{216, 31, 278, 64}, L"Circle", Tool::Circle},
+    {{282, 31, 336, 64}, L"Arc", Tool::Arc},
+    {{344, 31, 402, 64}, L"Move", Tool::Move},
+    {{406, 31, 464, 64}, L"Copy", Tool::Copy},
+    {{468, 31, 534, 64}, L"Rotate", Tool::Rotate},
+    {{538, 31, 596, 64}, L"Scale", Tool::Scale},
+    {{600, 31, 660, 64}, L"Mirror", Tool::Mirror},
+    {{668, 31, 724, 64}, L"Trim", Tool::Trim},
+    {{728, 31, 790, 64}, L"Extend", Tool::Extend},
+    {{794, 31, 856, 64}, L"Offset", Tool::Offset},
+    {{864, 31, 948, 64}, L"Dimension", Tool::Dimension},
+    {{952, 31, 1014, 64}, L"Hatch", Tool::Hatch},
+    {{1018, 31, 1076, 64}, L"Text", Tool::Text}
 }};
 
 
@@ -744,7 +744,7 @@ void draw_toolbar(HDC dc, const RECT& client) {
     }
 
     RECT search{
-        std::max(tab_x + 12, client.right - 300),
+        std::max<LONG>(tab_x + 12, client.right - 300),
         3,
         client.right - 12,
         25
@@ -807,7 +807,7 @@ bool handle_toolbar_click(HWND hwnd, POINT point) {
 
 void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     RECT panel{
-        std::max(client.left, client.right - kLayerPanelWidth),
+        std::max<LONG>(client.left, client.right - kLayerPanelWidth),
         kToolbarHeight,
         client.right,
         client.bottom - kStatusHeight
@@ -858,7 +858,7 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
         y += 26;
     }
 
-    const int properties_top = std::max(y + 10, panel.top + (panel.bottom - panel.top) / 2);
+    const int properties_top = std::max<LONG>(y + 10, panel.top + (panel.bottom - panel.top) / 2);
     RECT prop_header{panel.left, properties_top, panel.right, properties_top + 28};
     HBRUSH prop_brush = CreateSolidBrush(RGB(32, 49, 63));
     FillRect(dc, &prop_header, prop_brush);
