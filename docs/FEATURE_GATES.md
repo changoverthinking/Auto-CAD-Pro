@@ -41,8 +41,9 @@ A feature may be labeled production only when all of the following are true:
 | Windows desktop GUI | prototype | canvas/grid, zoom/pan, object snap, Line/Circle/Polyline/Arc/Text, selection/grips, Move/Copy/Rotate/Scale/Mirror, Trim/Extend/Offset, Dimension/Hatch creation, layers/properties panel, Delete, Undo/Redo, project/DXF workflow, Text/Dimension/Hatch/Block rendering |
 | Windows executable artifact | prototype | CI uploads AutoCADPro-Windows-x64 after push build/test using Node 24-native actions |
 | constraints | planned | FreeCAD Sketcher upstream audit required |
-| SVG/PDF export | prototype | SVG and vector PDF core exporters + Windows GUI commands implemented and regression-tested |
-| full GUI editing workflow | prototype | selection/transforms/edit2d/history/file workflow, object snap, text creation, layers panel and core entity rendering active; richer annotation styling and richer properties editing remain |
+| SVG export | prototype | visible 2D geometry, instantiated blocks, UTF-8 text, dimensions, hatches and effective line weights are serialized by the core exporter and exposed in the Windows GUI |
+| PDF export | prototype | vector geometry and printable ASCII text are exported to PDF 1.4; unsupported Unicode text now rejects export instead of being silently replaced with question marks; embedded Unicode font support remains required |
+| full GUI editing workflow | prototype | selection/transforms/edit2d/history/file workflow, object snap, Unicode text creation, layers panel and core entity rendering active; richer annotation styling and richer properties editing remain |
 
 ## 2026-09-19 GUI audit fixes
 
@@ -53,21 +54,14 @@ A feature may be labeled production only when all of the following are true:
 - Render effective entity/layer line weight instead of one fixed pen width.
 - Add Shift+Enter closed-polyline completion so Hatch creation is reachable from the GUI.
 - Upgrade checkout/upload CI actions to Node 24-native majors to remove runner deprecation warnings.
-
 - Property and layer mutations now participate in command history so Ctrl+Z/Ctrl+Y covers entity layer assignment, visibility, line-weight overrides, and layer visibility/lock toggles.
-
 - GUI Object Snap now resolves visible Line/Polyline/Circle/Arc geometry using the tested snap core, including segment intersections, and can be toggled with F3.
-- Text creation is reachable in the real GUI: choose Text, click insertion point, type ASCII text, press Enter to commit through History.
-
+- Text creation is reachable in the real GUI: choose Text, click insertion point, type through the Windows Unicode character stream, and press Enter to commit through History.
 - Object snap input resolution is kept separate from entity hit-testing so Select/Trim/Extend target acquisition uses the real cursor location instead of a snapped point.
-- Text input uses the Windows Unicode character stream and converts to UTF-8 on commit, including surrogate-pair-safe backspace handling.
-
+- Text input converts the Windows Unicode character stream to UTF-8 on commit, including surrogate-pair-safe backspace handling.
 - SVG export serializes visible 2D geometry, instantiated blocks, text, dimensions, hatches and effective line weights with XML escaping and drawing bounds-derived viewBox.
-
 - Unsaved-change protection tracks command mutations, layer creation, DXF import, Undo and Redo; New/Open/Import/Exit/WM_CLOSE now require explicit discard confirmation when dirty, while successful project Save clears the dirty flag.
-
 - Document-level Object Snap moved into acp_core with tests for intersections, hidden entities, centers and instantiated block geometry; intersection pairing is limited to segments already within the snap aperture to avoid global O(n²) mouse-move scans.
-
 - Project file workflow now remembers the current .acp path, separates Save from Save As, maps Ctrl+S/Ctrl+Shift+S/Ctrl+O/Ctrl+N correctly, and delays discard confirmation until a chosen Open/Import file has been successfully parsed.
-
-- Vector PDF export fits visible drawing geometry to the configured A4 landscape page model, preserves effective line weights, emits blocks/dimensions/hatches/text, and writes a self-contained PDF 1.4 file.
+- Vector PDF export fits visible drawing geometry to the configured A4 landscape page model, preserves effective line weights, and emits blocks/dimensions/hatches/text.
+- PDF text export no longer silently corrupts UTF-8 into '?' characters. Until a Unicode font is embedded/subset into the PDF, documents containing unsupported Unicode text fail export rather than producing misleading output.
