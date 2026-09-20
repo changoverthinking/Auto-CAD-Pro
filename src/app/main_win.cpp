@@ -1300,29 +1300,6 @@ void handle_left_click(HWND hwnd, POINT point) {
         return;
     }
 
-    if (point.y < kToolbarHeight) {
-        if (point.y >= 43) {
-            if (point.x >= 190 && point.x <= 255) set_tool(hwnd, Tool::Scale);
-            else if (point.x >= 262 && point.x <= 337) set_tool(hwnd, Tool::Mirror);
-            else if (point.x >= 344 && point.x <= 439) set_tool(hwnd, Tool::Dimension);
-            else if (point.x >= 446 && point.x <= 511) set_tool(hwnd, Tool::Hatch);
-            else if (point.x >= 518 && point.x <= 583) set_tool(hwnd, Tool::Text);
-            return;
-        }
-        if (point.x >= 190 && point.x <= 265) set_tool(hwnd, Tool::Select);
-        else if (point.x >= 272 && point.x <= 337) set_tool(hwnd, Tool::Line);
-        else if (point.x >= 344 && point.x <= 419) set_tool(hwnd, Tool::Circle);
-        else if (point.x >= 426 && point.x <= 501) set_tool(hwnd, Tool::Polyline);
-        else if (point.x >= 508 && point.x <= 563) set_tool(hwnd, Tool::Arc);
-        else if (point.x >= 570 && point.x <= 625) set_tool(hwnd, Tool::Move);
-        else if (point.x >= 632 && point.x <= 687) set_tool(hwnd, Tool::Copy);
-        else if (point.x >= 694 && point.x <= 759) set_tool(hwnd, Tool::Rotate);
-        else if (point.x >= 766 && point.x <= 821) set_tool(hwnd, Tool::Trim);
-        else if (point.x >= 828 && point.x <= 893) set_tool(hwnd, Tool::Extend);
-        else if (point.x >= 900 && point.x <= 965) set_tool(hwnd, Tool::Offset);
-        return;
-    }
-
     const RECT canvas = canvas_rect(hwnd);
     if (!PtInRect(&canvas, point)) {
         return;
