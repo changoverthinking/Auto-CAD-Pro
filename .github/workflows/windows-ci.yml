@@ -21,6 +21,89 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 
+      - name: Launch GUI and capture real window
+        if: github.event_name == 'push'
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          public static class NativeWindow {
+              [StructLayout(LayoutKind.Sequential)]
+              public struct RECT { public int Left, Top, Right, Bottom; }
+              [DllImport("user32.dll")]
+              public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+              [DllImport("user32.dll")]
+              public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+              [DllImport("user32.dll")]
+              public static extern bool SetForegroundWindow(IntPtr hWnd);
+          }
+          "@
+
+          $exe = Join-Path $PWD "build\Release\AutoCADPro.exe"
+          if (!(Test-Path $exe)) { throw "AutoCADPro.exe was not produced" }
+
+          $proc = Start-Process -FilePath $exe -PassThru
+          try {
+            $deadline = (Get-Date).AddSeconds(20)
+            do {
+              Start-Sleep -Milliseconds 500
+              $proc.Refresh()
+            } while ($proc.MainWindowHandle -eq 0 -and (Get-Date) -lt $deadline)
+
+            if ($proc.HasExited) {
+              throw "AutoCADPro exited before a main window appeared. ExitCode=$($proc.ExitCode)"
+            }
+            if ($proc.MainWindowHandle -eq 0) {
+              throw "AutoCADPro did not create a visible main window"
+            }
+
+            [NativeWindow]::ShowWindow($proc.MainWindowHandle, 3) | Out-Null
+            [NativeWindow]::SetForegroundWindow($proc.MainWindowHandle) | Out-Null
+            Start-Sleep -Seconds 2
+
+            $rect = New-Object NativeWindow+RECT
+            if (![NativeWindow]::GetWindowRect($proc.MainWindowHandle, [ref]$rect)) {
+              throw "GetWindowRect failed"
+            }
+
+            $width = $rect.Right - $rect.Left
+            $height = $rect.Bottom - $rect.Top
+            if ($width -lt 640 -or $height -lt 480) {
+              throw ("Unexpected GUI size: " + $width + "x" + $height)
+            }
+
+            New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+            $bitmap = New-Object System.Drawing.Bitmap $width, $height
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            try {
+              $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bitmap.Size)
+              $bitmap.Save((Join-Path $PWD "artifacts\AutoCADPro-real-ui.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+            }
+            finally {
+              $graphics.Dispose()
+              $bitmap.Dispose()
+            }
+
+            if (!(Test-Path "artifacts\AutoCADPro-real-ui.png")) {
+              throw "GUI screenshot was not created"
+            }
+          }
+          finally {
+            if (!$proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force
+            }
+          }
+
+      - name: Upload real GUI screenshot
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v6
+        with:
+          name: AutoCADPro-Real-UI
+          path: artifacts/AutoCADPro-real-ui.png
+          if-no-files-found: error
+
       - name: Upload Windows application
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v6
