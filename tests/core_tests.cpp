@@ -1066,6 +1066,11 @@ int main() {
     expect(!pdf::export_document(Document{}).has_value(),
            "pdf rejects empty drawing");
 
+    Document unicodePdfDoc;
+    unicodePdfDoc.insert(TextEntity{{0, 0}, "日本語", 2.5, 0.0});
+    expect(!pdf::export_document(unicodePdfDoc).has_value(),
+           "pdf rejects unsupported Unicode text instead of corrupting it");
+
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return EXIT_FAILURE;
