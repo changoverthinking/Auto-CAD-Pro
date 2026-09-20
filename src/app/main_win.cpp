@@ -47,6 +47,7 @@ enum class Tool {
     Circle,
     Polyline,
     Arc,
+    Rectangle,
     Move,
     Copy,
     Rotate,
@@ -124,6 +125,7 @@ constexpr int kToolMirror = 2013;
 constexpr int kToolDimension = 2014;
 constexpr int kToolHatch = 2015;
 constexpr int kToolText = 2016;
+constexpr int kToolRectangle = 2017;
 
 const wchar_t* tool_name(Tool tool) {
     switch (tool) {
@@ -132,6 +134,7 @@ const wchar_t* tool_name(Tool tool) {
         case Tool::Circle: return L"Circle";
         case Tool::Polyline: return L"Polyline";
         case Tool::Arc: return L"Arc";
+        case Tool::Rectangle: return L"Rectangle";
         case Tool::Move: return L"Move";
         case Tool::Copy: return L"Copy";
         case Tool::Rotate: return L"Rotate";
@@ -152,23 +155,24 @@ struct ToolbarButton {
     Tool tool;
 };
 
-constexpr std::array<ToolbarButton, 16> kToolbarButtons{{
-    {{8, 31, 66, 64}, L"Select", Tool::Select},
-    {{68, 31, 120, 64}, L"Line", Tool::Line},
-    {{122, 31, 188, 64}, L"Polyline", Tool::Polyline},
-    {{190, 31, 248, 64}, L"Circle", Tool::Circle},
-    {{250, 31, 298, 64}, L"Arc", Tool::Arc},
-    {{300, 31, 356, 64}, L"Move", Tool::Move},
-    {{358, 31, 414, 64}, L"Copy", Tool::Copy},
-    {{416, 31, 476, 64}, L"Rotate", Tool::Rotate},
-    {{478, 31, 534, 64}, L"Scale", Tool::Scale},
-    {{536, 31, 594, 64}, L"Mirror", Tool::Mirror},
-    {{596, 31, 648, 64}, L"Trim", Tool::Trim},
-    {{650, 31, 710, 64}, L"Extend", Tool::Extend},
-    {{712, 31, 770, 64}, L"Offset", Tool::Offset},
-    {{772, 31, 844, 64}, L"Dimension", Tool::Dimension},
-    {{846, 31, 902, 64}, L"Hatch", Tool::Hatch},
-    {{904, 31, 956, 64}, L"Text", Tool::Text}
+constexpr std::array<ToolbarButton, 17> kToolbarButtons{{
+    {{6, 30, 60, 65}, L"Select", Tool::Select},
+    {{62, 30, 112, 65}, L"Line", Tool::Line},
+    {{114, 30, 178, 65}, L"Polyline", Tool::Polyline},
+    {{180, 30, 236, 65}, L"Circle", Tool::Circle},
+    {{238, 30, 286, 65}, L"Arc", Tool::Arc},
+    {{288, 30, 350, 65}, L"Rectangle", Tool::Rectangle},
+    {{352, 30, 406, 65}, L"Move", Tool::Move},
+    {{408, 30, 462, 65}, L"Copy", Tool::Copy},
+    {{464, 30, 522, 65}, L"Rotate", Tool::Rotate},
+    {{524, 30, 578, 65}, L"Scale", Tool::Scale},
+    {{580, 30, 636, 65}, L"Mirror", Tool::Mirror},
+    {{638, 30, 688, 65}, L"Trim", Tool::Trim},
+    {{690, 30, 748, 65}, L"Extend", Tool::Extend},
+    {{750, 30, 806, 65}, L"Offset", Tool::Offset},
+    {{808, 30, 878, 65}, L"Dimension", Tool::Dimension},
+    {{880, 30, 932, 65}, L"Hatch", Tool::Hatch},
+    {{934, 30, 980, 65}, L"Text", Tool::Text}
 }};
 
 
@@ -686,7 +690,12 @@ void draw_preview(HWND hwnd, HDC dc) {
         TextOutW(dc, p.x, p.y - 16, preview.c_str(),
                  static_cast<int>(preview.size()));
         SetBkMode(dc, old_mode);
-    } else     if (g_app.tool == Tool::Line ||
+    } else if (g_app.tool == Tool::Rectangle) {
+        const POINT a = first;
+        const POINT b = second;
+        Rectangle(dc, std::min(a.x, b.x), std::min(a.y, b.y),
+                  std::max(a.x, b.x), std::max(a.y, b.y));
+    } else if (g_app.tool == Tool::Line ||
         g_app.tool == Tool::Move ||
         g_app.tool == Tool::Copy ||
         g_app.tool == Tool::Rotate ||
@@ -709,6 +718,112 @@ void draw_preview(HWND hwnd, HDC dc) {
     SelectObject(dc, old_brush);
     SelectObject(dc, old_pen);
     DeleteObject(preview_pen);
+}
+
+void draw_tool_icon(HDC dc, Tool tool, RECT area, COLORREF color) {
+    const int cx = (area.left + area.right) / 2;
+    const int cy = area.top + 9;
+    HPEN pen = CreatePen(PS_SOLID, 2, color);
+    HGDIOBJ old_pen = SelectObject(dc, pen);
+    HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+
+    auto line = [&](int x1, int y1, int x2, int y2) {
+        MoveToEx(dc, x1, y1, nullptr);
+        LineTo(dc, x2, y2);
+    };
+
+    switch (tool) {
+        case Tool::Select:
+            line(cx - 5, cy - 6, cx - 5, cy + 6);
+            line(cx - 5, cy - 6, cx + 5, cy);
+            line(cx + 5, cy, cx, cy + 1);
+            line(cx, cy + 1, cx + 3, cy + 7);
+            break;
+        case Tool::Line:
+            line(cx - 7, cy + 6, cx + 7, cy - 6);
+            break;
+        case Tool::Polyline:
+            line(cx - 8, cy + 5, cx - 2, cy - 2);
+            line(cx - 2, cy - 2, cx + 4, cy + 1);
+            line(cx + 4, cy + 1, cx + 8, cy - 5);
+            break;
+        case Tool::Circle:
+            Ellipse(dc, cx - 7, cy - 7, cx + 8, cy + 8);
+            break;
+        case Tool::Arc:
+            Arc(dc, cx - 8, cy - 7, cx + 8, cy + 7,
+                cx - 7, cy + 4, cx + 7, cy - 4);
+            break;
+        case Tool::Rectangle:
+            Rectangle(dc, cx - 8, cy - 6, cx + 8, cy + 6);
+            break;
+        case Tool::Move:
+            line(cx - 8, cy, cx + 8, cy);
+            line(cx, cy - 8, cx, cy + 8);
+            line(cx - 8, cy, cx - 4, cy - 3);
+            line(cx - 8, cy, cx - 4, cy + 3);
+            line(cx + 8, cy, cx + 4, cy - 3);
+            line(cx + 8, cy, cx + 4, cy + 3);
+            break;
+        case Tool::Copy:
+            Rectangle(dc, cx - 7, cy - 6, cx + 4, cy + 5);
+            Rectangle(dc, cx - 3, cy - 2, cx + 8, cy + 9);
+            break;
+        case Tool::Rotate:
+            Arc(dc, cx - 7, cy - 7, cx + 7, cy + 7,
+                cx + 6, cy + 3, cx + 2, cy - 7);
+            line(cx + 2, cy - 7, cx + 6, cy - 6);
+            line(cx + 2, cy - 7, cx + 3, cy - 3);
+            break;
+        case Tool::Scale:
+            Rectangle(dc, cx - 7, cy - 7, cx + 4, cy + 4);
+            line(cx + 2, cy + 2, cx + 8, cy + 8);
+            line(cx + 8, cy + 8, cx + 4, cy + 8);
+            line(cx + 8, cy + 8, cx + 8, cy + 4);
+            break;
+        case Tool::Mirror:
+            line(cx, cy - 8, cx, cy + 8);
+            line(cx - 8, cy + 5, cx - 2, cy - 5);
+            line(cx + 8, cy + 5, cx + 2, cy - 5);
+            break;
+        case Tool::Trim:
+            line(cx - 8, cy + 5, cx + 8, cy - 5);
+            line(cx - 8, cy - 5, cx - 1, cy);
+            line(cx + 2, cy + 4, cx + 8, cy + 7);
+            break;
+        case Tool::Extend:
+            line(cx - 8, cy + 5, cx + 3, cy - 2);
+            line(cx + 5, cy - 8, cx + 5, cy + 8);
+            line(cx + 3, cy - 2, cx + 5, cy - 3);
+            break;
+        case Tool::Offset:
+            line(cx - 8, cy + 3, cx + 6, cy - 5);
+            line(cx - 6, cy + 7, cx + 8, cy - 1);
+            break;
+        case Tool::Dimension:
+            line(cx - 8, cy, cx + 8, cy);
+            line(cx - 8, cy - 5, cx - 8, cy + 5);
+            line(cx + 8, cy - 5, cx + 8, cy + 5);
+            line(cx - 8, cy, cx - 4, cy - 3);
+            line(cx - 8, cy, cx - 4, cy + 3);
+            line(cx + 8, cy, cx + 4, cy - 3);
+            line(cx + 8, cy, cx + 4, cy + 3);
+            break;
+        case Tool::Hatch:
+            Rectangle(dc, cx - 7, cy - 7, cx + 7, cy + 7);
+            for (int d = -8; d <= 6; d += 5) {
+                line(cx - 7, cy + d + 5, cx + 2, cy + d - 4);
+            }
+            break;
+        case Tool::Text:
+            line(cx - 7, cy - 7, cx + 7, cy - 7);
+            line(cx, cy - 7, cx, cy + 8);
+            break;
+    }
+
+    SelectObject(dc, old_brush);
+    SelectObject(dc, old_pen);
+    DeleteObject(pen);
 }
 
 void draw_toolbar(HDC dc, const RECT& client) {
@@ -780,8 +895,12 @@ void draw_toolbar(HDC dc, const RECT& client) {
             DeleteObject(edge);
         }
 
-        DrawTextW(dc, button.text, -1, &rect,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        RECT icon_rect{rect.left, rect.top + 1, rect.right, rect.top + 19};
+        draw_tool_icon(dc, button.tool, icon_rect,
+                       active ? RGB(235, 247, 255) : RGB(111, 205, 255));
+        RECT label_rect{rect.left + 1, rect.top + 18, rect.right - 1, rect.bottom - 1};
+        DrawTextW(dc, button.text, -1, &label_rect,
+                  DT_CENTER | DT_BOTTOM | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
 }
 
@@ -812,43 +931,35 @@ void draw_left_tool_rail(HDC dc, const RECT& client) {
     FillRect(dc, &rail, background);
     DeleteObject(background);
 
-    struct RailItem { const wchar_t* label; Tool tool; };
-    const RailItem items[] = {
-        {L"S", Tool::Select},
-        {L"L", Tool::Line},
-        {L"P", Tool::Polyline},
-        {L"C", Tool::Circle},
-        {L"A", Tool::Arc},
-        {L"M", Tool::Move},
-        {L"T", Tool::Trim},
-        {L"D", Tool::Dimension},
-        {L"H", Tool::Hatch},
-        {L"X", Tool::Text}
+    constexpr Tool items[] = {
+        Tool::Select, Tool::Line, Tool::Polyline, Tool::Circle, Tool::Arc,
+        Tool::Rectangle, Tool::Move, Tool::Trim, Tool::Dimension,
+        Tool::Hatch, Tool::Text
     };
 
     SetBkMode(dc, TRANSPARENT);
     int y = rail.top + 6;
-    for (const auto& item : items) {
+    for (const Tool item : items) {
         RECT cell{rail.left + 4, y, rail.right - 4, y + 30};
         HBRUSH brush = CreateSolidBrush(
-            g_app.tool == item.tool ? RGB(28, 103, 163) : RGB(33, 51, 66));
+            g_app.tool == item ? RGB(28, 103, 163) : RGB(33, 51, 66));
         FillRect(dc, &cell, brush);
         DeleteObject(brush);
-        SetTextColor(dc, RGB(220, 230, 238));
-        DrawTextW(dc, item.label, -1, &cell,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        draw_tool_icon(dc, item, cell,
+                       g_app.tool == item ? RGB(240, 250, 255) : RGB(111, 205, 255));
         y += 34;
     }
 }
 
 bool handle_left_tool_rail_click(HWND hwnd, POINT point) {
     if (point.x < 0 || point.x >= kLeftToolRailWidth ||
-        point.y < kToolbarHeight || point.y >= kToolbarHeight + 346) {
+        point.y < kToolbarHeight || point.y >= kToolbarHeight + 380) {
         return false;
     }
     constexpr Tool tools[] = {
         Tool::Select, Tool::Line, Tool::Polyline, Tool::Circle, Tool::Arc,
-        Tool::Move, Tool::Trim, Tool::Dimension, Tool::Hatch, Tool::Text
+        Tool::Rectangle, Tool::Move, Tool::Trim, Tool::Dimension,
+        Tool::Hatch, Tool::Text
     };
     const int index = (point.y - (kToolbarHeight + 6)) / 34;
     if (index >= 0 && index < static_cast<int>(std::size(tools))) {
@@ -1312,6 +1423,7 @@ void handle_left_click(HWND hwnd, POINT point) {
          g_app.tool == Tool::Circle ||
          g_app.tool == Tool::Polyline ||
          g_app.tool == Tool::Arc ||
+         g_app.tool == Tool::Rectangle ||
          g_app.tool == Tool::Dimension ||
          g_app.tool == Tool::Text) &&
         !active_layer_writable()) {
@@ -1600,7 +1712,23 @@ void handle_left_click(HWND hwnd, POINT point) {
         return;
     }
 
-    if (g_app.tool == Tool::Line) {
+    if (g_app.tool == Tool::Rectangle) {
+        const Vec2 a = g_app.first_point;
+        const Vec2 b = world;
+        if (std::abs(a.x - b.x) > acp::geo::kEpsilon &&
+            std::abs(a.y - b.y) > acp::geo::kEpsilon) {
+            std::vector<Vec2> points{
+                {a.x, a.y}, {b.x, a.y}, {b.x, b.y}, {a.x, b.y}
+            };
+            auto command = std::make_unique<acp::AddEntityCommand>(
+                PolylineEntity{std::move(points), true});
+            auto* command_ptr = command.get();
+            if (apply_history(std::move(command))) {
+                g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
+                g_app.selected = command_ptr->id();
+            }
+        }
+    } else if (g_app.tool == Tool::Line) {
         if (acp::geo::distance(g_app.first_point, world) > acp::geo::kEpsilon) {
             auto command = std::make_unique<acp::AddEntityCommand>(
                 LineEntity{{g_app.first_point, world}});
@@ -1791,6 +1919,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 case kToolCircle: set_tool(hwnd, Tool::Circle); return 0;
                 case kToolPolyline: set_tool(hwnd, Tool::Polyline); return 0;
                 case kToolArc: set_tool(hwnd, Tool::Arc); return 0;
+                case kToolRectangle: set_tool(hwnd, Tool::Rectangle); return 0;
                 case kToolMove: set_tool(hwnd, Tool::Move); return 0;
                 case kToolCopy: set_tool(hwnd, Tool::Copy); return 0;
                 case kToolRotate: set_tool(hwnd, Tool::Rotate); return 0;
@@ -1917,6 +2046,10 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             }
             if (w_param == 'A') {
                 set_tool(hwnd, Tool::Arc);
+                return 0;
+            }
+            if (w_param == 'B') {
+                set_tool(hwnd, Tool::Rectangle);
                 return 0;
             }
             if (w_param == 'M') {
@@ -2108,6 +2241,7 @@ HMENU create_app_menu() {
     AppendMenuW(draw, MF_STRING, kToolCircle, L"&Circle\tC");
     AppendMenuW(draw, MF_STRING, kToolPolyline, L"&Polyline\tP");
     AppendMenuW(draw, MF_STRING, kToolArc, L"&Arc\tA");
+    AppendMenuW(draw, MF_STRING, kToolRectangle, L"&Rectangle\tB");
     AppendMenuW(draw, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(draw, MF_STRING, kToolMove, L"&Move\tM");
     AppendMenuW(draw, MF_STRING, kToolCopy, L"Cop&y\tY");
