@@ -155,6 +155,119 @@ void UpdateEntityPropertiesCommand::undo(Document& document) {
     }
 }
 
+CreateBlockFromEntityCommand::CreateBlockFromEntityCommand(
+    EntityId source_id,
+    std::string name)
+    : source_id_(source_id), name_(std::move(name)) {}
+
+namespace {
+
+std::optional<BlockPrimitive> block_primitive_from_entity(const Entity& entity) {
+    return std::visit([](const auto& value) -> std::optional<BlockPrimitive> {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (
+            std::is_same_v<T, LineEntity> ||
+            std::is_same_v<T, CircleEntity> ||
+            std::is_same_v<T, ArcEntity> ||
+            std::is_same_v<T, PolylineEntity>) {
+            return BlockPrimitive{value};
+        }
+        return std::nullopt;
+    }, entity);
+}
+
+geo::Vec2 block_base_point(const BlockPrimitive& primitive) {
+    return std::visit([](const auto& value) -> geo::Vec2 {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, LineEntity>) {
+            return value.segment.a;
+        } else if constexpr (std::is_same_v<T, CircleEntity>) {
+            return value.circle.center;
+        } else if constexpr (std::is_same_v<T, ArcEntity>) {
+            return value.arc.center;
+        } else {
+            return value.points.empty() ? geo::Vec2{} : value.points.front();
+        }
+    }, primitive);
+}
+
+} // namespace
+
+bool CreateBlockFromEntityCommand::execute(Document&) {
+    return false;
+}
+
+void CreateBlockFromEntityCommand::undo(Document&) {}
+
+bool CreateBlockFromEntityCommand::execute_project(
+    Document& document,
+    BlockLibrary& blocks) {
+
+    Entity* source = document.find(source_id_);
+    if (source == nullptr) {
+        return false;
+    }
+
+    if (!executed_) {
+        const auto primitive = block_primitive_from_entity(*source);
+        if (!primitive.has_value()) {
+            return false;
+        }
+
+        const geo::Vec2 base = block_base_point(*primitive);
+        const BlockId created =
+            blocks.create(name_, base, std::vector<BlockPrimitive>{*primitive});
+        if (created == 0) {
+            return false;
+        }
+
+        const BlockDefinition* created_definition = blocks.find(created);
+        if (created_definition == nullptr) {
+            (void)blocks.remove(created);
+            return false;
+        }
+
+        original_ = *source;
+        definition_ = *created_definition;
+        block_id_ = created;
+        *source = BlockReferenceEntity{block_id_, base, 0.0, 1.0};
+        executed_ = true;
+        return true;
+    }
+
+    if (!definition_.has_value() || block_id_ == 0) {
+        return false;
+    }
+    if (!blocks.insert_with_id(*definition_)) {
+        return false;
+    }
+
+    *source = BlockReferenceEntity{
+        block_id_, definition_->base_point, 0.0, 1.0};
+    return true;
+}
+
+void CreateBlockFromEntityCommand::undo_project(
+    Document& document,
+    BlockLibrary& blocks) {
+
+    if (!executed_ || !original_.has_value() || block_id_ == 0) {
+        return;
+    }
+
+    Entity* source = document.find(source_id_);
+    if (source == nullptr) {
+        return;
+    }
+
+    if (const BlockDefinition* current = blocks.find(block_id_)) {
+        definition_ = *current;
+    }
+
+    *source = *original_;
+    (void)blocks.remove(block_id_);
+}
+
 UpdateLayerCommand::UpdateLayerCommand(LayerId id, Layer replacement)
     : id_(id), replacement_(std::move(replacement)) {}
 
@@ -225,6 +338,48 @@ bool History::redo(Document& document) {
     auto command = std::move(redo_.back());
     redo_.pop_back();
     if (!command->execute(document)) {
+        redo_.push_back(std::move(command));
+        return false;
+    }
+
+    undo_.push_back(std::move(command));
+    return true;
+}
+
+bool History::apply(
+    Document& document,
+    BlockLibrary& blocks,
+    std::unique_ptr<Command> command) {
+
+    if (!command || !command->execute_project(document, blocks)) {
+        return false;
+    }
+
+    undo_.push_back(std::move(command));
+    redo_.clear();
+    return true;
+}
+
+bool History::undo(Document& document, BlockLibrary& blocks) {
+    if (undo_.empty()) {
+        return false;
+    }
+
+    auto command = std::move(undo_.back());
+    undo_.pop_back();
+    command->undo_project(document, blocks);
+    redo_.push_back(std::move(command));
+    return true;
+}
+
+bool History::redo(Document& document, BlockLibrary& blocks) {
+    if (redo_.empty()) {
+        return false;
+    }
+
+    auto command = std::move(redo_.back());
+    redo_.pop_back();
+    if (!command->execute_project(document, blocks)) {
         redo_.push_back(std::move(command));
         return false;
     }
