@@ -149,7 +149,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: AutoCADPro-GUI-Edit-Tool-Snapshots
-          path: artifacts/gui-edit-tools-*.acp2d
+          path: |
+            artifacts/gui-interaction-2*.acp2d
+            artifacts/gui-interaction-3*.acp2d
           if-no-files-found: error
 
       - name: Upload GUI interaction snapshots
