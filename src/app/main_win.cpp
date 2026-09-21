@@ -121,6 +121,12 @@ constexpr int kMenuToggleSnap = 1014;
 constexpr int kMenuExportSvg = 1015;
 constexpr int kMenuSaveAs = 1016;
 constexpr int kMenuExportPdf = 1017;
+constexpr int kMenuTextCycleHeight = 1018;
+constexpr int kMenuTextRotate15 = 1019;
+constexpr int kMenuDimensionShiftLine = 1020;
+constexpr int kMenuHatchToggleSolid = 1021;
+constexpr int kMenuHatchRotate45 = 1022;
+constexpr int kMenuHatchCycleSpacing = 1023;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -1068,6 +1074,33 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
             draw_property(L"Locked",
                           g_app.document.entity_locked(*g_app.selected) ? L"Yes" : L"No");
         }
+        if (const acp::Entity* entity = g_app.document.find(*g_app.selected)) {
+            if (std::holds_alternative<acp::TextEntity>(*entity)) {
+                const auto& text = std::get<acp::TextEntity>(*entity);
+                draw_property(L"Type", L"Text");
+                swprintf_s(value, L"%.2f", text.height);
+                draw_property(L"Height", value);
+                swprintf_s(value, L"%.1f deg",
+                           text.rotation * 180.0 / std::numbers::pi);
+                draw_property(L"Rotation", value);
+            } else if (std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
+                const auto& dimension = std::get<acp::LinearDimensionEntity>(*entity);
+                draw_property(L"Type", L"Dimension");
+                swprintf_s(value, L"%.2f", acp::annotation::measurement(dimension));
+                draw_property(L"Measurement", value);
+                draw_property(L"Override",
+                              dimension.text_override.has_value() ? L"Yes" : L"No");
+            } else if (std::holds_alternative<acp::HatchEntity>(*entity)) {
+                const auto& hatch = std::get<acp::HatchEntity>(*entity);
+                draw_property(L"Type", L"Hatch");
+                draw_property(L"Fill", hatch.solid ? L"Solid" : L"Pattern");
+                swprintf_s(value, L"%.1f deg",
+                           hatch.angle * 180.0 / std::numbers::pi);
+                draw_property(L"Angle", value);
+                swprintf_s(value, L"%.2f", hatch.spacing);
+                draw_property(L"Spacing", value);
+            }
+        }
     } else {
         draw_property(L"Selected", L"None");
         swprintf_s(value, L"%u", static_cast<unsigned>(g_app.active_layer));
@@ -1928,6 +1961,86 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                         }
                     }
                     return 0;
+                case kMenuTextCycleHeight:
+                    if (selected_editable()) {
+                        if (const acp::Entity* entity =
+                                g_app.document.find(*g_app.selected);
+                            entity != nullptr &&
+                            std::holds_alternative<acp::TextEntity>(*entity)) {
+                            acp::Entity replacement = *entity;
+                            auto& text = std::get<acp::TextEntity>(replacement);
+                            if (text.height < 3.75) text.height = 5.0;
+                            else if (text.height < 7.5) text.height = 10.0;
+                            else text.height = 2.5;
+                            (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
+                                *g_app.selected, replacement));
+                            InvalidateRect(hwnd, nullptr, FALSE);
+                        }
+                    }
+                    return 0;
+                case kMenuTextRotate15:
+                    if (selected_editable()) {
+                        if (const acp::Entity* entity =
+                                g_app.document.find(*g_app.selected);
+                            entity != nullptr &&
+                            std::holds_alternative<acp::TextEntity>(*entity)) {
+                            acp::Entity replacement = *entity;
+                            auto& text = std::get<acp::TextEntity>(replacement);
+                            text.rotation += std::numbers::pi / 12.0;
+                            (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
+                                *g_app.selected, replacement));
+                            InvalidateRect(hwnd, nullptr, FALSE);
+                        }
+                    }
+                    return 0;
+                case kMenuDimensionShiftLine:
+                    if (selected_editable()) {
+                        if (const acp::Entity* entity =
+                                g_app.document.find(*g_app.selected);
+                            entity != nullptr &&
+                            std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
+                            acp::Entity replacement = *entity;
+                            auto& dimension =
+                                std::get<acp::LinearDimensionEntity>(replacement);
+                            const Vec2 delta = dimension.second - dimension.first;
+                            const double length = acp::geo::length(delta);
+                            if (length > acp::geo::kEpsilon) {
+                                const Vec2 normal{-delta.y / length, delta.x / length};
+                                dimension.line_point = dimension.line_point + normal * 5.0;
+                                (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
+                                    *g_app.selected, replacement));
+                                InvalidateRect(hwnd, nullptr, FALSE);
+                            }
+                        }
+                    }
+                    return 0;
+                case kMenuHatchToggleSolid:
+                case kMenuHatchRotate45:
+                case kMenuHatchCycleSpacing:
+                    if (selected_editable()) {
+                        if (const acp::Entity* entity =
+                                g_app.document.find(*g_app.selected);
+                            entity != nullptr &&
+                            std::holds_alternative<acp::HatchEntity>(*entity)) {
+                            acp::Entity replacement = *entity;
+                            auto& hatch = std::get<acp::HatchEntity>(replacement);
+                            if (LOWORD(w_param) == kMenuHatchToggleSolid) {
+                                hatch.solid = !hatch.solid;
+                            } else if (LOWORD(w_param) == kMenuHatchRotate45) {
+                                hatch.angle += std::numbers::pi / 4.0;
+                            } else {
+                                if (hatch.spacing < 1.5) hatch.spacing = 2.0;
+                                else if (hatch.spacing < 3.5) hatch.spacing = 5.0;
+                                else hatch.spacing = 1.0;
+                            }
+                            if (acp::hatch::valid(hatch)) {
+                                (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
+                                    *g_app.selected, replacement));
+                                InvalidateRect(hwnd, nullptr, FALSE);
+                            }
+                        }
+                    }
+                    return 0;
                 case kMenuToggleLayerLock:
                     if (const acp::Layer* layer = g_app.document.layer(g_app.active_layer)) {
                         acp::Layer replacement = *layer;
@@ -2295,6 +2408,13 @@ HMENU create_app_menu() {
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(draw), L"&Draw");
     AppendMenuW(entity, MF_STRING, kMenuToggleEntityVisible, L"Toggle &Visibility");
     AppendMenuW(entity, MF_STRING, kMenuCycleEntityWeight, L"Cycle Line &Weight");
+    AppendMenuW(entity, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(entity, MF_STRING, kMenuTextCycleHeight, L"Text: Cycle &Height");
+    AppendMenuW(entity, MF_STRING, kMenuTextRotate15, L"Text: Rotate +15 deg");
+    AppendMenuW(entity, MF_STRING, kMenuDimensionShiftLine, L"Dimension: Shift Line +5");
+    AppendMenuW(entity, MF_STRING, kMenuHatchToggleSolid, L"Hatch: Toggle Solid");
+    AppendMenuW(entity, MF_STRING, kMenuHatchRotate45, L"Hatch: Rotate +45 deg");
+    AppendMenuW(entity, MF_STRING, kMenuHatchCycleSpacing, L"Hatch: Cycle Spacing");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(layer), L"&Layer");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(entity), L"&Entity");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"&View");
