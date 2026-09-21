@@ -85,6 +85,8 @@ struct AppState {
     std::wstring text_buffer;
     bool dirty{false};
     std::optional<std::filesystem::path> project_path;
+    acp::layout::PageSetup page_setup{};
+    std::optional<double> print_scale_denominator;
 };
 
 AppState g_app;
@@ -130,6 +132,9 @@ constexpr int kMenuDimensionShiftLine = 1020;
 constexpr int kMenuHatchToggleSolid = 1021;
 constexpr int kMenuHatchRotate45 = 1022;
 constexpr int kMenuHatchCycleSpacing = 1023;
+constexpr int kMenuCyclePaperSize = 1024;
+constexpr int kMenuToggleOrientation = 1025;
+constexpr int kMenuCyclePrintScale = 1026;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -150,6 +155,40 @@ constexpr int kToolRectangle = 2017;
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
 constexpr UINT kGuiTestSnapshotMessage = WM_APP + 42;
 #endif
+
+const wchar_t* paper_size_name(acp::layout::PaperSize paper) {
+    switch (paper) {
+        case acp::layout::PaperSize::A4: return L"A4";
+        case acp::layout::PaperSize::A3: return L"A3";
+        case acp::layout::PaperSize::A2: return L"A2";
+        case acp::layout::PaperSize::A1: return L"A1";
+        case acp::layout::PaperSize::A0: return L"A0";
+    }
+    return L"A4";
+}
+
+void cycle_paper_size() {
+    using acp::layout::PaperSize;
+    switch (g_app.page_setup.paper) {
+        case PaperSize::A4: g_app.page_setup.paper = PaperSize::A3; break;
+        case PaperSize::A3: g_app.page_setup.paper = PaperSize::A2; break;
+        case PaperSize::A2: g_app.page_setup.paper = PaperSize::A1; break;
+        case PaperSize::A1: g_app.page_setup.paper = PaperSize::A0; break;
+        case PaperSize::A0: g_app.page_setup.paper = PaperSize::A4; break;
+    }
+}
+
+void cycle_print_scale() {
+    if (!g_app.print_scale_denominator.has_value()) {
+        g_app.print_scale_denominator = 50.0;
+    } else if (*g_app.print_scale_denominator < 75.0) {
+        g_app.print_scale_denominator = 100.0;
+    } else if (*g_app.print_scale_denominator < 150.0) {
+        g_app.print_scale_denominator = 200.0;
+    } else {
+        g_app.print_scale_denominator.reset();
+    }
+}
 
 const wchar_t* tool_name(Tool tool) {
     switch (tool) {
@@ -1113,6 +1152,18 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     swprintf_s(value, L"%.0f%%", g_app.zoom * 100.0);
     draw_property(L"Zoom", value);
     draw_property(L"Object snap", g_app.snap_enabled ? L"On (F3)" : L"Off (F3)");
+    draw_property(L"Paper", paper_size_name(g_app.page_setup.paper));
+    draw_property(
+        L"Orientation",
+        g_app.page_setup.orientation == acp::layout::Orientation::Landscape
+            ? L"Landscape"
+            : L"Portrait");
+    if (g_app.print_scale_denominator.has_value()) {
+        swprintf_s(value, L"1:%.0f", *g_app.print_scale_denominator);
+        draw_property(L"Print scale", value);
+    } else {
+        draw_property(L"Print scale", L"Fit");
+    }
 
     (void)hwnd;
 }
@@ -1518,7 +1569,10 @@ void export_pdf(HWND hwnd) {
     if (!path.has_value()) return;
 
     const auto data = acp::pdf::export_document(
-        g_app.document, &g_app.blocks);
+        g_app.document,
+        &g_app.blocks,
+        g_app.page_setup,
+        g_app.print_scale_denominator);
     if (!data.has_value() || !write_text_file(*path, *data)) {
         show_file_error(hwnd, L"Could not export PDF.");
     }
@@ -1993,6 +2047,21 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 case kMenuZoomExtents:
                     fit_drawing(hwnd);
                     return 0;
+                case kMenuCyclePaperSize:
+                    cycle_paper_size();
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                case kMenuToggleOrientation:
+                    g_app.page_setup.orientation =
+                        g_app.page_setup.orientation == acp::layout::Orientation::Landscape
+                            ? acp::layout::Orientation::Portrait
+                            : acp::layout::Orientation::Landscape;
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                case kMenuCyclePrintScale:
+                    cycle_print_scale();
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
                 case kMenuNewLayer:
                     create_layer(hwnd);
                     return 0;
@@ -2464,6 +2533,7 @@ HMENU create_app_menu() {
     HMENU view = CreatePopupMenu();
     HMENU layer = CreatePopupMenu();
     HMENU entity = CreatePopupMenu();
+    HMENU layout_menu = CreatePopupMenu();
 
     AppendMenuW(file, MF_STRING, kMenuNew, L"&New");
     AppendMenuW(file, MF_STRING, kMenuOpen, L"&Open Project...\tCtrl+O");
@@ -2506,6 +2576,9 @@ HMENU create_app_menu() {
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerVisible, L"Toggle &Visibility");
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerLock, L"Toggle &Lock");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(draw), L"&Draw");
+    AppendMenuW(layout_menu, MF_STRING, kMenuCyclePaperSize, L"Cycle &Paper Size");
+    AppendMenuW(layout_menu, MF_STRING, kMenuToggleOrientation, L"Toggle &Orientation");
+    AppendMenuW(layout_menu, MF_STRING, kMenuCyclePrintScale, L"Cycle Print &Scale");
     AppendMenuW(entity, MF_STRING, kMenuToggleEntityVisible, L"Toggle &Visibility");
     AppendMenuW(entity, MF_STRING, kMenuCycleEntityWeight, L"Cycle Line &Weight");
     AppendMenuW(entity, MF_SEPARATOR, 0, nullptr);
@@ -2517,6 +2590,7 @@ HMENU create_app_menu() {
     AppendMenuW(entity, MF_STRING, kMenuHatchCycleSpacing, L"Hatch: Cycle Spacing");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(layer), L"&Layer");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(entity), L"&Entity");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(layout_menu), L"&Layout");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"&View");
     return menu;
 }
