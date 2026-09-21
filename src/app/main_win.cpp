@@ -152,6 +152,8 @@ constexpr int kMenuEditHatchAngle = 1034;
 constexpr int kMenuEditHatchSpacing = 1035;
 constexpr int kMenuEditBlockScale = 1036;
 constexpr int kMenuEditBlockRotation = 1037;
+constexpr int kMenuEditLayerName = 1038;
+constexpr int kMenuEditLayerWeight = 1039;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -1457,6 +1459,79 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
     return false;
 }
 
+enum class DirectLayerProperty {
+    Name,
+    LineWeight
+};
+
+bool edit_active_layer_property(HWND hwnd, DirectLayerProperty property) {
+    const acp::Layer* current =
+        g_app.document.layer(g_app.active_layer);
+    if (current == nullptr) {
+        MessageBeep(MB_ICONWARNING);
+        return false;
+    }
+
+    acp::Layer replacement = *current;
+
+    if (property == DirectLayerProperty::Name) {
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Layer Name",
+            L"Layer name:",
+            wide_from_utf8(current->name));
+        if (!entered.has_value()) {
+            return false;
+        }
+
+        const std::string utf8 = utf8_from_wide(*entered);
+        if (utf8.empty()) {
+            show_invalid_property(
+                hwnd, L"Layer name cannot be empty.");
+            return false;
+        }
+
+        for (const acp::LayerId id : g_app.document.layer_ids()) {
+            if (id == g_app.active_layer) {
+                continue;
+            }
+            const acp::Layer* other = g_app.document.layer(id);
+            if (other != nullptr && other->name == utf8) {
+                show_invalid_property(
+                    hwnd, L"Another layer already uses that name.");
+                return false;
+            }
+        }
+        replacement.name = utf8;
+    } else {
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Layer Line Weight",
+            L"Line weight in mm:",
+            format_property_number(current->line_weight, 3));
+        if (!entered.has_value()) {
+            return false;
+        }
+
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value() || *parsed < 0.0) {
+            show_invalid_property(
+                hwnd,
+                L"Layer line weight must be a finite number greater than or equal to 0.");
+            return false;
+        }
+        replacement.line_weight = *parsed;
+    }
+
+    if (apply_history(
+            std::make_unique<acp::UpdateLayerCommand>(
+                g_app.active_layer, replacement))) {
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return true;
+    }
+    return false;
+}
+
 void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     const int top = toolbar_height(client);
     const int width = layer_panel_width(client);
@@ -1482,7 +1557,7 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     SetTextColor(dc, RGB(231, 237, 242));
 
     RECT heading{panel.left + 10, panel.top + 4, panel.right - 8, panel.top + 28};
-    DrawTextW(dc, L"Layers", -1, &heading,
+    DrawTextW(dc, L"Layers  (double-click name)", -1, &heading,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     int y = panel.top + 32;
@@ -1683,6 +1758,42 @@ bool handle_property_panel_double_click(HWND hwnd, POINT point) {
     }
 
     return true;
+}
+
+bool handle_layer_panel_double_click(HWND hwnd, POINT point) {
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    const int top = toolbar_height(client);
+    const int panel_left =
+        client.right - layer_panel_width(client);
+    if (point.x < panel_left ||
+        point.y < top ||
+        point.y >= client.bottom - kStatusHeight) {
+        return false;
+    }
+
+    int y = top + 32;
+    for (const acp::LayerId id : g_app.document.layer_ids()) {
+        const acp::Layer* layer = g_app.document.layer(id);
+        if (layer == nullptr) {
+            continue;
+        }
+
+        RECT row{
+            panel_left + 6, y,
+            client.right - 6, y + 24};
+        if (PtInRect(&row, point)) {
+            if (point.x < row.left + 58) {
+                return true;
+            }
+            g_app.active_layer = id;
+            (void)edit_active_layer_property(
+                hwnd, DirectLayerProperty::Name);
+            return true;
+        }
+        y += 26;
+    }
+    return false;
 }
 
 bool handle_layer_panel_click(HWND hwnd, POINT point) {
@@ -2752,6 +2863,14 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 case kMenuNewLayer:
                     create_layer(hwnd);
                     return 0;
+                case kMenuEditLayerName:
+                    (void)edit_active_layer_property(
+                        hwnd, DirectLayerProperty::Name);
+                    return 0;
+                case kMenuEditLayerWeight:
+                    (void)edit_active_layer_property(
+                        hwnd, DirectLayerProperty::LineWeight);
+                    return 0;
                 case kMenuAssignLayer:
                     assign_selected_to_active_layer(hwnd);
                     return 0;
@@ -3137,7 +3256,8 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 
         case WM_LBUTTONDBLCLK: {
             const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
-            if (handle_property_panel_double_click(hwnd, p)) {
+            if (handle_property_panel_double_click(hwnd, p) ||
+                handle_layer_panel_double_click(hwnd, p)) {
                 return 0;
             }
             break;
@@ -3306,6 +3426,8 @@ HMENU create_app_menu() {
     AppendMenuW(view, MF_STRING, kMenuZoomExtents, L"Zoom &Extents");
     AppendMenuW(view, MF_STRING, kMenuToggleSnap, L"Toggle Object &Snap\tF3");
     AppendMenuW(layer, MF_STRING, kMenuNewLayer, L"&New Layer");
+    AppendMenuW(layer, MF_STRING, kMenuEditLayerName, L"&Rename Active Layer...");
+    AppendMenuW(layer, MF_STRING, kMenuEditLayerWeight, L"Edit Active Layer &Line Weight...");
     AppendMenuW(layer, MF_STRING, kMenuAssignLayer, L"&Assign Selected to Active");
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerVisible, L"Toggle &Visibility");
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerLock, L"Toggle &Lock");
