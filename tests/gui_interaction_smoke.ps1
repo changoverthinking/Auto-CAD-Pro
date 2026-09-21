@@ -1,9 +1,9 @@
-$ErrorActionPreference = "Stop"
-
 param(
     [Parameter(Mandatory = $true)]
     [string]$Exe
 )
+
+$ErrorActionPreference = "Stop"
 
 Add-Type @"
 using System;
