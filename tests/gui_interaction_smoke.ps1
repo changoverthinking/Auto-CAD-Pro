@@ -27,6 +27,10 @@ function Send-Key([IntPtr]$hwnd, [int]$vk) {
     [GuiTestNative]::SendMessage($hwnd, 0x0100, [IntPtr]$vk, [IntPtr]::Zero) | Out-Null
 }
 
+function Send-Char([IntPtr]$hwnd, [int]$charCode) {
+    [GuiTestNative]::SendMessage($hwnd, 0x0102, [IntPtr]$charCode, [IntPtr]::Zero) | Out-Null
+}
+
 function Click-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
     $packed = (($y -band 0xFFFF) -shl 16) -bor ($x -band 0xFFFF)
     [GuiTestNative]::SendMessage($hwnd, 0x0201, [IntPtr]1, [IntPtr]$packed) | Out-Null
@@ -90,6 +94,42 @@ try {
     Click-Client $hwnd 360 430
     Click-Client $hwnd 520 540
 
+    # HATCH the selected rectangle.
+    Send-Key $hwnd 0x48 # H
+    Click-Client $hwnd 440 485
+
+    # ARC: center, radius point, end-angle point.
+    Send-Key $hwnd 0x41 # A
+    Click-Client $hwnd 650 470
+    Click-Client $hwnd 700 470
+    Click-Client $hwnd 650 420
+
+    # POLYLINE completed with Enter.
+    Send-Key $hwnd 0x50 # P
+    Click-Client $hwnd 300 600
+    Click-Client $hwnd 380 570
+    Click-Client $hwnd 460 610
+    Send-Key $hwnd 0x0D # Enter
+
+    # DIMENSION: first point, second point, dimension-line point.
+    Send-Key $hwnd 0x44 # D
+    Click-Client $hwnd 560 600
+    Click-Client $hwnd 700 600
+    Click-Client $hwnd 560 560
+
+    # TEXT: insertion point, WM_CHAR stream, Enter commit.
+    Send-Key $hwnd 0x58 # X
+    Click-Client $hwnd 740 520
+    Send-Char $hwnd 0x43 # C
+    Send-Char $hwnd 0x41 # A
+    Send-Char $hwnd 0x44 # D
+    Send-Key $hwnd 0x0D # Enter
+
+    # COPY the selected text using two real canvas clicks.
+    Send-Key $hwnd 0x59 # Y
+    Click-Client $hwnd 740 520
+    Click-Client $hwnd 780 500
+
     Write-Snapshot $hwnd 1 $beforeDelete
     $before = Get-Content -Raw -Path $beforeDelete
 
@@ -101,6 +141,21 @@ try {
     }
     if ($before -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+POLY\s+') {
         throw "GUI Rectangle interaction did not persist a closed POLY entity"
+    }
+    if (($before | Select-String -Pattern '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+POLY\s+' -AllMatches).Matches.Count -lt 2) {
+        throw "GUI Polyline interaction did not persist an additional POLY entity"
+    }
+    if ($before -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+ARC\s+') {
+        throw "GUI Arc interaction did not persist an ARC entity"
+    }
+    if ($before -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+DIM\s+') {
+        throw "GUI Dimension interaction did not persist a DIM entity"
+    }
+    if (($before | Select-String -Pattern '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+TEXT\s+' -AllMatches).Matches.Count -lt 2) {
+        throw "GUI Text/Copy interaction did not persist two TEXT entities"
+    }
+    if ($before -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+HATCH\s+') {
+        throw "GUI Hatch interaction did not persist a HATCH entity"
     }
 
     # Escape returns to Select. Select the known line midpoint and Delete it.

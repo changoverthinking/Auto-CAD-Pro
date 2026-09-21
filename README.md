@@ -6,7 +6,7 @@ Windows-first CAD application focused on a production-grade 2D workflow before a
 
 The repository builds a native Windows desktop application named `AutoCADPro.exe`.
 
-Current GUI foundation:
+Current Windows 2D release foundation:
 - native Win32/GDI 2D workspace linked directly to `acp_core`;
 - CAD grid, coordinate status, zoom around cursor and middle-mouse pan;
 - interactive Line, Circle, Polyline, Arc and Text creation;
@@ -19,9 +19,15 @@ Current GUI foundation:
 - project New/Open/Save/Save As with unsaved-change protection;
 - DXF import/export;
 - SVG export and vector PDF export;
-- Windows CI build/test and downloadable x64 executable artifact.
+- Windows CI build/test and downloadable x64 executable artifact;
+- History-backed Text/Dimension/Hatch property editing;
+- 30-second atomic autosave recovery snapshots with startup recovery;
+- A4-A0 page setup, portrait/landscape and Fit/1:50/1:100/1:200 PDF layout workflow;
+- 5,120-entity large-document regression coverage;
+- versioned portable ZIP + SHA-256 and validated NSIS Windows installer;
+- tag-triggered GitHub release workflow with optional Authenticode signing hooks.
 
-The Windows GUI remains in the prototype gate because the production release still needs richer annotation/property editing, recovery/autosave, performance hardening, printing/layout workflow, installer/signing and wider real-document regression coverage.
+The Windows GUI is now in the verified gate. The remaining explicit 2D export blocker is full Unicode PDF text embedding/subsetting; unsupported Unicode currently fails safely instead of producing corrupted text.
 
 ## Development gates
 
@@ -62,7 +68,7 @@ The authoritative maturity matrix is maintained in `docs/FEATURE_GATES.md`.
 - recovery/autosave
 - performance/stability hardening
 - embedded/subset Unicode fonts for reliable PDF text
-- Windows installer and signed release pipeline
+- Windows installer and signing-ready release pipeline
 
 ### Phase 3 — 3D
 Only starts after the 2D release gate is green. FreeCAD/OpenCascade-derived capabilities are evaluated here.
@@ -83,3 +89,19 @@ FreeCAD source is LGPL2+ and may be reused under its license obligations. Auto C
 - OS: Windows 10/11 x64
 - Primary toolchain: Visual Studio 2022 / MSVC, CMake, CTest
 - First quality target: 2D correctness and stability
+
+## Windows release outputs
+
+Every green Windows CI run produces:
+- `AutoCADPro.exe`;
+- a versioned portable ZIP;
+- SHA-256 checksum for the portable package;
+- a validated NSIS installer;
+- a real GUI screenshot;
+- GUI interaction document snapshots.
+
+Tagged builds (`v*`) use `.github/workflows/release.yml` to build release artifacts and publish a GitHub Release. Authenticode signing is automatically enabled when `WINDOWS_CERT_BASE64` and `WINDOWS_CERT_PASSWORD` repository secrets are configured.
+
+## Current 2D release status
+
+The main branch is protected by repeated core/workflow tests, real GUI launch/lifecycle tests, real GUI interaction regression, large-document regression and installer validation. 3D development should not begin until the remaining explicit 2D blocker—Unicode PDF font embedding/subsetting—is resolved or formally deferred.
