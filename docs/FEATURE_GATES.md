@@ -31,7 +31,7 @@ A feature may be labeled production only when all of the following are true:
 | trim/extend/offset | verified | edit2d acceptance and edge-case tests |
 | endpoint/midpoint/center/intersection snaps | verified | snap aperture and geometry tests |
 | layers/entity properties | verified | layer visibility/locking/weights + persistence tests |
-| blocks/block references | verified | block definition/reference integration tests |
+| blocks/block references | verified | transactional Create-from-Selected + Insert Active GUI workflow, project-aware Undo/Redo, Save/Open persistence and instantiated geometry regression coverage |
 | text/linear dimensions | verified | annotation document and persistence tests |
 | hatches | production | hatch entity/persistence tests plus shared angle/spacing-aware clipped pattern geometry used by GUI, SVG and PDF |
 | project save/open | production | versioned round-trip + page settings persistence + validated temp/readback/parse/atomic-replace saves; forced temp-write failure preserves the previous project file |
@@ -97,3 +97,11 @@ A feature may be labeled production only when all of the following are true:
 - Portable ZIP content is expanded and validated in CI for the executable, Noto Sans JP font and license assets.
 - NSIS installer now installs the Unicode font and third-party provenance/license files. CI silently installs it to a clean directory, verifies all runtime assets, launches the installed executable, and silently uninstalls it.
 - Signing order is now application first, then packaging, then outer installer signing; therefore signed releases package the signed application binary rather than an unsigned inner executable.
+
+## 2026-09-21 block/symbol workflow
+
+- History now has a project-aware path for transactions that mutate both Document and BlockLibrary without weakening existing document-only commands.
+- Create Block from Selected converts Line/Circle/Arc/Polyline geometry into a BlockDefinition and replaces the source with a BlockReference while preserving the source EntityId and entity properties.
+- Undo restores the original primitive and removes the definition; Redo restores the same BlockId and reference.
+- Insert Active Block is available through the Block menu, toolbar icon and K shortcut.
+- Real Win32 GUI regression creates a block, inserts a second reference, undoes insertion, undoes block creation, then redoes both and verifies serialized project state.

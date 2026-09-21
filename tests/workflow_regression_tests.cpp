@@ -156,6 +156,96 @@ int main() {
     expect(document.find(lineId) == nullptr, "delete redo removes line");
     expect(history.undo(document), "restore line before save");
 
+    // BLOCK — create from selected geometry as one project-history transaction,
+    // then insert a second reference and prove Undo/Redo + persistence.
+    Document blockDocument;
+    BlockLibrary blockLibrary;
+    History blockHistory;
+
+    const EntityId blockSourceId =
+        blockDocument.insert(LineEntity{{{10.0, 10.0}, {30.0, 10.0}}});
+    const LayerId blockLayer =
+        blockDocument.create_layer("Blocks");
+    expect(blockLayer != 0 &&
+           blockDocument.set_entity_layer(blockSourceId, blockLayer),
+           "block source layer setup");
+    blockDocument.properties(blockSourceId)->line_weight_override = 0.50;
+
+    auto createBlock =
+        std::make_unique<CreateBlockFromEntityCommand>(
+            blockSourceId, "Symbol A");
+    auto* createBlockPtr = createBlock.get();
+    expect(blockHistory.apply(
+               blockDocument, blockLibrary, std::move(createBlock)),
+           "block create project transaction");
+    const BlockId createdBlockId = createBlockPtr->block_id();
+    expect(createdBlockId != 0 &&
+           blockLibrary.find(createdBlockId) != nullptr,
+           "block definition created");
+    expect(std::holds_alternative<BlockReferenceEntity>(
+               *blockDocument.find(blockSourceId)),
+           "source geometry replaced by block reference");
+    if (const auto* props = blockDocument.properties(blockSourceId)) {
+        expect(props->layer_id == blockLayer &&
+               props->line_weight_override.has_value() &&
+               geo::nearly_equal(*props->line_weight_override, 0.50),
+               "block conversion preserves entity properties");
+    } else {
+        expect(false, "block conversion properties exist");
+    }
+
+    expect(blockHistory.undo(blockDocument, blockLibrary),
+           "block create undo");
+    expect(blockLibrary.find(createdBlockId) == nullptr &&
+           std::holds_alternative<LineEntity>(
+               *blockDocument.find(blockSourceId)),
+           "block undo restores primitive and removes definition");
+
+    expect(blockHistory.redo(blockDocument, blockLibrary),
+           "block create redo");
+    expect(blockLibrary.find(createdBlockId) != nullptr &&
+           std::get<BlockReferenceEntity>(
+               *blockDocument.find(blockSourceId)).block_id ==
+               createdBlockId,
+           "block redo restores same definition id");
+
+    auto insertBlock = std::make_unique<AddEntityCommand>(
+        BlockReferenceEntity{
+            createdBlockId, {100.0, 50.0}, std::numbers::pi / 4.0, 2.0});
+    auto* insertBlockPtr = insertBlock.get();
+    expect(blockHistory.apply(
+               blockDocument, blockLibrary, std::move(insertBlock)),
+           "insert second block reference");
+    const EntityId secondBlockRefId = insertBlockPtr->id();
+    expect(secondBlockRefId != 0 &&
+           std::holds_alternative<BlockReferenceEntity>(
+               *blockDocument.find(secondBlockRefId)),
+           "second block reference exists");
+
+    const std::string blockSerialized =
+        persistence::serialize_project(blockDocument, blockLibrary);
+    const auto blockLoaded =
+        persistence::deserialize_project(blockSerialized);
+    expect(blockLoaded.has_value(),
+           "block workflow save/open parses");
+    if (blockLoaded.has_value()) {
+        expect(blockLoaded->blocks.find(createdBlockId) != nullptr,
+               "block definition persisted");
+        expect(blockLoaded->document.find(blockSourceId) != nullptr &&
+               blockLoaded->document.find(secondBlockRefId) != nullptr &&
+               std::holds_alternative<BlockReferenceEntity>(
+                   *blockLoaded->document.find(blockSourceId)) &&
+               std::holds_alternative<BlockReferenceEntity>(
+                   *blockLoaded->document.find(secondBlockRefId)),
+               "block references persisted");
+        const auto instantiated = blockLoaded->blocks.instantiate(
+            std::get<BlockReferenceEntity>(
+                *blockLoaded->document.find(secondBlockRefId)));
+        expect(instantiated.size() == 1 &&
+               std::holds_alternative<LineEntity>(instantiated.front()),
+               "loaded block instantiates geometry");
+    }
+
     // SAVE -> OPEN — complete drawing round trip after all modifications.
     const std::string serialized =
         persistence::serialize_project(document, blocks);
