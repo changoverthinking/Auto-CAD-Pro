@@ -1313,6 +1313,24 @@ std::optional<std::string> read_text_file(const std::filesystem::path& path) {
     return data;
 }
 
+std::optional<std::filesystem::path> application_directory() {
+    std::array<wchar_t, 4096> buffer{};
+    const DWORD length = GetModuleFileNameW(
+        nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0 || length >= buffer.size()) {
+        return std::nullopt;
+    }
+    return std::filesystem::path(buffer.data()).parent_path();
+}
+
+std::optional<std::string> load_bundled_pdf_font() {
+    const auto directory = application_directory();
+    if (!directory.has_value()) {
+        return std::nullopt;
+    }
+    return read_text_file(*directory / L"assets" / L"NotoSansJP.ttf");
+}
+
 void fit_drawing(HWND hwnd);
 
 bool write_text_file(const std::filesystem::path& path, const std::string& data) {
@@ -1568,13 +1586,25 @@ void export_pdf(HWND hwnd) {
         L"pdf");
     if (!path.has_value()) return;
 
+    const auto font_bytes = load_bundled_pdf_font();
+    const std::optional<acp::pdf::FontData> font =
+        font_bytes.has_value()
+            ? std::optional<acp::pdf::FontData>{
+                  acp::pdf::FontData{*font_bytes, "NotoSansJP"}}
+            : std::nullopt;
+
     const auto data = acp::pdf::export_document(
         g_app.document,
         &g_app.blocks,
         g_app.page_setup,
-        g_app.print_scale_denominator);
+        g_app.print_scale_denominator,
+        font.has_value() ? &*font : nullptr);
     if (!data.has_value() || !write_text_file(*path, *data)) {
-        show_file_error(hwnd, L"Could not export PDF.");
+        show_file_error(
+            hwnd,
+            font_bytes.has_value()
+                ? L"Could not export PDF."
+                : L"Could not export PDF because the bundled Unicode font is missing.");
     }
 }
 
