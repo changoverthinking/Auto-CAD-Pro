@@ -1793,13 +1793,32 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
 
         RECT vis_rect{row.left + 2, row.top, row.left + 28, row.bottom};
         RECT lock_rect{row.left + 30, row.top, row.left + 56, row.bottom};
-        RECT name_rect{row.left + 60, row.top, row.right - 4, row.bottom};
+        RECT name_rect{row.left + 60, row.top, row.right - 44, row.bottom};
         DrawTextW(dc, layer->visible ? L"V" : L"-", -1, &vis_rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         DrawTextW(dc, layer->locked ? L"L" : L"-", -1, &lock_rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         DrawTextW(dc, name, -1, &name_rect,
                   DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+        RECT swatch{
+            row.right - 38, row.top + 5,
+            row.right - 24, row.bottom - 5};
+        HBRUSH swatch_brush = CreateSolidBrush(
+            RGB(layer->color.r, layer->color.g, layer->color.b));
+        FillRect(dc, &swatch, swatch_brush);
+        DeleteObject(swatch_brush);
+        FrameRect(dc, &swatch, static_cast<HBRUSH>(GetStockObject(GRAY_BRUSH)));
+
+        RECT type_rect{row.right - 22, row.top, row.right - 2, row.bottom};
+        const wchar_t* type_mark =
+            layer->line_type == acp::LineType::Continuous
+                ? L"—"
+                : layer->line_type == acp::LineType::Dashed
+                    ? L"- -"
+                    : L"-·-";
+        DrawTextW(dc, type_mark, -1, &type_rect,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         y += 26;
     }
 
@@ -1891,10 +1910,42 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
                 draw_property(L"Rotation*", value);
             }
         }
+
+        if (const acp::EntityProperties* props =
+                g_app.document.properties(*g_app.selected)) {
+            const acp::RgbColor effective =
+                g_app.document.effective_color(*g_app.selected);
+            const std::wstring effective_text = format_rgb(effective);
+            const std::wstring color_text =
+                props->color_override.has_value()
+                    ? format_rgb(*props->color_override)
+                    : L"ByLayer " + effective_text;
+            draw_property(L"Color*", color_text.c_str());
+
+            const std::wstring line_type_text =
+                props->line_type_override.has_value()
+                    ? std::wstring{
+                          line_type_name(*props->line_type_override)}
+                    : L"ByLayer " + std::wstring{
+                          line_type_name(
+                              g_app.document.effective_line_type(
+                                  *g_app.selected))};
+            draw_property(L"Linetype*", line_type_text.c_str());
+        }
     } else {
         draw_property(L"Selected", L"None");
         swprintf_s(value, L"%u", static_cast<unsigned>(g_app.active_layer));
         draw_property(L"Layer", value);
+        if (const acp::Layer* layer =
+                g_app.document.layer(g_app.active_layer)) {
+            const std::wstring layer_name = wide_from_utf8(layer->name);
+            draw_property(L"Layer name", layer_name.c_str());
+            swprintf_s(value, L"%.2f mm", layer->line_weight);
+            draw_property(L"Layer weight", value);
+            const std::wstring color_text = format_rgb(layer->color);
+            draw_property(L"Layer color", color_text.c_str());
+            draw_property(L"Layer type", line_type_name(layer->line_type));
+        }
     }
 
     swprintf_s(value, L"%.0f%%", g_app.zoom * 100.0);
@@ -1971,6 +2022,23 @@ bool handle_property_panel_double_click(HWND hwnd, POINT point) {
     } else if (std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
         if (row == 7) return edit_selected_property(hwnd, DirectProperty::BlockScale);
         if (row == 8) return edit_selected_property(hwnd, DirectProperty::BlockRotation);
+    }
+
+    int color_row = 5;
+    if (std::holds_alternative<acp::TextEntity>(*entity)) {
+        color_row = 9;
+    } else if (std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
+        color_row = 8;
+    } else if (std::holds_alternative<acp::HatchEntity>(*entity) ||
+               std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
+        color_row = 9;
+    }
+
+    if (row == color_row) {
+        return edit_selected_property(hwnd, DirectProperty::Color);
+    }
+    if (row == color_row + 1) {
+        return edit_selected_property(hwnd, DirectProperty::LineType);
     }
 
     return true;
