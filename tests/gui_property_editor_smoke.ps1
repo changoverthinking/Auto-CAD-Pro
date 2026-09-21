@@ -422,6 +422,53 @@ try {
         throw "Property editor regression: Block numeric properties are incorrect"
     }
 
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5(?:0+)?\s*}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5(?:0+)?\s*}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
     Write-Host "GUI direct property editor regression test passed"
 }
 finally {
