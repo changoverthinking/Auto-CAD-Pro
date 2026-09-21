@@ -14,6 +14,7 @@ Current Windows 2D release foundation:
 - Trim, Extend and Offset editing;
 - endpoint/midpoint/center/intersection object snap with F3 toggle;
 - layers/properties panel, visibility/lock controls and effective line weights;
+- transactional Block/Symbol creation from selected geometry plus repeated block insertion with project-aware Undo/Redo;
 - Dimension and Hatch creation;
 - Undo/Redo through the command history model;
 - project New/Open/Save/Save As with unsaved-change protection and validated atomic replacement;
@@ -63,7 +64,7 @@ The authoritative maturity matrix is maintained in `docs/FEATURE_GATES.md`.
 
 ### Phase 2 — 2D Production
 - construction drawing workflows
-- blocks/symbols
+- blocks/symbols with reusable references and transactional GUI creation/insertion
 - layouts and printing
 - recovery/autosave
 - performance/stability hardening
