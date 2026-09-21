@@ -18,6 +18,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <numbers>
 #include <variant>
@@ -1067,9 +1069,48 @@ int main() {
            "pdf rejects empty drawing");
 
     Document unicodePdfDoc;
-    unicodePdfDoc.insert(TextEntity{{0, 0}, "日本語", 2.5, 0.0});
+    unicodePdfDoc.insert(TextEntity{{0, 0}, "日本語 Tiếng Việt: Đường kính", 2.5, 0.0});
+    unicodePdfDoc.insert(LinearDimensionEntity{
+        {0, 0}, {100, 0}, {0, -10}, std::string{"寸法 100"}});
     expect(!pdf::export_document(unicodePdfDoc).has_value(),
-           "pdf rejects unsupported Unicode text instead of corrupting it");
+           "pdf still rejects Unicode when no bundled font is supplied");
+
+#ifdef ACP_TEST_PDF_FONT_PATH
+    std::ifstream pdfFontInput(ACP_TEST_PDF_FONT_PATH, std::ios::binary);
+    const std::string pdfFontBytes{
+        std::istreambuf_iterator<char>(pdfFontInput),
+        std::istreambuf_iterator<char>()};
+    expect(!pdfFontBytes.empty(), "bundled PDF font test asset loads");
+
+    const pdf::FontData pdfFont{pdfFontBytes, "NotoSansJP"};
+    const auto unicodePdf =
+        pdf::export_document(
+            unicodePdfDoc, nullptr, {}, std::nullopt, &pdfFont);
+    expect(unicodePdf.has_value(),
+           "pdf exports Japanese and Vietnamese with embedded Unicode font");
+    if (unicodePdf.has_value()) {
+        expect(unicodePdf->find("/Subtype /Type0") != std::string::npos &&
+               unicodePdf->find("/Subtype /CIDFontType2") != std::string::npos &&
+               unicodePdf->find("/FontFile2") != std::string::npos &&
+               unicodePdf->find("/ToUnicode") != std::string::npos,
+               "pdf embeds Type0 TrueType Unicode font resources");
+        expect(unicodePdf->find("<65E5>") != std::string::npos &&
+               unicodePdf->find("<672C>") != std::string::npos &&
+               unicodePdf->find("<8A9E>") != std::string::npos,
+               "pdf ToUnicode map contains Japanese codepoints");
+        expect(unicodePdf->find("<0110>") != std::string::npos &&
+               unicodePdf->find("<01B0>") != std::string::npos,
+               "pdf ToUnicode map contains Vietnamese codepoints");
+        expect(unicodePdf->size() > pdfFontBytes.size(),
+               "pdf contains embedded font payload");
+    }
+
+    const std::string brokenFont{"not a font"};
+    const pdf::FontData invalidPdfFont{brokenFont, "Broken"};
+    expect(!pdf::export_document(
+                unicodePdfDoc, nullptr, {}, std::nullopt, &invalidPdfFont).has_value(),
+           "pdf rejects corrupt embedded font input");
+#endif
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
