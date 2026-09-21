@@ -60,4 +60,8 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_core_tests tests/core_tests.cpp)
     target_link_libraries(acp_core_tests PRIVATE acp_core)
     add_test(NAME acp_core_tests COMMAND acp_core_tests)
+
+    add_executable(acp_workflow_regression_tests tests/workflow_regression_tests.cpp)
+    target_link_libraries(acp_workflow_regression_tests PRIVATE acp_core)
+    add_test(NAME acp_workflow_regression_tests COMMAND acp_workflow_regression_tests)
 endif()
