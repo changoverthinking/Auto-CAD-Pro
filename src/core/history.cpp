@@ -89,6 +89,40 @@ void UpdateEntityCommand::undo(Document& document) {
     }
 }
 
+CreateLayerCommand::CreateLayerCommand(std::string name)
+    : name_(std::move(name)) {}
+
+bool CreateLayerCommand::execute(Document& document) {
+    if (executed_ && layer_.has_value()) {
+        return document.insert_layer_with_id(*layer_);
+    }
+
+    id_ = document.create_layer(name_);
+    if (id_ == 0) {
+        return false;
+    }
+
+    const Layer* created = document.layer(id_);
+    if (created == nullptr) {
+        return false;
+    }
+
+    layer_ = *created;
+    executed_ = true;
+    return true;
+}
+
+void CreateLayerCommand::undo(Document& document) {
+    if (!executed_ || id_ == 0) {
+        return;
+    }
+
+    if (const Layer* current = document.layer(id_)) {
+        layer_ = *current;
+    }
+    (void)document.remove_layer(id_);
+}
+
 UpdateEntityPropertiesCommand::UpdateEntityPropertiesCommand(
     EntityId id,
     EntityProperties replacement)
