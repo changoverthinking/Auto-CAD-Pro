@@ -1918,10 +1918,38 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
                 draw_property(L"Rotation*", value);
             }
         }
+
+        if (const acp::EntityProperties* props =
+                g_app.document.properties(*g_app.selected)) {
+            const std::wstring color_text =
+                props->color_override.has_value()
+                    ? format_rgb(*props->color_override)
+                    : L"ByLayer " +
+                      format_rgb(g_app.document.effective_color(*g_app.selected));
+            draw_property(L"Color*", color_text.c_str());
+
+            const std::wstring type_text =
+                props->line_type_override.has_value()
+                    ? std::wstring{line_type_name(*props->line_type_override)}
+                    : L"ByLayer " + std::wstring{
+                        line_type_name(
+                            g_app.document.effective_line_type(*g_app.selected))};
+            draw_property(L"Linetype*", type_text.c_str());
+        }
     } else {
         draw_property(L"Selected", L"None");
         swprintf_s(value, L"%u", static_cast<unsigned>(g_app.active_layer));
         draw_property(L"Layer", value);
+        if (const acp::Layer* layer =
+                g_app.document.layer(g_app.active_layer)) {
+            const std::wstring layer_name = wide_from_utf8(layer->name);
+            draw_property(L"Layer name", layer_name.c_str());
+            swprintf_s(value, L"%.2f mm", layer->line_weight);
+            draw_property(L"Layer weight", value);
+            const std::wstring layer_color = format_rgb(layer->color);
+            draw_property(L"Layer color", layer_color.c_str());
+            draw_property(L"Layer type", line_type_name(layer->line_type));
+        }
     }
 
     swprintf_s(value, L"%.0f%%", g_app.zoom * 100.0);
@@ -1998,6 +2026,23 @@ bool handle_property_panel_double_click(HWND hwnd, POINT point) {
     } else if (std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
         if (row == 7) return edit_selected_property(hwnd, DirectProperty::BlockScale);
         if (row == 8) return edit_selected_property(hwnd, DirectProperty::BlockRotation);
+    }
+
+    int color_row = 5;
+    if (std::holds_alternative<acp::TextEntity>(*entity)) {
+        color_row = 9;
+    } else if (std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
+        color_row = 8;
+    } else if (std::holds_alternative<acp::HatchEntity>(*entity) ||
+               std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
+        color_row = 9;
+    }
+
+    if (row == color_row) {
+        return edit_selected_property(hwnd, DirectProperty::Color);
+    }
+    if (row == color_row + 1) {
+        return edit_selected_property(hwnd, DirectProperty::LineType);
     }
 
     return true;
@@ -3122,6 +3167,14 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     (void)edit_active_layer_property(
                         hwnd, DirectLayerProperty::LineWeight);
                     return 0;
+                case kMenuEditLayerColor:
+                    (void)edit_active_layer_property(
+                        hwnd, DirectLayerProperty::Color);
+                    return 0;
+                case kMenuEditLayerLineType:
+                    (void)edit_active_layer_property(
+                        hwnd, DirectLayerProperty::LineType);
+                    return 0;
                 case kMenuAssignLayer:
                     assign_selected_to_active_layer(hwnd);
                     return 0;
@@ -3153,6 +3206,12 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     return 0;
                 case kMenuEditLineWeight:
                     (void)edit_selected_property(hwnd, DirectProperty::LineWeight);
+                    return 0;
+                case kMenuEditEntityColor:
+                    (void)edit_selected_property(hwnd, DirectProperty::Color);
+                    return 0;
+                case kMenuEditEntityLineType:
+                    (void)edit_selected_property(hwnd, DirectProperty::LineType);
                     return 0;
                 case kMenuEditTextContent:
                     (void)edit_selected_property(hwnd, DirectProperty::TextContent);
@@ -3679,6 +3738,8 @@ HMENU create_app_menu() {
     AppendMenuW(layer, MF_STRING, kMenuNewLayer, L"&New Layer");
     AppendMenuW(layer, MF_STRING, kMenuEditLayerName, L"&Rename Active Layer...");
     AppendMenuW(layer, MF_STRING, kMenuEditLayerWeight, L"Edit Active Layer &Line Weight...");
+    AppendMenuW(layer, MF_STRING, kMenuEditLayerColor, L"Edit Active Layer &Color...");
+    AppendMenuW(layer, MF_STRING, kMenuEditLayerLineType, L"Edit Active Layer &Linetype...");
     AppendMenuW(layer, MF_STRING, kMenuAssignLayer, L"&Assign Selected to Active");
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerVisible, L"Toggle &Visibility");
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerLock, L"Toggle &Lock");
@@ -3691,6 +3752,8 @@ HMENU create_app_menu() {
     AppendMenuW(entity, MF_STRING, kMenuToggleEntityVisible, L"Toggle &Visibility");
     AppendMenuW(entity, MF_STRING, kMenuCycleEntityWeight, L"Cycle Line &Weight");
     AppendMenuW(entity, MF_STRING, kMenuEditLineWeight, L"Edit Line Weight...");
+    AppendMenuW(entity, MF_STRING, kMenuEditEntityColor, L"Edit Color...");
+    AppendMenuW(entity, MF_STRING, kMenuEditEntityLineType, L"Edit Linetype...");
     AppendMenuW(entity, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(entity, MF_STRING, kMenuEditTextContent, L"Text: Edit Content...");
     AppendMenuW(entity, MF_STRING, kMenuEditTextHeight, L"Text: Edit Height...");
