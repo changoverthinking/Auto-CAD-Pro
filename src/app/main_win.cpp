@@ -1236,18 +1236,20 @@ bool write_text_file(const std::filesystem::path& path, const std::string& data)
 }
 
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
-bool write_gui_test_snapshot() {
-    std::array<wchar_t, 4096> path{};
+bool write_gui_test_snapshot(WPARAM snapshot_id) {
+    std::array<wchar_t, 4096> directory{};
     const DWORD length = GetEnvironmentVariableW(
-        L"ACP_GUI_TEST_SNAPSHOT",
-        path.data(),
-        static_cast<DWORD>(path.size()));
-    if (length == 0 || length >= path.size()) {
+        L"ACP_GUI_TEST_SNAPSHOT_DIR",
+        directory.data(),
+        static_cast<DWORD>(directory.size()));
+    if (length == 0 || length >= directory.size()) {
         return false;
     }
 
+    const auto path = std::filesystem::path(directory.data()) /
+        (L"gui-interaction-" + std::to_wstring(snapshot_id) + L".acp2d");
     return write_text_file(
-        std::filesystem::path(path.data()),
+        path,
         acp::persistence::serialize_project(g_app.document, g_app.blocks));
 }
 #endif
@@ -1834,7 +1836,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
     switch (message) {
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
         case kGuiTestSnapshotMessage:
-            return write_gui_test_snapshot() ? 1 : 0;
+            return write_gui_test_snapshot(w_param) ? 1 : 0;
 #endif
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
