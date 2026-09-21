@@ -1546,11 +1546,14 @@ void save_project(HWND hwnd, bool save_as = false) {
         }
     }
 
-    const std::string data =
-        acp::persistence::serialize_project(
-            g_app.document, g_app.blocks, current_project_settings());
-    if (!write_text_file(*path, data)) {
-        show_file_error(hwnd, L"Could not save the project.");
+    if (!acp::persistence::save_project_atomic(
+            *path,
+            g_app.document,
+            g_app.blocks,
+            current_project_settings())) {
+        show_file_error(
+            hwnd,
+            L"Could not save the project atomically. The previous project file was left unchanged.");
         return;
     }
 
