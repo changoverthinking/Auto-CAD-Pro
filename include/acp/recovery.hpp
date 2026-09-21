@@ -1,7 +1,6 @@
 #pragma once
 
-#include "acp/block.hpp"
-#include "acp/document.hpp"
+#include "acp/persistence.hpp"
 
 #include <filesystem>
 #include <optional>
