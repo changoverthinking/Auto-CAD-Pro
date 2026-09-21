@@ -278,6 +278,3712 @@ try {
         throw "Property editor regression: Line Weight menu edit did not apply"
     }
 
+    Command-Property $hwnd $proc 1040 "#00FF80"
+    Command-Property $hwnd $proc 1041 "Dashed"
+    $entityStyleState = Snapshot $hwnd 51
+    if ($entityStyleState -notmatch '(?m)^EX\s+1\s+1\s+0\s+255\s+128\s+1\s+1\s*    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
+    $clientWidth = $rect.Right - $rect.Left
+    $clientHeight = $rect.Bottom - $rect.Top
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
+    $panelLeft = $clientWidth - $panelWidth
+    $panelBottom = $clientHeight - 26
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
+    $valueX = $panelLeft + 120
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
+
+    DoubleClick-Client $hwnd $valueX $contentY
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
+
+    $colorY =
+        $propertiesTop + 34 + (9 * 22) + 11
+    DoubleClick-Client $hwnd $valueX $colorY
+    Set-PropertyDialog $proc "#FF6600"
+
+    $lineTypeY =
+        $propertiesTop + 34 + (10 * 22) + 11
+    DoubleClick-Client $hwnd $valueX $lineTypeY
+    Set-PropertyDialog $proc "Center"
+
+    $panelStyleState = Snapshot $hwnd 52
+    if ($panelStyleState -notmatch '(?m)^EX\s+1\s+1\s+255\s+102\s+0\s+1\s+2\s*    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+    Command-Property $hwnd $proc 1042 "#3366CC"
+    Command-Property $hwnd $proc 1043 "Center"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5' -or
+        $layerState -notmatch '(?m)^LX\s+2\s+51\s+102\s+204\s+2\s*    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $secondLayerColorX = ($clientWidth - 6) - 30
+    DoubleClick-Client $hwnd $secondLayerColorX $secondLayerY
+    Set-PropertyDialog $proc "#00CCFF"
+
+    $secondLayerTypeX = ($clientWidth - 6) - 10
+    DoubleClick-Client $hwnd $secondLayerTypeX $secondLayerY
+    Set-PropertyDialog $proc "Dashed"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5' -or
+        $layerDoubleClickState -notmatch '(?m)^LX\s+2\s+0\s+204\s+255\s+1\s*    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "ENTITY STYLE STATE:"
+        Write-Host $entityStyleState
+        throw "Property editor regression: entity Color/Linetype menu edit did not persist"
+    }
+
+    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
+    $clientWidth = $rect.Right - $rect.Left
+    $clientHeight = $rect.Bottom - $rect.Top
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
+    $panelLeft = $clientWidth - $panelWidth
+    $panelBottom = $clientHeight - 26
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
+    $valueX = $panelLeft + 120
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
+
+    DoubleClick-Client $hwnd $valueX $contentY
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "PANEL STYLE STATE:"
+        Write-Host $panelStyleState
+        throw "Property editor regression: panel Color/Linetype edit did not persist"
+    }
+
+    # Blank restores both style fields to ByLayer.
+    Command-Property $hwnd $proc 1040 ""
+    Command-Property $hwnd $proc 1041 ""
+    $byLayerState = Snapshot $hwnd 54
+    if ($byLayerState -notmatch '(?m)^EX\s+1\s+0\s+255\s+255\s+255\s+0\s+0\s*    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "ENTITY STYLE STATE:"
+        Write-Host $entityStyleState
+        throw "Property editor regression: entity Color/Linetype menu edit did not persist"
+    }
+
+    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
+    $clientWidth = $rect.Right - $rect.Left
+    $clientHeight = $rect.Bottom - $rect.Top
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
+    $panelLeft = $clientWidth - $panelWidth
+    $panelBottom = $clientHeight - 26
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
+    $valueX = $panelLeft + 120
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
+
+    DoubleClick-Client $hwnd $valueX $contentY
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "BYLAYER STATE:"
+        Write-Host $byLayerState
+        throw "Property editor regression: blank Color/Linetype did not restore ByLayer"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "ENTITY STYLE STATE:"
+        Write-Host $entityStyleState
+        throw "Property editor regression: entity Color/Linetype menu edit did not persist"
+    }
+
+    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
+    $clientWidth = $rect.Right - $rect.Left
+    $clientHeight = $rect.Bottom - $rect.Top
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
+    $panelLeft = $clientWidth - $panelWidth
+    $panelBottom = $clientHeight - 26
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
+    $valueX = $panelLeft + 120
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
+
+    DoubleClick-Client $hwnd $valueX $contentY
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu name/weight/color/linetype did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "ENTITY STYLE STATE:"
+        Write-Host $entityStyleState
+        throw "Property editor regression: entity Color/Linetype menu edit did not persist"
+    }
+
+    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
+    $clientWidth = $rect.Right - $rect.Left
+    $clientHeight = $rect.Bottom - $rect.Top
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
+    $panelLeft = $clientWidth - $panelWidth
+    $panelBottom = $clientHeight - 26
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
+    $valueX = $panelLeft + 120
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
+
+    DoubleClick-Client $hwnd $valueX $contentY
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "PANEL STYLE STATE:"
+        Write-Host $panelStyleState
+        throw "Property editor regression: panel Color/Linetype edit did not persist"
+    }
+
+    # Blank restores both style fields to ByLayer.
+    Command-Property $hwnd $proc 1040 ""
+    Command-Property $hwnd $proc 1041 ""
+    $byLayerState = Snapshot $hwnd 54
+    if ($byLayerState -notmatch '(?m)^EX\s+1\s+0\s+255\s+255\s+255\s+0\s+0\s*    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "ENTITY STYLE STATE:"
+        Write-Host $entityStyleState
+        throw "Property editor regression: entity Color/Linetype menu edit did not persist"
+    }
+
+    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
+    $clientWidth = $rect.Right - $rect.Left
+    $clientHeight = $rect.Bottom - $rect.Top
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
+    $panelLeft = $clientWidth - $panelWidth
+    $panelBottom = $clientHeight - 26
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
+    $valueX = $panelLeft + 120
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
+
+    DoubleClick-Client $hwnd $valueX $contentY
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "BYLAYER STATE:"
+        Write-Host $byLayerState
+        throw "Property editor regression: blank Color/Linetype did not restore ByLayer"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "ENTITY STYLE STATE:"
+        Write-Host $entityStyleState
+        throw "Property editor regression: entity Color/Linetype menu edit did not persist"
+    }
+
+    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
+    $clientWidth = $rect.Right - $rect.Left
+    $clientHeight = $rect.Bottom - $rect.Top
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
+    $panelLeft = $clientWidth - $panelWidth
+    $panelBottom = $clientHeight - 26
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
+    $valueX = $panelLeft + 120
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
+
+    DoubleClick-Client $hwnd $valueX $contentY
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: row name/color/linetype edits did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "ENTITY STYLE STATE:"
+        Write-Host $entityStyleState
+        throw "Property editor regression: entity Color/Linetype menu edit did not persist"
+    }
+
+    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
+    $clientWidth = $rect.Right - $rect.Left
+    $clientHeight = $rect.Bottom - $rect.Top
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
+    $panelLeft = $clientWidth - $panelWidth
+    $panelBottom = $clientHeight - 26
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
+    $valueX = $panelLeft + 120
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
+
+    DoubleClick-Client $hwnd $valueX $contentY
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "PANEL STYLE STATE:"
+        Write-Host $panelStyleState
+        throw "Property editor regression: panel Color/Linetype edit did not persist"
+    }
+
+    # Blank restores both style fields to ByLayer.
+    Command-Property $hwnd $proc 1040 ""
+    Command-Property $hwnd $proc 1041 ""
+    $byLayerState = Snapshot $hwnd 54
+    if ($byLayerState -notmatch '(?m)^EX\s+1\s+0\s+255\s+255\s+255\s+0\s+0\s*    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "ENTITY STYLE STATE:"
+        Write-Host $entityStyleState
+        throw "Property editor regression: entity Color/Linetype menu edit did not persist"
+    }
+
+    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
+    $clientWidth = $rect.Right - $rect.Left
+    $clientHeight = $rect.Bottom - $rect.Top
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
+    $panelLeft = $clientWidth - $panelWidth
+    $panelBottom = $clientHeight - 26
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
+    $valueX = $panelLeft + 120
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
+
+    DoubleClick-Client $hwnd $valueX $contentY
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "BYLAYER STATE:"
+        Write-Host $byLayerState
+        throw "Property editor regression: blank Color/Linetype did not restore ByLayer"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "ENTITY STYLE STATE:"
+        Write-Host $entityStyleState
+        throw "Property editor regression: entity Color/Linetype menu edit did not persist"
+    }
+
+    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
+    $clientWidth = $rect.Right - $rect.Left
+    $clientHeight = $rect.Bottom - $rect.Top
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
+    $panelLeft = $clientWidth - $panelWidth
+    $panelBottom = $clientHeight - 26
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
+    $valueX = $panelLeft + 120
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
+
+    DoubleClick-Client $hwnd $valueX $contentY
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu name/weight/color/linetype did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "ENTITY STYLE STATE:"
+        Write-Host $entityStyleState
+        throw "Property editor regression: entity Color/Linetype menu edit did not persist"
+    }
+
+    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
+    $clientWidth = $rect.Right - $rect.Left
+    $clientHeight = $rect.Bottom - $rect.Top
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
+    $panelLeft = $clientWidth - $panelWidth
+    $panelBottom = $clientHeight - 26
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
+    $valueX = $panelLeft + 120
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
+
+    DoubleClick-Client $hwnd $valueX $contentY
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "PANEL STYLE STATE:"
+        Write-Host $panelStyleState
+        throw "Property editor regression: panel Color/Linetype edit did not persist"
+    }
+
+    # Blank restores both style fields to ByLayer.
+    Command-Property $hwnd $proc 1040 ""
+    Command-Property $hwnd $proc 1041 ""
+    $byLayerState = Snapshot $hwnd 54
+    if ($byLayerState -notmatch '(?m)^EX\s+1\s+0\s+255\s+255\s+255\s+0\s+0\s*    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "ENTITY STYLE STATE:"
+        Write-Host $entityStyleState
+        throw "Property editor regression: entity Color/Linetype menu edit did not persist"
+    }
+
+    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
+    $clientWidth = $rect.Right - $rect.Left
+    $clientHeight = $rect.Bottom - $rect.Top
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
+    $panelLeft = $clientWidth - $panelWidth
+    $panelBottom = $clientHeight - 26
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
+    $valueX = $panelLeft + 120
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
+
+    DoubleClick-Client $hwnd $valueX $contentY
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "BYLAYER STATE:"
+        Write-Host $byLayerState
+        throw "Property editor regression: blank Color/Linetype did not restore ByLayer"
+    }
+
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+
+    $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
+    $textMatch = [regex]::Match(
+        $textState,
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+
+    $dimState = Snapshot $hwnd 41
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+
+    $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        $hatchPattern)
+
+    if (!$hatchMatch.Success) {
+        Write-Host $hatchState
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+
+    $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
+    $blockMatch = [regex]::Match(
+        $blockState,
+        $blockPattern)
+
+    if (!$blockMatch.Success) {
+        Write-Host $blockState
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    # ACTIVE LAYER direct editor.
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+
+    Command-Property $hwnd $proc 1038 "Walls"
+    Command-Property $hwnd $proc 1039 "0.50"
+
+    $layerState = Snapshot $hwnd 49
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER STATE:"
+        Write-Host $layerState
+        throw "Layer editor regression: menu rename/weight did not persist"
+    }
+
+    # Prove the right-panel layer-row double-click route.
+    $layerToolbarHeight = [Math]::Max(
+        34, [int](($rect.Bottom - $rect.Top) / 20))
+    $layerPanelWidth = [Math]::Max(
+        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
+    $secondLayerNameX = $layerPanelLeft + 90
+    $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
+
+    DoubleClick-Client $hwnd $secondLayerNameX $secondLayerY
+    Set-PropertyDialog $proc "Structure"
+
+    $layerDoubleClickState = Snapshot $hwnd 50
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
+        Write-Host "LAYER DOUBLE CLICK STATE:"
+        Write-Host $layerDoubleClickState
+        throw "Layer editor regression: panel double-click rename did not persist"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host "ENTITY STYLE STATE:"
+        Write-Host $entityStyleState
+        throw "Property editor regression: entity Color/Linetype menu edit did not persist"
+    }
+
     # Now prove the right-panel double-click route itself. Change content a
     # second time through the value cell.
     $clientWidth = $rect.Right - $rect.Left
