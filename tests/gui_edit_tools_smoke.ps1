@@ -89,8 +89,8 @@ try {
 
     # Base line.
     Send-Key $hwnd 0x4C # L
-    Click-Client $hwnd 300 250
-    Click-Client $hwnd 450 250
+    Click-Client $hwnd 220 250
+    Click-Client $hwnd 360 250
     $base = Snapshot $hwnd 20
     if ((Line-Count $base) -ne 1) {
         throw "Edit regression setup did not create exactly one base line"
@@ -98,8 +98,8 @@ try {
 
     # MOVE.
     Send-Key $hwnd 0x4D # M
-    Click-Client $hwnd 300 250
-    Click-Client $hwnd 320 270
+    Click-Client $hwnd 220 250
+    Click-Client $hwnd 250 280
     $moved = Snapshot $hwnd 21
     if ($moved -eq $base) {
         throw "GUI Move did not modify document geometry"
@@ -119,8 +119,8 @@ try {
 
     # COPY.
     Send-Key $hwnd 0x59 # Y
-    Click-Client $hwnd 320 270
-    Click-Client $hwnd 360 310
+    Click-Client $hwnd 250 280
+    Click-Client $hwnd 300 330
     $copied = Snapshot $hwnd 24
     if ((Line-Count $copied) -ne 2) {
         throw "GUI Copy did not add an independent line"
@@ -128,8 +128,8 @@ try {
 
     # ROTATE selected copy.
     Send-Key $hwnd 0x52 # R
-    Click-Client $hwnd 360 310
-    Click-Client $hwnd 360 250
+    Click-Client $hwnd 300 330
+    Click-Client $hwnd 300 270
     $rotated = Snapshot $hwnd 25
     if ($rotated -eq $copied) {
         throw "GUI Rotate did not modify selected line"
@@ -137,9 +137,9 @@ try {
 
     # SCALE selected copy: base, reference, target.
     Send-Key $hwnd 0x53 # S
-    Click-Client $hwnd 360 310
-    Click-Client $hwnd 400 310
-    Click-Client $hwnd 440 310
+    Click-Client $hwnd 300 330
+    Click-Client $hwnd 340 330
+    Click-Client $hwnd 380 330
     $scaled = Snapshot $hwnd 26
     if ($scaled -eq $rotated) {
         throw "GUI Scale did not modify selected line"
@@ -147,8 +147,8 @@ try {
 
     # MIRROR selected copy around a vertical axis.
     Send-Key $hwnd 0x49 # I
-    Click-Client $hwnd 500 220
-    Click-Client $hwnd 500 420
+    Click-Client $hwnd 430 220
+    Click-Client $hwnd 430 420
     $mirrored = Snapshot $hwnd 27
     if ($mirrored -eq $scaled) {
         throw "GUI Mirror did not modify selected line"
@@ -156,7 +156,7 @@ try {
 
     # OFFSET selected line.
     Send-Key $hwnd 0x4F # O
-    Click-Client $hwnd 430 360
+    Click-Client $hwnd 390 360
     $offset = Snapshot $hwnd 28
     if ((Line-Count $offset) -ne 3) {
         throw "GUI Offset did not create a third line"
@@ -164,18 +164,18 @@ try {
 
     # TRIM setup: target horizontal + cutter vertical.
     Send-Key $hwnd 0x4C
-    Click-Client $hwnd 600 250
-    Click-Client $hwnd 800 250
+    Click-Client $hwnd 480 250
+    Click-Client $hwnd 660 250
     Send-Key $hwnd 0x4C
-    Click-Client $hwnd 700 180
-    Click-Client $hwnd 700 320
+    Click-Client $hwnd 570 180
+    Click-Client $hwnd 570 320
 
     Send-Key $hwnd 0x1B
-    Click-Client $hwnd 650 250
+    Click-Client $hwnd 520 250
     Send-Key $hwnd 0x54 # T
     $trimBefore = Snapshot $hwnd 29
-    Click-Client $hwnd 700 220
-    Click-Client $hwnd 620 250
+    Click-Client $hwnd 570 220
+    Click-Client $hwnd 500 250
     $trimAfter = Snapshot $hwnd 30
     if ($trimAfter -eq $trimBefore) {
         throw "GUI Trim did not modify target geometry"
@@ -183,17 +183,17 @@ try {
 
     # EXTEND setup: short target + vertical boundary.
     Send-Key $hwnd 0x4C
-    Click-Client $hwnd 600 400
-    Click-Client $hwnd 650 400
+    Click-Client $hwnd 480 400
+    Click-Client $hwnd 530 400
     Send-Key $hwnd 0x4C
-    Click-Client $hwnd 750 350
-    Click-Client $hwnd 750 450
+    Click-Client $hwnd 650 350
+    Click-Client $hwnd 650 450
 
     Send-Key $hwnd 0x1B
-    Click-Client $hwnd 625 400
+    Click-Client $hwnd 505 400
     Send-Key $hwnd 0x45 # E
     $extendBefore = Snapshot $hwnd 31
-    Click-Client $hwnd 750 400
+    Click-Client $hwnd 650 400
     $extendAfter = Snapshot $hwnd 32
     if ($extendAfter -eq $extendBefore) {
         throw "GUI Extend did not modify target geometry"
