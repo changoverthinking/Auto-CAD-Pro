@@ -254,9 +254,20 @@ try {
     if ($contentState -notmatch '"EDITED-CAD"') {
         $stage = [GuiPropertyNative]::SendMessage(
             $hwnd, 0x8000 + 43, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+        $inputLength = [GuiPropertyNative]::SendMessage(
+            $hwnd, 0x8000 + 44, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+        $codes = @()
+        if ($inputLength -gt 0 -and $inputLength -lt 256) {
+            for ($i = 0; $i -lt $inputLength; $i++) {
+                $codes += [GuiPropertyNative]::SendMessage(
+                    $hwnd, 0x8000 + 45, [IntPtr]$i, [IntPtr]::Zero).ToInt64()
+            }
+        }
         Write-Host "CONTENT STATE:"
         Write-Host $contentState
         Write-Host ("PROPERTY STAGE: " + $stage)
+        Write-Host ("PROPERTY INPUT LENGTH: " + $inputLength)
+        Write-Host ("PROPERTY INPUT CODES: " + ($codes -join ","))
         throw "Property editor regression: Text Content menu edit did not apply"
     }
 
