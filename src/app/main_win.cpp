@@ -1624,6 +1624,65 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
 }
 
 
+bool handle_property_panel_double_click(HWND hwnd, POINT point) {
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    const int top = toolbar_height(client);
+    const int panel_width = layer_panel_width(client);
+    const int panel_left = client.right - panel_width;
+    const int panel_bottom = client.bottom - kStatusHeight;
+    if (point.x < panel_left + 104 ||
+        point.x >= client.right - 8 ||
+        point.y < top ||
+        point.y >= panel_bottom ||
+        !g_app.selected.has_value()) {
+        return false;
+    }
+
+    int layer_y = top + 32;
+    for (const acp::LayerId id : g_app.document.layer_ids()) {
+        if (g_app.document.layer(id) != nullptr) {
+            layer_y += 26;
+        }
+    }
+    const int properties_top =
+        std::max<LONG>(
+            layer_y + 10,
+            top + (panel_bottom - top) / 2);
+    const int values_top = properties_top + 34;
+    if (point.y < values_top) {
+        return false;
+    }
+
+    const int row = (point.y - values_top) / 22;
+    if (row == 2) {
+        return edit_selected_property(
+            hwnd, DirectProperty::LineWeight);
+    }
+
+    const acp::Entity* entity =
+        g_app.document.find(*g_app.selected);
+    if (entity == nullptr) {
+        return false;
+    }
+
+    if (std::holds_alternative<acp::TextEntity>(*entity)) {
+        if (row == 6) return edit_selected_property(hwnd, DirectProperty::TextHeight);
+        if (row == 7) return edit_selected_property(hwnd, DirectProperty::TextRotation);
+        if (row == 8) return edit_selected_property(hwnd, DirectProperty::TextContent);
+    } else if (std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
+        if (row == 7) return edit_selected_property(hwnd, DirectProperty::DimensionOverride);
+    } else if (std::holds_alternative<acp::HatchEntity>(*entity)) {
+        if (row == 7) return edit_selected_property(hwnd, DirectProperty::HatchAngle);
+        if (row == 8) return edit_selected_property(hwnd, DirectProperty::HatchSpacing);
+    } else if (std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
+        if (row == 7) return edit_selected_property(hwnd, DirectProperty::BlockScale);
+        if (row == 8) return edit_selected_property(hwnd, DirectProperty::BlockRotation);
+    }
+
+    return true;
+}
+
 bool handle_layer_panel_click(HWND hwnd, POINT point) {
     RECT client{};
     GetClientRect(hwnd, &client);
@@ -2720,6 +2779,33 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     g_app.snap_candidate.reset();
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
+                case kMenuEditLineWeight:
+                    (void)edit_selected_property(hwnd, DirectProperty::LineWeight);
+                    return 0;
+                case kMenuEditTextContent:
+                    (void)edit_selected_property(hwnd, DirectProperty::TextContent);
+                    return 0;
+                case kMenuEditTextHeight:
+                    (void)edit_selected_property(hwnd, DirectProperty::TextHeight);
+                    return 0;
+                case kMenuEditTextRotation:
+                    (void)edit_selected_property(hwnd, DirectProperty::TextRotation);
+                    return 0;
+                case kMenuEditDimensionOverride:
+                    (void)edit_selected_property(hwnd, DirectProperty::DimensionOverride);
+                    return 0;
+                case kMenuEditHatchAngle:
+                    (void)edit_selected_property(hwnd, DirectProperty::HatchAngle);
+                    return 0;
+                case kMenuEditHatchSpacing:
+                    (void)edit_selected_property(hwnd, DirectProperty::HatchSpacing);
+                    return 0;
+                case kMenuEditBlockScale:
+                    (void)edit_selected_property(hwnd, DirectProperty::BlockScale);
+                    return 0;
+                case kMenuEditBlockRotation:
+                    (void)edit_selected_property(hwnd, DirectProperty::BlockRotation);
+                    return 0;
                 case kMenuCycleEntityWeight:
                     if (selected_editable()) {
                         if (const acp::EntityProperties* props =
@@ -3047,6 +3133,14 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             }
             break;
 
+        case WM_LBUTTONDBLCLK: {
+            const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
+            if (handle_property_panel_double_click(hwnd, p)) {
+                return 0;
+            }
+            break;
+        }
+
         case WM_LBUTTONDOWN: {
             const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
             handle_left_click(hwnd, p);
@@ -3221,6 +3315,16 @@ HMENU create_app_menu() {
     AppendMenuW(layout_menu, MF_STRING, kMenuCyclePrintScale, L"Cycle Print &Scale");
     AppendMenuW(entity, MF_STRING, kMenuToggleEntityVisible, L"Toggle &Visibility");
     AppendMenuW(entity, MF_STRING, kMenuCycleEntityWeight, L"Cycle Line &Weight");
+    AppendMenuW(entity, MF_STRING, kMenuEditLineWeight, L"Edit Line Weight...");
+    AppendMenuW(entity, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(entity, MF_STRING, kMenuEditTextContent, L"Text: Edit Content...");
+    AppendMenuW(entity, MF_STRING, kMenuEditTextHeight, L"Text: Edit Height...");
+    AppendMenuW(entity, MF_STRING, kMenuEditTextRotation, L"Text: Edit Rotation...");
+    AppendMenuW(entity, MF_STRING, kMenuEditDimensionOverride, L"Dimension: Edit Override...");
+    AppendMenuW(entity, MF_STRING, kMenuEditHatchAngle, L"Hatch: Edit Angle...");
+    AppendMenuW(entity, MF_STRING, kMenuEditHatchSpacing, L"Hatch: Edit Spacing...");
+    AppendMenuW(entity, MF_STRING, kMenuEditBlockScale, L"Block: Edit Scale...");
+    AppendMenuW(entity, MF_STRING, kMenuEditBlockRotation, L"Block: Edit Rotation...");
     AppendMenuW(entity, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(entity, MF_STRING, kMenuTextCycleHeight, L"Text: Cycle &Height");
     AppendMenuW(entity, MF_STRING, kMenuTextRotate15, L"Text: Rotate +15 deg");
@@ -3243,7 +3347,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_command) {
 
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wc.lpfnWndProc = window_proc;
     wc.hInstance = instance;
     wc.hCursor = LoadCursorW(nullptr, IDC_CROSS);
