@@ -1,6 +1,7 @@
 #include "acp/document.hpp"
 #include "acp/layout.hpp"
 #include "acp/pdf.hpp"
+#include "acp/persistence.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -113,6 +114,57 @@ int main() {
                 a3Landscape,
                 -100.0).has_value(),
            "reject negative print scale");
+
+    persistence::ProjectSettings savedSettings;
+    savedSettings.page_setup = a3Landscape;
+    savedSettings.page_setup.margins = {12.0, 14.0, 16.0, 18.0};
+    savedSettings.print_scale_denominator = 100.0;
+
+    const std::string projectData =
+        persistence::serialize_project(document, blocks, savedSettings);
+    const auto loadedProject =
+        persistence::deserialize_project(projectData);
+    expect(loadedProject.has_value(),
+           "page setup project roundtrip parses");
+    if (loadedProject.has_value()) {
+        const auto& loadedSettings = loadedProject->settings;
+        expect(loadedSettings.page_setup.paper == layout::PaperSize::A3 &&
+               loadedSettings.page_setup.orientation ==
+                   layout::Orientation::Landscape,
+               "page setup paper and orientation persist");
+        expect(geo::nearly_equal(
+                   loadedSettings.page_setup.margins.left, 12.0) &&
+               geo::nearly_equal(
+                   loadedSettings.page_setup.margins.bottom, 18.0),
+               "page setup margins persist");
+        expect(loadedSettings.print_scale_denominator.has_value() &&
+               geo::nearly_equal(
+                   *loadedSettings.print_scale_denominator, 100.0),
+               "print scale persists");
+    }
+
+    const auto legacyProject = persistence::deserialize_project(
+        "ACP2D 1\n"
+        "L 1 \"0\" 1 0 0.25\n"
+        "E 1 1 1 0 0 LINE 0 0 10 0\n"
+        "END\n");
+    expect(legacyProject.has_value(),
+           "legacy project without PAGE record remains supported");
+    if (legacyProject.has_value()) {
+        expect(legacyProject->settings.page_setup.paper ==
+                   layout::PaperSize::A4 &&
+               legacyProject->settings.page_setup.orientation ==
+                   layout::Orientation::Landscape &&
+               !legacyProject->settings.print_scale_denominator.has_value(),
+               "legacy project receives default page setup");
+    }
+
+    expect(!persistence::deserialize_project(
+        "ACP2D 1\n"
+        "L 1 \"0\" 1 0 0.25\n"
+        "PAGE 0 1 -1 10 10 10 0 0\n"
+        "END\n").has_value(),
+        "reject invalid persisted page margins");
 
     if (failures != 0) {
         std::cerr << failures << " layout/print regression test(s) failed\n";
