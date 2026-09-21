@@ -53,6 +53,9 @@ if(ACP_BUILD_APP AND WIN32)
     target_compile_features(AutoCADPro PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(AutoCADPro PRIVATE /W4 /permissive- /EHsc)
+        target_link_options(AutoCADPro PRIVATE
+            "/MANIFEST:EMBED"
+            "/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/src/app/app.manifest")
     endif()
 
     install(TARGETS AutoCADPro RUNTIME DESTINATION .)
