@@ -5,6 +5,13 @@
 #include <utility>
 
 namespace acp {
+namespace {
+bool valid_line_type(LineType value) noexcept {
+    return value == LineType::Continuous ||
+           value == LineType::Dashed ||
+           value == LineType::Center;
+}
+} // namespace
 
 Document::Document() {
     layers_.emplace(kDefaultLayerId, Layer{kDefaultLayerId, "0", true, false, 0.25});
@@ -109,6 +116,30 @@ double Document::effective_line_weight(EntityId id) const noexcept {
     return owner == nullptr ? 0.0 : owner->line_weight;
 }
 
+RgbColor Document::effective_color(EntityId id) const noexcept {
+    const auto* props = properties(id);
+    if (props == nullptr) {
+        return {};
+    }
+    if (props->color_override.has_value()) {
+        return *props->color_override;
+    }
+    const auto* owner = layer(props->layer_id);
+    return owner == nullptr ? RgbColor{} : owner->color;
+}
+
+LineType Document::effective_line_type(EntityId id) const noexcept {
+    const auto* props = properties(id);
+    if (props == nullptr) {
+        return LineType::Continuous;
+    }
+    if (props->line_type_override.has_value()) {
+        return *props->line_type_override;
+    }
+    const auto* owner = layer(props->layer_id);
+    return owner == nullptr ? LineType::Continuous : owner->line_type;
+}
+
 LayerId Document::create_layer(std::string name) {
     if (name.empty() || layer_name_exists(name)) {
         return 0;
@@ -127,7 +158,8 @@ bool Document::insert_layer_with_id(Layer value) {
         layers_.contains(value.id) ||
         layer_name_exists(value.name) ||
         !std::isfinite(value.line_weight) ||
-        value.line_weight < 0.0) {
+        value.line_weight < 0.0 ||
+        !valid_line_type(value.line_type)) {
         return false;
     }
 
@@ -192,6 +224,24 @@ bool Document::set_layer_line_weight(LayerId id, double line_weight) noexcept {
         return false;
     }
     target->line_weight = line_weight;
+    return true;
+}
+
+bool Document::set_layer_color(LayerId id, RgbColor color) noexcept {
+    auto* target = layer(id);
+    if (target == nullptr) {
+        return false;
+    }
+    target->color = color;
+    return true;
+}
+
+bool Document::set_layer_line_type(LayerId id, LineType line_type) noexcept {
+    auto* target = layer(id);
+    if (target == nullptr || !valid_line_type(line_type)) {
+        return false;
+    }
+    target->line_type = line_type;
     return true;
 }
 

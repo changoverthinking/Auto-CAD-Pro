@@ -83,6 +83,100 @@ std::string layer_name_for(const Document& document, EntityId id) {
     return layer == nullptr ? "0" : layer->name;
 }
 
+int true_color_value(RgbColor color) noexcept {
+    return (static_cast<int>(color.r) << 16) |
+           (static_cast<int>(color.g) << 8) |
+           static_cast<int>(color.b);
+}
+
+std::optional<RgbColor> color_from_true_color(int value) noexcept {
+    if (value < 0 || value > 0xFFFFFF) {
+        return std::nullopt;
+    }
+    return RgbColor{
+        static_cast<std::uint8_t>((value >> 16) & 0xFF),
+        static_cast<std::uint8_t>((value >> 8) & 0xFF),
+        static_cast<std::uint8_t>(value & 0xFF)};
+}
+
+const char* dxf_line_type_name(LineType line_type) noexcept {
+    switch (line_type) {
+        case LineType::Continuous: return "CONTINUOUS";
+        case LineType::Dashed: return "DASHED";
+        case LineType::Center: return "CENTER";
+    }
+    return "CONTINUOUS";
+}
+
+std::optional<LineType> line_type_from_dxf(std::string_view value) {
+    if (value == "CONTINUOUS" || value == "BYLAYER" || value.empty()) {
+        return LineType::Continuous;
+    }
+    if (value == "DASHED") return LineType::Dashed;
+    if (value == "CENTER") return LineType::Center;
+    return std::nullopt;
+}
+
+void write_entity_style(
+    std::ostream& out,
+    const Document& document,
+    EntityId id) {
+
+    write_pair(
+        out, 420,
+        true_color_value(document.effective_color(id)));
+    write_pair(
+        out, 6,
+        dxf_line_type_name(document.effective_line_type(id)));
+}
+
+void write_ltype_table(std::ostream& out) {
+    write_pair(out, 0, "SECTION");
+    write_pair(out, 2, "TABLES");
+    write_pair(out, 0, "TABLE");
+    write_pair(out, 2, "LTYPE");
+    write_pair(out, 70, 3);
+
+    write_pair(out, 0, "LTYPE");
+    write_pair(out, 2, "CONTINUOUS");
+    write_pair(out, 70, 0);
+    write_pair(out, 3, "Solid line");
+    write_pair(out, 72, 65);
+    write_pair(out, 73, 0);
+    write_pair(out, 40, 0.0);
+
+    write_pair(out, 0, "LTYPE");
+    write_pair(out, 2, "DASHED");
+    write_pair(out, 70, 0);
+    write_pair(out, 3, "Dashed");
+    write_pair(out, 72, 65);
+    write_pair(out, 73, 2);
+    write_pair(out, 40, 20.0);
+    write_pair(out, 49, 12.0);
+    write_pair(out, 74, 0);
+    write_pair(out, 49, -8.0);
+    write_pair(out, 74, 0);
+
+    write_pair(out, 0, "LTYPE");
+    write_pair(out, 2, "CENTER");
+    write_pair(out, 70, 0);
+    write_pair(out, 3, "Center");
+    write_pair(out, 72, 65);
+    write_pair(out, 73, 4);
+    write_pair(out, 40, 33.0);
+    write_pair(out, 49, 18.0);
+    write_pair(out, 74, 0);
+    write_pair(out, 49, -6.0);
+    write_pair(out, 74, 0);
+    write_pair(out, 49, 3.0);
+    write_pair(out, 74, 0);
+    write_pair(out, 49, -6.0);
+    write_pair(out, 74, 0);
+
+    write_pair(out, 0, "ENDTAB");
+    write_pair(out, 0, "ENDSEC");
+}
+
 std::string sanitize_text(std::string text) {
     std::replace(text.begin(), text.end(), '\r', ' ');
     std::replace(text.begin(), text.end(), '\n', ' ');
@@ -214,6 +308,24 @@ bool import_entity(
     const std::string layer_name = get_string(fields, 8, "0");
     const LayerId layer_id = ensure_layer(document, layer_name);
     if (layer_id == 0 || !document.set_entity_layer(id, layer_id)) return false;
+
+    EntityProperties* properties = document.properties(id);
+    if (properties == nullptr) return false;
+
+    if (const Pair* true_color = find_first(fields, 420)) {
+        int value{};
+        if (!parse_int(true_color->value, value)) return false;
+        const auto color = color_from_true_color(value);
+        if (!color.has_value()) return false;
+        properties->color_override = *color;
+    }
+
+    if (const Pair* line_type = find_first(fields, 6)) {
+        const auto parsed = line_type_from_dxf(line_type->value);
+        if (!parsed.has_value()) return false;
+        properties->line_type_override = *parsed;
+    }
+
     ++imported;
     return true;
 }
@@ -225,6 +337,7 @@ ExportResult export_ascii_report(const Document& document) {
     std::ostringstream out;
     out << std::setprecision(17);
 
+    write_ltype_table(out);
     write_pair(out, 0, "SECTION");
     write_pair(out, 2, "ENTITIES");
 
@@ -240,6 +353,7 @@ ExportResult export_ascii_report(const Document& document) {
                 ++result.exported;
                 write_pair(out, 0, "LINE");
                 write_pair(out, 8, layer);
+                write_entity_style(out, document, id);
                 write_pair(out, 10, value.segment.a.x);
                 write_pair(out, 20, value.segment.a.y);
                 write_pair(out, 11, value.segment.b.x);
@@ -248,6 +362,7 @@ ExportResult export_ascii_report(const Document& document) {
                 ++result.exported;
                 write_pair(out, 0, "CIRCLE");
                 write_pair(out, 8, layer);
+                write_entity_style(out, document, id);
                 write_pair(out, 10, value.circle.center.x);
                 write_pair(out, 20, value.circle.center.y);
                 write_pair(out, 40, value.circle.radius);
@@ -255,6 +370,7 @@ ExportResult export_ascii_report(const Document& document) {
                 ++result.exported;
                 write_pair(out, 0, "ARC");
                 write_pair(out, 8, layer);
+                write_entity_style(out, document, id);
                 write_pair(out, 10, value.arc.center.x);
                 write_pair(out, 20, value.arc.center.y);
                 write_pair(out, 40, value.arc.radius);
@@ -271,6 +387,7 @@ ExportResult export_ascii_report(const Document& document) {
                 ++result.exported;
                 write_pair(out, 0, "LWPOLYLINE");
                 write_pair(out, 8, layer);
+                write_entity_style(out, document, id);
                 write_pair(out, 90, static_cast<int>(value.points.size()));
                 write_pair(out, 70, value.closed ? 1 : 0);
                 for (const auto& point : value.points) {
@@ -285,6 +402,7 @@ ExportResult export_ascii_report(const Document& document) {
                 ++result.exported;
                 write_pair(out, 0, "TEXT");
                 write_pair(out, 8, layer);
+                write_entity_style(out, document, id);
                 write_pair(out, 10, value.position.x);
                 write_pair(out, 20, value.position.y);
                 write_pair(out, 40, value.height);

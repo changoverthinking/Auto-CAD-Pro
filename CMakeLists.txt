@@ -121,6 +121,10 @@ if(ACP_BUILD_TESTS)
     target_link_libraries(acp_property_edit_tests PRIVATE acp_core)
     add_test(NAME acp_property_edit_tests COMMAND acp_property_edit_tests)
 
+    add_executable(acp_color_linetype_tests tests/color_linetype_tests.cpp)
+    target_link_libraries(acp_color_linetype_tests PRIVATE acp_core)
+    add_test(NAME acp_color_linetype_tests COMMAND acp_color_linetype_tests)
+
     add_executable(acp_recovery_tests tests/recovery_tests.cpp)
     target_link_libraries(acp_recovery_tests PRIVATE acp_core)
     add_test(NAME acp_recovery_tests COMMAND acp_recovery_tests)
