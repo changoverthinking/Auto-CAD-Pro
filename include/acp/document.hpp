@@ -19,6 +19,20 @@ using LayerId = std::uint32_t;
 
 inline constexpr LayerId kDefaultLayerId = 1;
 
+struct RgbColor {
+    std::uint8_t r{255};
+    std::uint8_t g{255};
+    std::uint8_t b{255};
+
+    friend bool operator==(const RgbColor&, const RgbColor&) = default;
+};
+
+enum class LineType : std::uint8_t {
+    Continuous = 0,
+    Dashed = 1,
+    Center = 2
+};
+
 struct LineEntity { geo::Segment segment; };
 struct CircleEntity { geo::Circle circle; };
 struct ArcEntity { geo::Arc arc; };
@@ -43,12 +57,16 @@ struct Layer {
     bool visible{true};
     bool locked{false};
     double line_weight{0.25};
+    RgbColor color{};
+    LineType line_type{LineType::Continuous};
 };
 
 struct EntityProperties {
     LayerId layer_id{kDefaultLayerId};
     bool visible{true};
     std::optional<double> line_weight_override;
+    std::optional<RgbColor> color_override;
+    std::optional<LineType> line_type_override;
 };
 
 class Document {
@@ -69,6 +87,8 @@ public:
     [[nodiscard]] bool entity_visible(EntityId id) const noexcept;
     [[nodiscard]] bool entity_locked(EntityId id) const noexcept;
     [[nodiscard]] double effective_line_weight(EntityId id) const noexcept;
+    [[nodiscard]] RgbColor effective_color(EntityId id) const noexcept;
+    [[nodiscard]] LineType effective_line_type(EntityId id) const noexcept;
 
     [[nodiscard]] LayerId create_layer(std::string name);
     bool insert_layer_with_id(Layer layer);
@@ -79,6 +99,8 @@ public:
     bool set_layer_visible(LayerId id, bool visible) noexcept;
     bool set_layer_locked(LayerId id, bool locked) noexcept;
     bool set_layer_line_weight(LayerId id, double line_weight) noexcept;
+    bool set_layer_color(LayerId id, RgbColor color) noexcept;
+    bool set_layer_line_type(LayerId id, LineType line_type) noexcept;
     [[nodiscard]] bool remove_layer(LayerId id);
 
 private:
