@@ -2071,8 +2071,16 @@ bool handle_layer_panel_double_click(HWND hwnd, POINT point) {
                 return true;
             }
             g_app.active_layer = id;
-            (void)edit_active_layer_property(
-                hwnd, DirectLayerProperty::Name);
+            if (point.x >= row.right - 22) {
+                (void)edit_active_layer_property(
+                    hwnd, DirectLayerProperty::LineType);
+            } else if (point.x >= row.right - 40) {
+                (void)edit_active_layer_property(
+                    hwnd, DirectLayerProperty::Color);
+            } else {
+                (void)edit_active_layer_property(
+                    hwnd, DirectLayerProperty::Name);
+            }
             return true;
         }
         y += 26;
