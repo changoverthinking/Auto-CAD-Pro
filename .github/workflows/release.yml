@@ -28,6 +28,23 @@ jobs:
       - name: Run release regression suite
         run: ctest --test-dir build -C Release --output-on-failure
 
+      - name: Optional sign application
+        if: env.HAS_SIGNING_CERT == 'true'
+        shell: powershell
+        env:
+          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP "autocadpro-release-app.pfx"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if ($null -eq $signtool) { throw "signtool.exe not found" }
+          & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "build\Release\AutoCADPro.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Application signing failed" }
+          Remove-Item $certPath -Force
+
       - name: Build portable ZIP
         shell: powershell
         run: |
@@ -38,6 +55,15 @@ jobs:
           Move-Item $zip.FullName artifacts\$($zip.Name)
           $hash = Get-FileHash -Algorithm SHA256 -Path artifacts\$($zip.Name)
           ($hash.Hash.ToLower() + "  " + $zip.Name) | Set-Content -NoNewline -Path artifacts\$($zip.Name + ".sha256")
+
+          $portableCheck = Join-Path $env:RUNNER_TEMP "autocadpro-release-portable-check"
+          Remove-Item $portableCheck -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path artifacts\$($zip.Name) -DestinationPath $portableCheck
+          if ($null -eq (Get-ChildItem $portableCheck -Recurse -Filter AutoCADPro.exe | Select-Object -First 1) -or
+              $null -eq (Get-ChildItem $portableCheck -Recurse -Filter NotoSansJP.ttf | Select-Object -First 1) -or
+              $null -eq (Get-ChildItem $portableCheck -Recurse -Filter OFL.txt | Select-Object -First 1)) {
+            throw "Release portable ZIP is missing required runtime assets"
+          }
 
       - name: Install NSIS
         shell: powershell
@@ -61,34 +87,35 @@ jobs:
           $version = $versionLine.Matches[0].Groups[1].Value
           $exe = (Resolve-Path "build\Release\AutoCADPro.exe").Path
           $readme = (Resolve-Path "README.md").Path
+          $font = (Resolve-Path "build\assets\NotoSansJP.ttf").Path
+          $notoLicense = (Resolve-Path "third_party\noto\OFL.txt").Path
+          $notoSource = (Resolve-Path "third_party\noto\SOURCE.md").Path
+          $stbLicense = (Resolve-Path "third_party\stb\LICENSE").Path
           $out = (Resolve-Path "artifacts").Path
-          & makensis.exe "/DVERSION=$version" "/DSOURCE_EXE=$exe" "/DREADME_FILE=$readme" "/DOUTPUT_DIR=$out" "installer\AutoCADPro.nsi"
+          & makensis.exe "/DVERSION=$version" "/DSOURCE_EXE=$exe" "/DREADME_FILE=$readme" "/DPDF_FONT_FILE=$font" "/DNOTO_LICENSE_FILE=$notoLicense" "/DNOTO_SOURCE_FILE=$notoSource" "/DSTB_LICENSE_FILE=$stbLicense" "/DOUTPUT_DIR=$out" "installer\AutoCADPro.nsi"
           if ($LASTEXITCODE -ne 0) { throw "NSIS installer build failed" }
           $installer = Get-ChildItem -Path artifacts -Filter "AutoCADPro-*-Windows-x64-Setup.exe" | Select-Object -First 1
           if ($null -eq $installer) { throw "Installer was not created" }
           $hash = Get-FileHash -Algorithm SHA256 -Path $installer.FullName
           ($hash.Hash.ToLower() + "  " + $installer.Name) | Set-Content -NoNewline -Path ($installer.FullName + ".sha256")
 
-      - name: Optional Authenticode signing
+      - name: Optional sign installer
         if: env.HAS_SIGNING_CERT == 'true'
         shell: powershell
         env:
           WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
           WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
-          $certPath = Join-Path $env:RUNNER_TEMP "autocadpro-release.pfx"
+          $certPath = Join-Path $env:RUNNER_TEMP "autocadpro-release-installer.pfx"
           [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
             Sort-Object FullName -Descending |
             Select-Object -First 1
           if ($null -eq $signtool) { throw "signtool.exe not found" }
-          $targets = @(
-            "build\Release\AutoCADPro.exe"
-          ) + (Get-ChildItem artifacts -Filter "AutoCADPro-*-Windows-x64-Setup.exe" | ForEach-Object { $_.FullName })
-          foreach ($target in $targets) {
-            & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $target
-            if ($LASTEXITCODE -ne 0) { throw "Signing failed: $target" }
-          }
+          $installer = Get-ChildItem artifacts -Filter "AutoCADPro-*-Windows-x64-Setup.exe" | Select-Object -First 1
+          if ($null -eq $installer) { throw "Installer not found for signing" }
+          & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $installer.FullName
+          if ($LASTEXITCODE -ne 0) { throw "Installer signing failed" }
           Remove-Item $certPath -Force
 
       - name: Refresh installer checksum after signing

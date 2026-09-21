@@ -9,6 +9,18 @@
 !ifndef README_FILE
   !error "README_FILE must be provided"
 !endif
+!ifndef PDF_FONT_FILE
+  !error "PDF_FONT_FILE must be provided"
+!endif
+!ifndef NOTO_LICENSE_FILE
+  !error "NOTO_LICENSE_FILE must be provided"
+!endif
+!ifndef NOTO_SOURCE_FILE
+  !error "NOTO_SOURCE_FILE must be provided"
+!endif
+!ifndef STB_LICENSE_FILE
+  !error "STB_LICENSE_FILE must be provided"
+!endif
 !ifndef OUTPUT_DIR
   !define OUTPUT_DIR "."
 !endif
@@ -43,6 +55,17 @@ Section "Auto CAD Pro" SEC_MAIN
   File /oname=AutoCADPro.exe "${SOURCE_EXE}"
   File /oname=README.md "${README_FILE}"
 
+  SetOutPath "$INSTDIR\assets"
+  File /oname=NotoSansJP.ttf "${PDF_FONT_FILE}"
+
+  SetOutPath "$INSTDIR\licenses\NotoSansJP"
+  File /oname=OFL.txt "${NOTO_LICENSE_FILE}"
+  File /oname=SOURCE.md "${NOTO_SOURCE_FILE}"
+
+  SetOutPath "$INSTDIR\licenses\stb"
+  File /oname=LICENSE "${STB_LICENSE_FILE}"
+
+  SetOutPath "$INSTDIR"
   CreateDirectory "$SMPROGRAMS\Auto CAD Pro"
   CreateShortcut "$SMPROGRAMS\Auto CAD Pro\Auto CAD Pro.lnk" "$INSTDIR\AutoCADPro.exe"
   CreateShortcut "$DESKTOP\Auto CAD Pro.lnk" "$INSTDIR\AutoCADPro.exe"
@@ -67,6 +90,14 @@ Section "Uninstall"
 
   Delete "$INSTDIR\AutoCADPro.exe"
   Delete "$INSTDIR\README.md"
+  Delete "$INSTDIR\assets\NotoSansJP.ttf"
+  RMDir "$INSTDIR\assets"
+  Delete "$INSTDIR\licenses\NotoSansJP\OFL.txt"
+  Delete "$INSTDIR\licenses\NotoSansJP\SOURCE.md"
+  RMDir "$INSTDIR\licenses\NotoSansJP"
+  Delete "$INSTDIR\licenses\stb\LICENSE"
+  RMDir "$INSTDIR\licenses\stb"
+  RMDir "$INSTDIR\licenses"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 

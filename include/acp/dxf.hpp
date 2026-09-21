@@ -15,6 +15,13 @@ struct ImportResult {
     std::size_t skipped{};
 };
 
+struct ExportResult {
+    std::string data;
+    std::size_t exported{};
+    std::size_t skipped{};
+};
+
+[[nodiscard]] ExportResult export_ascii_report(const Document& document);
 [[nodiscard]] std::string export_ascii(const Document& document);
 [[nodiscard]] std::optional<ImportResult> import_ascii(std::string_view data);
 

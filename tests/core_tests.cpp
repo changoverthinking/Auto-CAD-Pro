@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -715,6 +716,27 @@ int main() {
            dxfText.find("DXF NOTE") != std::string::npos,
            "export dxf ascii entity records");
 
+    const EntityId dxfUnsupportedDimension = dxfDoc.insert(
+        LinearDimensionEntity{{0, 0}, {10, 0}, {0, 3}, std::nullopt});
+    const EntityId dxfUnsupportedHatch = dxfDoc.insert(
+        HatchEntity{{{0, 0}, {5, 0}, {5, 5}, {0, 5}},
+                    "ANSI31", 0.0, 1.0, false});
+    const EntityId hiddenUnsupportedHatch = dxfDoc.insert(
+        HatchEntity{{{20, 20}, {25, 20}, {25, 25}, {20, 25}},
+                    "ANSI31", 0.0, 1.0, false});
+    dxfDoc.properties(hiddenUnsupportedHatch)->visible = false;
+
+    const auto dxfReport = dxf::export_ascii_report(dxfDoc);
+    expect(dxfReport.exported == 5 && dxfReport.skipped == 2,
+           "dxf export reports visible unsupported entities");
+    expect(dxfReport.data.find("DIM") == std::string::npos &&
+           dxfReport.data.find("HATCH") == std::string::npos,
+           "dxf subset omits unsupported entity records");
+    expect(dxfDoc.erase(dxfUnsupportedDimension) &&
+           dxfDoc.erase(dxfUnsupportedHatch) &&
+           dxfDoc.erase(hiddenUnsupportedHatch),
+           "remove dxf report-only fixtures");
+
     const auto dxfLoaded = dxf::import_ascii(dxfText);
     expect(dxfLoaded.has_value() && dxfLoaded->imported == 5 && dxfLoaded->skipped == 0,
            "import exported dxf ascii");
@@ -760,6 +782,25 @@ int main() {
 
     expect(!dxf::import_ascii("0\nSECTION\n2\nENTITIES\n0\nLINE\n10\n1\n").has_value(),
            "dxf import rejects truncated pair stream");
+
+    expect(!dxf::import_ascii(
+        "0\nSECTION\n2\nENTITIES\n"
+        "0\nLINE\n8\n0\n10\n1\n20\n2\n11\n1\n21\n2\n"
+        "0\nENDSEC\n0\nEOF\n").has_value(),
+        "dxf import rejects zero-length line");
+
+    expect(!dxf::import_ascii(
+        "0\nSECTION\n2\nENTITIES\n"
+        "0\nLWPOLYLINE\n8\n0\n90\n1\n70\n0\n10\n1\n20\n2\n"
+        "0\nENDSEC\n0\nEOF\n").has_value(),
+        "dxf import rejects one-point polyline");
+
+    expect(!dxf::import_ascii(
+        "0\nSECTION\n2\nENTITIES\n"
+        "0\nLWPOLYLINE\n8\n0\n90\n2\n70\n1\n"
+        "10\n0\n20\n0\n10\n1\n20\n0\n"
+        "0\nENDSEC\n0\nEOF\n").has_value(),
+        "dxf import rejects closed two-point polyline");
 
 
     const auto circleBounds = bounds::entity_bounds(
@@ -1126,6 +1167,95 @@ int main() {
     }
     expect(!pdf::export_document(Document{}).has_value(),
            "pdf rejects empty drawing");
+
+    std::error_code atomicSaveEc;
+    const auto atomicSaveRoot =
+        std::filesystem::temp_directory_path(atomicSaveEc) /
+        "autocadpro-atomic-project-save-test";
+    expect(!atomicSaveEc, "atomic project save temp directory available");
+    std::filesystem::remove_all(atomicSaveRoot, atomicSaveEc);
+    atomicSaveEc.clear();
+    std::filesystem::create_directories(atomicSaveRoot, atomicSaveEc);
+    expect(!atomicSaveEc, "atomic project save test directory created");
+
+    const auto atomicSavePath = atomicSaveRoot / "drawing.acp";
+    Document atomicSaveDoc;
+    BlockLibrary atomicSaveBlocks;
+    (void)atomicSaveDoc.insert(LineEntity{{{1, 2}, {30, 40}}});
+
+    persistence::ProjectSettings atomicSaveSettings;
+    atomicSaveSettings.page_setup.paper = layout::PaperSize::A3;
+    atomicSaveSettings.print_scale_denominator = 100.0;
+
+    expect(persistence::save_project_atomic(
+               atomicSavePath,
+               atomicSaveDoc,
+               atomicSaveBlocks,
+               atomicSaveSettings),
+           "atomic project save creates validated file");
+    expect(std::filesystem::exists(atomicSavePath),
+           "atomic project save destination exists");
+
+    {
+        std::ifstream saved(atomicSavePath, std::ios::binary);
+        const std::string bytes{
+            std::istreambuf_iterator<char>(saved),
+            std::istreambuf_iterator<char>()};
+        const auto loaded = persistence::deserialize_project(bytes);
+        expect(loaded.has_value() &&
+               loaded->document.size() == 1 &&
+               loaded->settings.print_scale_denominator.has_value() &&
+               geo::nearly_equal(
+                   *loaded->settings.print_scale_denominator, 100.0),
+               "atomic project save roundtrip validates");
+    }
+
+    Document atomicReplacementDoc;
+    (void)atomicReplacementDoc.insert(
+        CircleEntity{{{100, 100}, 25.0}});
+    expect(persistence::save_project_atomic(
+               atomicSavePath,
+               atomicReplacementDoc,
+               atomicSaveBlocks,
+               atomicSaveSettings),
+           "atomic project save replaces existing file");
+
+    std::string beforeFailedSave;
+    {
+        std::ifstream saved(atomicSavePath, std::ios::binary);
+        beforeFailedSave.assign(
+            std::istreambuf_iterator<char>(saved),
+            std::istreambuf_iterator<char>());
+    }
+
+    const std::filesystem::path blockedTemp{
+        atomicSavePath.wstring() + L".tmp"};
+    std::filesystem::remove_all(blockedTemp, atomicSaveEc);
+    atomicSaveEc.clear();
+    std::filesystem::create_directory(blockedTemp, atomicSaveEc);
+    expect(!atomicSaveEc, "atomic save failure fixture created");
+
+    Document failedAtomicDoc;
+    (void)failedAtomicDoc.insert(
+        TextEntity{{0, 0}, "MUST_NOT_REPLACE", 2.5, 0.0});
+    expect(!persistence::save_project_atomic(
+                atomicSavePath,
+                failedAtomicDoc,
+                atomicSaveBlocks,
+                atomicSaveSettings),
+           "atomic project save reports temp-write failure");
+
+    {
+        std::ifstream saved(atomicSavePath, std::ios::binary);
+        const std::string afterFailedSave{
+            std::istreambuf_iterator<char>(saved),
+            std::istreambuf_iterator<char>()};
+        expect(afterFailedSave == beforeFailedSave &&
+               afterFailedSave.find("MUST_NOT_REPLACE") == std::string::npos,
+               "failed atomic save preserves previous project file");
+    }
+
+    std::filesystem::remove_all(atomicSaveRoot, atomicSaveEc);
 
     Document unicodePdfDoc;
     unicodePdfDoc.insert(TextEntity{{0, 0}, "日本語 Tiếng Việt: Đường kính", 2.5, 0.0});

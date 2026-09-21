@@ -4,6 +4,7 @@
 #include "acp/document.hpp"
 #include "acp/layout.hpp"
 
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -28,5 +29,11 @@ struct ProjectData {
 
 [[nodiscard]] std::optional<ProjectData> deserialize_project(
     std::string_view data);
+
+[[nodiscard]] bool save_project_atomic(
+    const std::filesystem::path& path,
+    const Document& document,
+    const BlockLibrary& blocks,
+    const ProjectSettings& settings = {});
 
 } // namespace acp::persistence

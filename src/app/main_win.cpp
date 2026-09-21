@@ -1546,11 +1546,14 @@ void save_project(HWND hwnd, bool save_as = false) {
         }
     }
 
-    const std::string data =
-        acp::persistence::serialize_project(
-            g_app.document, g_app.blocks, current_project_settings());
-    if (!write_text_file(*path, data)) {
-        show_file_error(hwnd, L"Could not save the project.");
+    if (!acp::persistence::save_project_atomic(
+            *path,
+            g_app.document,
+            g_app.blocks,
+            current_project_settings())) {
+        show_file_error(
+            hwnd,
+            L"Could not save the project atomically. The previous project file was left unchanged.");
         return;
     }
 
@@ -1655,7 +1658,24 @@ void export_dxf(HWND hwnd) {
         return;
     }
 
-    if (!write_text_file(*path, acp::dxf::export_ascii(g_app.document))) {
+    const auto result = acp::dxf::export_ascii_report(g_app.document);
+    if (result.skipped != 0) {
+        std::wstring message =
+            L"This DXF subset supports Line, Circle, Arc, Polyline and Text.\n\n";
+        message += std::to_wstring(result.skipped);
+        message +=
+            L" visible unsupported or invalid entity/entities will be omitted.\n"
+            L"Continue exporting the supported geometry?";
+        if (MessageBoxW(
+                hwnd,
+                message.c_str(),
+                L"Auto CAD Pro DXF Export",
+                MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) {
+            return;
+        }
+    }
+
+    if (!write_text_file(*path, result.data)) {
         show_file_error(hwnd, L"Could not export the DXF drawing.");
     }
 }
