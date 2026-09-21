@@ -25,9 +25,6 @@ public static class GuiPropertyNative {
     public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    public static extern bool SetWindowText(IntPtr hWnd, string lpString);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetWindowText(
         IntPtr hWnd,
         System.Text.StringBuilder lpString,
@@ -133,16 +130,20 @@ function Set-PropertyDialog(
         throw "Property editor dialog/edit control did not become ready"
     }
 
-    # Allow WM_INITDIALOG to finish setting the initial value before replacing it.
+    # Drive the real standard Edit control instead of SetWindowText across
+    # processes. EM_SETSEL + WM_CHAR follows the same path as user typing.
     Start-Sleep -Milliseconds 100
-    if (![GuiPropertyNative]::SetWindowText($edit, $value)) {
-        throw "Could not set property editor value"
+    [GuiPropertyNative]::SendMessage(
+        $edit, 0x00B1, [IntPtr]0, [IntPtr](-1)) | Out-Null
+    foreach ($ch in $value.ToCharArray()) {
+        [GuiPropertyNative]::SendMessage(
+            $edit, 0x0102, [IntPtr][int][char]$ch, [IntPtr]::Zero) | Out-Null
     }
 
     $verify = New-Object System.Text.StringBuilder 512
     [GuiPropertyNative]::GetWindowText($edit, $verify, $verify.Capacity) | Out-Null
     if ($verify.ToString() -ne $value) {
-        throw ("Property editor value race: expected '" + $value +
+        throw ("Property editor typing failed: expected '" + $value +
                "', edit control contained '" + $verify.ToString() + "'")
     }
 
