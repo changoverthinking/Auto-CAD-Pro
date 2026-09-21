@@ -248,7 +248,8 @@ std::string assemble_pdf(
 std::optional<std::string> export_document(
     const Document& document,
     const BlockLibrary* blocks,
-    const layout::PageSetup& page) {
+    const layout::PageSetup& page,
+    std::optional<double> fixed_scale_denominator) {
 
     const auto drawing = bounds::drawing_bounds(document, blocks);
     const auto printable = layout::printable_size_mm(page);
@@ -259,9 +260,26 @@ std::optional<std::string> export_document(
 
     const double drawing_width = std::max(drawing->width(), 1e-9);
     const double drawing_height = std::max(drawing->height(), 1e-9);
-    const double scale_mm = std::min(
-        printable->width / drawing_width,
-        printable->height / drawing_height);
+
+    double scale_mm{};
+    if (fixed_scale_denominator.has_value()) {
+        const double denominator = *fixed_scale_denominator;
+        if (!std::isfinite(denominator) || denominator <= 0.0) {
+            return std::nullopt;
+        }
+        const auto viewport = layout::viewport_at_scale(
+            drawing->center(), page, denominator);
+        if (!viewport.has_value() ||
+            drawing_width > viewport->world_width + geo::kEpsilon ||
+            drawing_height > viewport->world_height + geo::kEpsilon) {
+            return std::nullopt;
+        }
+        scale_mm = 1.0 / denominator;
+    } else {
+        scale_mm = std::min(
+            printable->width / drawing_width,
+            printable->height / drawing_height);
+    }
     if (!std::isfinite(scale_mm) || scale_mm <= 0.0) return std::nullopt;
 
     const double content_width = drawing_width * scale_mm;
