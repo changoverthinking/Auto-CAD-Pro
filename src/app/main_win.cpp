@@ -1262,6 +1262,8 @@ std::optional<std::string> read_text_file(const std::filesystem::path& path) {
     return data;
 }
 
+void fit_drawing(HWND hwnd);
+
 bool write_text_file(const std::filesystem::path& path, const std::string& data) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     if (!output) {
