@@ -19,6 +19,17 @@ namespace acp::persistence {
 
 namespace {
 
+bool valid_line_type_value(int value) noexcept {
+    return value >= static_cast<int>(LineType::Continuous) &&
+           value <= static_cast<int>(LineType::Center);
+}
+
+bool valid_rgb(int r, int g, int b) noexcept {
+    return r >= 0 && r <= 255 &&
+           g >= 0 && g <= 255 &&
+           b >= 0 && b <= 255;
+}
+
 bool write_bytes(const std::filesystem::path& path, std::string_view data) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) return false;
@@ -312,6 +323,11 @@ std::string serialize_project(
             << (layer->visible ? 1 : 0) << ' '
             << (layer->locked ? 1 : 0) << ' '
             << layer->line_weight << '\n';
+        out << "LX " << layer->id << ' '
+            << static_cast<int>(layer->color.r) << ' '
+            << static_cast<int>(layer->color.g) << ' '
+            << static_cast<int>(layer->color.b) << ' '
+            << static_cast<int>(layer->line_type) << '\n';
     }
 
     for (const BlockId id : blocks.ids()) {
@@ -334,6 +350,18 @@ std::string serialize_project(
             << properties->line_weight_override.value_or(0.0) << ' ';
         write_entity_payload(out, *entity);
         out << '\n';
+        out << "EX " << id << ' '
+            << (properties->color_override.has_value() ? 1 : 0) << ' '
+            << static_cast<int>(
+                   properties->color_override.value_or(RgbColor{}).r) << ' '
+            << static_cast<int>(
+                   properties->color_override.value_or(RgbColor{}).g) << ' '
+            << static_cast<int>(
+                   properties->color_override.value_or(RgbColor{}).b) << ' '
+            << (properties->line_type_override.has_value() ? 1 : 0) << ' '
+            << static_cast<int>(
+                   properties->line_type_override.value_or(
+                       LineType::Continuous)) << '\n';
     }
 
     const auto& page = settings.page_setup;
@@ -435,6 +463,26 @@ std::optional<ProjectData> deserialize_project(std::string_view data) {
             continue;
         }
 
+        if (record == "LX") {
+            LayerId id{};
+            int r{}, g{}, b{}, line_type{};
+            if (!(in >> id >> r >> g >> b >> line_type) ||
+                !valid_rgb(r, g, b) ||
+                !valid_line_type_value(line_type)) {
+                return std::nullopt;
+            }
+            Layer* layer = project.document.layer(id);
+            if (layer == nullptr) {
+                return std::nullopt;
+            }
+            layer->color = RgbColor{
+                static_cast<std::uint8_t>(r),
+                static_cast<std::uint8_t>(g),
+                static_cast<std::uint8_t>(b)};
+            layer->line_type = static_cast<LineType>(line_type);
+            continue;
+        }
+
         if (record == "B") {
             BlockDefinition definition;
             std::size_t count{};
@@ -470,6 +518,43 @@ std::optional<ProjectData> deserialize_project(std::string_view data) {
             properties->layer_id = layer_id;
             properties->visible = visible != 0;
             if (has_weight != 0) properties->line_weight_override = weight;
+            continue;
+        }
+
+        if (record == "EX") {
+            EntityId id{};
+            int has_color{}, r{}, g{}, b{};
+            int has_line_type{}, line_type{};
+            if (!(in >> id >> has_color >> r >> g >> b
+                     >> has_line_type >> line_type) ||
+                (has_color != 0 && has_color != 1) ||
+                (has_line_type != 0 && has_line_type != 1) ||
+                !valid_rgb(r, g, b) ||
+                !valid_line_type_value(line_type)) {
+                return std::nullopt;
+            }
+
+            EntityProperties* properties =
+                project.document.properties(id);
+            if (properties == nullptr) {
+                return std::nullopt;
+            }
+
+            if (has_color != 0) {
+                properties->color_override = RgbColor{
+                    static_cast<std::uint8_t>(r),
+                    static_cast<std::uint8_t>(g),
+                    static_cast<std::uint8_t>(b)};
+            } else {
+                properties->color_override.reset();
+            }
+
+            if (has_line_type != 0) {
+                properties->line_type_override =
+                    static_cast<LineType>(line_type);
+            } else {
+                properties->line_type_override.reset();
+            }
             continue;
         }
 
