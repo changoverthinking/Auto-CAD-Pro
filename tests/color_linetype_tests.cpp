@@ -104,14 +104,12 @@ int main() {
             "entity style persists");
     }
 
-    const auto dxf = dxf::export_ascii(document);
-    expect(dxf.has_value(), "DXF Color/Linetype export");
-    if (dxf.has_value()) {
-        expect(dxf->find("420\n16711680\n") != std::string::npos,
-               "DXF writes truecolor");
-        expect(dxf->find("6\nCENTER\n") != std::string::npos,
-               "DXF writes linetype");
-    }
+    const std::string dxf_text = dxf::export_ascii(document);
+    expect(!dxf_text.empty(), "DXF Color/Linetype export");
+    expect(dxf_text.find("420\n16711680\n") != std::string::npos,
+           "DXF writes truecolor");
+    expect(dxf_text.find("6\nCENTER\n") != std::string::npos,
+           "DXF writes linetype");
 
     const auto svg_text = svg::export_document(document, &blocks);
     expect(svg_text.has_value(), "SVG Color/Linetype export");
