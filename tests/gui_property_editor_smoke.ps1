@@ -430,14 +430,7 @@ try {
     Command-Property $hwnd $proc 1039 "0.50"
 
     $layerState = Snapshot $hwnd 49
-    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5(?:0+)?\s*}
-finally {
-    if (!$proc.HasExited) {
-        Stop-Process -Id $proc.Id -Force
-    }
-    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
-}
-) {
+    if ($layerState -notmatch '(?m)^L\s+2\s+"Walls"\s+1\s+0\s+0\.5') {
         Write-Host "LAYER STATE:"
         Write-Host $layerState
         throw "Layer editor regression: menu rename/weight did not persist"
@@ -456,14 +449,7 @@ finally {
     Set-PropertyDialog $proc "Structure"
 
     $layerDoubleClickState = Snapshot $hwnd 50
-    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5(?:0+)?\s*}
-finally {
-    if (!$proc.HasExited) {
-        Stop-Process -Id $proc.Id -Force
-    }
-    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
-}
-) {
+    if ($layerDoubleClickState -notmatch '(?m)^L\s+2\s+"Structure"\s+1\s+0\s+0\.5') {
         Write-Host "LAYER DOUBLE CLICK STATE:"
         Write-Host $layerDoubleClickState
         throw "Layer editor regression: panel double-click rename did not persist"
