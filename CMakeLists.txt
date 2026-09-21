@@ -15,6 +15,37 @@ option(ACP_BUILD_TESTS "Build Auto CAD Pro tests" ON)
 option(ACP_BUILD_APP "Build Auto CAD Pro Windows desktop application" ON)
 option(ACP_ENABLE_GUI_TEST_HOOKS "Enable test-only GUI integration hooks" OFF)
 
+set(ACP_PDF_FONT_DIR "${CMAKE_BINARY_DIR}/assets")
+set(ACP_PDF_FONT_FILE "${ACP_PDF_FONT_DIR}/NotoSansJP.ttf")
+set(ACP_PDF_FONT_URL "https://raw.githubusercontent.com/google/fonts/e44c4b011a820c2cbe2fd2cfa8052037d7edb571/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf")
+set(ACP_PDF_FONT_EXPECTED_SIZE 9589900)
+
+if(ACP_BUILD_APP OR ACP_BUILD_TESTS)
+    file(MAKE_DIRECTORY "${ACP_PDF_FONT_DIR}")
+    if(NOT EXISTS "${ACP_PDF_FONT_FILE}")
+        message(STATUS "Downloading pinned Noto Sans JP PDF font asset")
+        file(DOWNLOAD
+            "${ACP_PDF_FONT_URL}"
+            "${ACP_PDF_FONT_FILE}"
+            TLS_VERIFY ON
+            STATUS ACP_PDF_FONT_DOWNLOAD_STATUS
+            SHOW_PROGRESS)
+        list(GET ACP_PDF_FONT_DOWNLOAD_STATUS 0 ACP_PDF_FONT_DOWNLOAD_CODE)
+        list(GET ACP_PDF_FONT_DOWNLOAD_STATUS 1 ACP_PDF_FONT_DOWNLOAD_MESSAGE)
+        if(NOT ACP_PDF_FONT_DOWNLOAD_CODE EQUAL 0)
+            file(REMOVE "${ACP_PDF_FONT_FILE}")
+            message(FATAL_ERROR "Could not download pinned PDF font: ${ACP_PDF_FONT_DOWNLOAD_MESSAGE}")
+        endif()
+    endif()
+
+    file(SIZE "${ACP_PDF_FONT_FILE}" ACP_PDF_FONT_ACTUAL_SIZE)
+    if(NOT ACP_PDF_FONT_ACTUAL_SIZE EQUAL ACP_PDF_FONT_EXPECTED_SIZE)
+        file(REMOVE "${ACP_PDF_FONT_FILE}")
+        message(FATAL_ERROR
+            "Pinned PDF font size mismatch: expected ${ACP_PDF_FONT_EXPECTED_SIZE}, got ${ACP_PDF_FONT_ACTUAL_SIZE}")
+    endif()
+endif()
+
 add_library(acp_core
     src/core/geometry2d.cpp
     src/core/snap.cpp
@@ -34,7 +65,7 @@ add_library(acp_core
     src/core/pdf.cpp
     src/core/recovery.cpp
 )
-target_include_directories(acp_core PUBLIC include)
+target_include_directories(acp_core PUBLIC include PRIVATE third_party/stb)
 target_compile_features(acp_core PUBLIC cxx_std_20)
 
 if(MSVC)
@@ -60,12 +91,17 @@ if(ACP_BUILD_APP AND WIN32)
 
     install(TARGETS AutoCADPro RUNTIME DESTINATION .)
     install(FILES README.md DESTINATION .)
+    install(FILES "${ACP_PDF_FONT_FILE}" DESTINATION assets)
+    install(FILES third_party/noto/OFL.txt third_party/noto/SOURCE.md DESTINATION licenses/NotoSansJP)
+    install(FILES third_party/stb/LICENSE DESTINATION licenses/stb)
 endif()
 
 if(ACP_BUILD_TESTS)
     enable_testing()
     add_executable(acp_core_tests tests/core_tests.cpp)
     target_link_libraries(acp_core_tests PRIVATE acp_core)
+    target_compile_definitions(acp_core_tests PRIVATE
+        ACP_TEST_PDF_FONT_PATH="${ACP_PDF_FONT_FILE}")
     add_test(NAME acp_core_tests COMMAND acp_core_tests)
 
     add_executable(acp_workflow_regression_tests tests/workflow_regression_tests.cpp)
@@ -86,6 +122,8 @@ if(ACP_BUILD_TESTS)
 
     add_executable(acp_layout_print_workflow_tests tests/layout_print_workflow_tests.cpp)
     target_link_libraries(acp_layout_print_workflow_tests PRIVATE acp_core)
+    target_compile_definitions(acp_layout_print_workflow_tests PRIVATE
+        ACP_TEST_PDF_FONT_PATH="${ACP_PDF_FONT_FILE}")
     add_test(NAME acp_layout_print_workflow_tests COMMAND acp_layout_print_workflow_tests)
 
     add_executable(acp_large_document_tests tests/large_document_tests.cpp)
