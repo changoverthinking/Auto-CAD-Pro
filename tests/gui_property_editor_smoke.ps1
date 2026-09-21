@@ -232,8 +232,11 @@ try {
     Command-Property $hwnd $proc 1030 "EDITED-CAD"
     $contentState = Snapshot $hwnd 44
     if ($contentState -notmatch '"EDITED-CAD"') {
+        $stage = [GuiPropertyNative]::SendMessage(
+            $hwnd, 0x8000 + 43, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
         Write-Host "CONTENT STATE:"
         Write-Host $contentState
+        Write-Host ("PROPERTY STAGE: " + $stage)
         throw "Property editor regression: Text Content menu edit did not apply"
     }
 
