@@ -59,7 +59,8 @@ enum class Tool {
     Mirror,
     Dimension,
     Hatch,
-    Text
+    Text,
+    BlockInsert
 };
 
 struct AppState {
@@ -87,6 +88,7 @@ struct AppState {
     std::optional<std::filesystem::path> project_path;
     acp::layout::PageSetup page_setup{};
     std::optional<double> print_scale_denominator;
+    std::optional<acp::BlockId> active_block;
 };
 
 AppState g_app;
@@ -135,6 +137,8 @@ constexpr int kMenuHatchCycleSpacing = 1023;
 constexpr int kMenuCyclePaperSize = 1024;
 constexpr int kMenuToggleOrientation = 1025;
 constexpr int kMenuCyclePrintScale = 1026;
+constexpr int kMenuCreateBlock = 1027;
+constexpr int kMenuInsertBlock = 1028;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -152,6 +156,7 @@ constexpr int kToolDimension = 2014;
 constexpr int kToolHatch = 2015;
 constexpr int kToolText = 2016;
 constexpr int kToolRectangle = 2017;
+constexpr int kToolBlockInsert = 2018;
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
 constexpr UINT kGuiTestSnapshotMessage = WM_APP + 42;
 #endif
@@ -209,6 +214,7 @@ const wchar_t* tool_name(Tool tool) {
         case Tool::Dimension: return L"Dimension";
         case Tool::Hatch: return L"Hatch";
         case Tool::Text: return L"Text";
+        case Tool::BlockInsert: return L"Insert Block";
     }
     return L"Select";
 }
@@ -217,7 +223,7 @@ struct ToolbarButton {
     Tool tool;
 };
 
-constexpr std::array<ToolbarButton, 17> kToolbarButtons{{
+constexpr std::array<ToolbarButton, 18> kToolbarButtons{{
     {L"Select", Tool::Select},
     {L"Line", Tool::Line},
     {L"Polyline", Tool::Polyline},
@@ -234,7 +240,8 @@ constexpr std::array<ToolbarButton, 17> kToolbarButtons{{
     {L"Offset", Tool::Offset},
     {L"Dimension", Tool::Dimension},
     {L"Hatch", Tool::Hatch},
-    {L"Text", Tool::Text}
+    {L"Text", Tool::Text},
+    {L"Block", Tool::BlockInsert}
 }};
 
 RECT toolbar_button_rect(std::size_t index, const RECT& client) {
@@ -290,7 +297,8 @@ void set_tool(HWND hwnd, Tool tool) {
 
 
 bool apply_history(std::unique_ptr<acp::Command> command) {
-    if (!g_app.history.apply(g_app.document, std::move(command))) {
+    if (!g_app.history.apply(
+            g_app.document, g_app.blocks, std::move(command))) {
         return false;
     }
     g_app.dirty = true;
