@@ -2137,6 +2137,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     return 0;
                 case kMenuCyclePaperSize:
                     cycle_paper_size();
+                    g_app.dirty = true;
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
                 case kMenuToggleOrientation:
@@ -2144,10 +2145,12 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                         g_app.page_setup.orientation == acp::layout::Orientation::Landscape
                             ? acp::layout::Orientation::Portrait
                             : acp::layout::Orientation::Landscape;
+                    g_app.dirty = true;
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
                 case kMenuCyclePrintScale:
                     cycle_print_scale();
+                    g_app.dirty = true;
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
                 case kMenuNewLayer:
