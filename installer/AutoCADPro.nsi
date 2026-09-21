@@ -28,7 +28,6 @@ VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"
 
 !define MUI_ABORTWARNING
-!define MUI_ICON "$%WINDIR%\System32\shell32.dll"
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
