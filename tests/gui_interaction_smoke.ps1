@@ -100,7 +100,7 @@ try {
         throw "GUI Circle interaction did not persist a CIRCLE entity"
     }
     if ($before -notmatch '(?m)^E\s+\d+\s+\d+\s+\d+\s+1\s+0\s+0\.25\s+POLYLINE\s+') {
-        throw "GUI Rectangle interaction did not persist a POLYLINE entity"
+        throw "GUI Rectangle interaction did not persist a closed POLY entity"
     }
 
     # Escape returns to Select. Select the known line midpoint and Delete it.
