@@ -1377,6 +1377,23 @@ std::filesystem::path recovery_snapshot_path() {
     return root / L"AutoCADPro" / L"recovery.acp";
 }
 
+acp::persistence::ProjectSettings current_project_settings() {
+    return acp::persistence::ProjectSettings{
+        g_app.page_setup,
+        g_app.print_scale_denominator
+    };
+}
+
+void apply_project_settings(const acp::persistence::ProjectSettings& settings) {
+    g_app.page_setup = settings.page_setup;
+    g_app.print_scale_denominator = settings.print_scale_denominator;
+}
+
+void reset_project_settings() {
+    g_app.page_setup = acp::layout::PageSetup{};
+    g_app.print_scale_denominator.reset();
+}
+
 bool autosave_recovery_snapshot() {
     if (!g_app.dirty) {
         return true;
@@ -1384,7 +1401,8 @@ bool autosave_recovery_snapshot() {
     return acp::recovery::write_snapshot(
         recovery_snapshot_path(),
         g_app.document,
-        g_app.blocks);
+        g_app.blocks,
+        current_project_settings());
 }
 
 void clear_recovery_snapshot() {
@@ -1420,6 +1438,7 @@ void restore_recovery_if_available(HWND hwnd) {
     if (result == IDYES) {
         g_app.document = std::move(recovered->document);
         g_app.blocks = std::move(recovered->blocks);
+        apply_project_settings(recovered->settings);
         g_app.history = acp::History{};
         g_app.active_layer = acp::kDefaultLayerId;
         g_app.project_path.reset();
@@ -1446,7 +1465,8 @@ bool write_gui_test_snapshot(WPARAM snapshot_id) {
         (L"gui-interaction-" + std::to_wstring(snapshot_id) + L".acp2d");
     return write_text_file(
         path,
-        acp::persistence::serialize_project(g_app.document, g_app.blocks));
+        acp::persistence::serialize_project(
+            g_app.document, g_app.blocks, current_project_settings()));
 }
 #endif
 
@@ -1504,6 +1524,7 @@ void open_project(HWND hwnd) {
 
     g_app.document = std::move(project->document);
     g_app.blocks = std::move(project->blocks);
+    apply_project_settings(project->settings);
     g_app.history = acp::History{};
     g_app.active_layer = acp::kDefaultLayerId;
     g_app.dirty = false;
@@ -1526,7 +1547,8 @@ void save_project(HWND hwnd, bool save_as = false) {
     }
 
     const std::string data =
-        acp::persistence::serialize_project(g_app.document, g_app.blocks);
+        acp::persistence::serialize_project(
+            g_app.document, g_app.blocks, current_project_settings());
     if (!write_text_file(*path, data)) {
         show_file_error(hwnd, L"Could not save the project.");
         return;
@@ -1563,6 +1585,7 @@ void import_dxf(HWND hwnd) {
 
     g_app.document = std::move(result->document);
     g_app.blocks = acp::BlockLibrary{};
+    reset_project_settings();
     g_app.history = acp::History{};
     g_app.active_layer = acp::kDefaultLayerId;
     g_app.dirty = true;
@@ -2060,6 +2083,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     g_app.document = Document{};
                     g_app.history = acp::History{};
                     g_app.blocks = acp::BlockLibrary{};
+                    reset_project_settings();
                     g_app.active_layer = acp::kDefaultLayerId;
                     g_app.dirty = false;
                     g_app.project_path.reset();
