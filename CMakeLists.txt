@@ -13,6 +13,7 @@ endif()
 
 option(ACP_BUILD_TESTS "Build Auto CAD Pro tests" ON)
 option(ACP_BUILD_APP "Build Auto CAD Pro Windows desktop application" ON)
+option(ACP_ENABLE_GUI_TEST_HOOKS "Enable test-only GUI integration hooks" OFF)
 
 add_library(acp_core
     src/core/geometry2d.cpp
@@ -45,6 +46,9 @@ if(ACP_BUILD_APP AND WIN32)
     add_executable(AutoCADPro WIN32 src/app/main_win.cpp)
     target_link_libraries(AutoCADPro PRIVATE acp_core user32 gdi32 comdlg32)
     target_compile_definitions(AutoCADPro PRIVATE UNICODE _UNICODE)
+    if(ACP_ENABLE_GUI_TEST_HOOKS)
+        target_compile_definitions(AutoCADPro PRIVATE ACP_ENABLE_GUI_TEST_HOOKS=1)
+    endif()
     target_compile_features(AutoCADPro PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(AutoCADPro PRIVATE /W4 /permissive- /EHsc)
