@@ -172,6 +172,8 @@ constexpr int kToolRectangle = 2017;
 constexpr int kToolBlockInsert = 2018;
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
 constexpr UINT kGuiTestSnapshotMessage = WM_APP + 42;
+constexpr UINT kGuiTestPropertyStageMessage = WM_APP + 43;
+int g_property_test_stage = 0;
 #endif
 
 const wchar_t* paper_size_name(acp::layout::PaperSize paper) {
@@ -1228,6 +1230,9 @@ std::wstring format_property_number(double value, int precision = 3) {
 }
 
 bool edit_selected_property(HWND hwnd, DirectProperty property) {
+#ifdef ACP_ENABLE_GUI_TEST_HOOKS
+    g_property_test_stage = 1;
+#endif
     if (!selected_editable() || !g_app.selected.has_value()) {
         MessageBeep(MB_ICONWARNING);
         return false;
@@ -1297,6 +1302,9 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
         if (!entered.has_value()) {
             return false;
         }
+#ifdef ACP_ENABLE_GUI_TEST_HOOKS
+        g_property_test_stage = 2;
+#endif
         const std::string utf8 = utf8_from_wide(*entered);
         if (utf8.empty()) {
             show_invalid_property(hwnd, L"Text content cannot be empty.");
@@ -1307,6 +1315,9 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
             show_invalid_property(hwnd, L"The edited text entity would be invalid.");
             return false;
         }
+#ifdef ACP_ENABLE_GUI_TEST_HOOKS
+        g_property_test_stage = 3;
+#endif
     } else if (property == DirectProperty::TextHeight) {
         if (!std::holds_alternative<acp::TextEntity>(replacement)) {
             return false;
@@ -1451,6 +1462,9 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
     if (apply_history(
             std::make_unique<acp::UpdateEntityCommand>(
                 id, replacement))) {
+#ifdef ACP_ENABLE_GUI_TEST_HOOKS
+        g_property_test_stage = 4;
+#endif
         InvalidateRect(hwnd, nullptr, FALSE);
         return true;
     }
