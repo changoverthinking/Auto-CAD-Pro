@@ -1306,6 +1306,10 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
         g_property_test_stage = 2;
 #endif
         const std::string utf8 = utf8_from_wide(*entered);
+#ifdef ACP_ENABLE_GUI_TEST_HOOKS
+        g_property_test_stage =
+            utf8 == "EDITED-CAD" ? 31 : 30;
+#endif
         if (utf8.empty()) {
             show_invalid_property(hwnd, L"Text content cannot be empty.");
             return false;
@@ -1470,7 +1474,8 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
                 std::get<acp::TextEntity>(*updated).text == "EDITED-CAD") {
                 g_property_test_stage = 40;
             } else {
-                g_property_test_stage = 41;
+                g_property_test_stage =
+                    g_property_test_stage == 31 ? 411 : 410;
             }
         } else {
             g_property_test_stage = 4;
