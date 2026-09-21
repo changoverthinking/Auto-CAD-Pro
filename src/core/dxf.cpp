@@ -134,7 +134,8 @@ bool import_entity(
         if (!get_double(fields, 10, line.segment.a.x) ||
             !get_double(fields, 20, line.segment.a.y) ||
             !get_double(fields, 11, line.segment.b.x) ||
-            !get_double(fields, 21, line.segment.b.y)) {
+            !get_double(fields, 21, line.segment.b.y) ||
+            geo::distance(line.segment.a, line.segment.b) <= geo::kEpsilon) {
             return false;
         }
         entity = line;
@@ -183,7 +184,11 @@ bool import_entity(
             }
         }
 
-        if (polyline.points.empty() || pending_x.has_value()) return false;
+        if (pending_x.has_value() ||
+            polyline.points.size() < 2 ||
+            (polyline.closed && polyline.points.size() < 3)) {
+            return false;
+        }
         entity = std::move(polyline);
     } else if (type == "TEXT") {
         TextEntity text;
@@ -215,7 +220,8 @@ bool import_entity(
 
 } // namespace
 
-std::string export_ascii(const Document& document) {
+ExportResult export_ascii_report(const Document& document) {
+    ExportResult result;
     std::ostringstream out;
     out << std::setprecision(17);
 
@@ -231,6 +237,7 @@ std::string export_ascii(const Document& document) {
             using T = std::decay_t<decltype(value)>;
 
             if constexpr (std::is_same_v<T, LineEntity>) {
+                ++result.exported;
                 write_pair(out, 0, "LINE");
                 write_pair(out, 8, layer);
                 write_pair(out, 10, value.segment.a.x);
@@ -238,12 +245,14 @@ std::string export_ascii(const Document& document) {
                 write_pair(out, 11, value.segment.b.x);
                 write_pair(out, 21, value.segment.b.y);
             } else if constexpr (std::is_same_v<T, CircleEntity>) {
+                ++result.exported;
                 write_pair(out, 0, "CIRCLE");
                 write_pair(out, 8, layer);
                 write_pair(out, 10, value.circle.center.x);
                 write_pair(out, 20, value.circle.center.y);
                 write_pair(out, 40, value.circle.radius);
             } else if constexpr (std::is_same_v<T, ArcEntity>) {
+                ++result.exported;
                 write_pair(out, 0, "ARC");
                 write_pair(out, 8, layer);
                 write_pair(out, 10, value.arc.center.x);
@@ -254,6 +263,12 @@ std::string export_ascii(const Document& document) {
                 write_pair(out, 50, start * 180.0 / std::numbers::pi);
                 write_pair(out, 51, end * 180.0 / std::numbers::pi);
             } else if constexpr (std::is_same_v<T, PolylineEntity>) {
+                if (value.points.size() < 2 ||
+                    (value.closed && value.points.size() < 3)) {
+                    ++result.skipped;
+                    return;
+                }
+                ++result.exported;
                 write_pair(out, 0, "LWPOLYLINE");
                 write_pair(out, 8, layer);
                 write_pair(out, 90, static_cast<int>(value.points.size()));
@@ -263,7 +278,11 @@ std::string export_ascii(const Document& document) {
                     write_pair(out, 20, point.y);
                 }
             } else if constexpr (std::is_same_v<T, TextEntity>) {
-                if (!annotation::valid_text(value)) return;
+                if (!annotation::valid_text(value)) {
+                    ++result.skipped;
+                    return;
+                }
+                ++result.exported;
                 write_pair(out, 0, "TEXT");
                 write_pair(out, 8, layer);
                 write_pair(out, 10, value.position.x);
@@ -271,13 +290,20 @@ std::string export_ascii(const Document& document) {
                 write_pair(out, 40, value.height);
                 write_pair(out, 1, sanitize_text(value.text));
                 write_pair(out, 50, value.rotation * 180.0 / std::numbers::pi);
+            } else {
+                ++result.skipped;
             }
         }, *entity);
     }
 
     write_pair(out, 0, "ENDSEC");
     write_pair(out, 0, "EOF");
-    return out.str();
+    result.data = out.str();
+    return result;
+}
+
+std::string export_ascii(const Document& document) {
+    return export_ascii_report(document).data;
 }
 
 std::optional<ImportResult> import_ascii(std::string_view data) {
