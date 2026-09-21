@@ -138,6 +138,9 @@ constexpr int kToolDimension = 2014;
 constexpr int kToolHatch = 2015;
 constexpr int kToolText = 2016;
 constexpr int kToolRectangle = 2017;
+#ifdef ACP_ENABLE_GUI_TEST_HOOKS
+constexpr UINT kGuiTestSnapshotMessage = WM_APP + 42;
+#endif
 
 const wchar_t* tool_name(Tool tool) {
     switch (tool) {
@@ -1232,6 +1235,25 @@ bool write_text_file(const std::filesystem::path& path, const std::string& data)
     return output.good();
 }
 
+#ifdef ACP_ENABLE_GUI_TEST_HOOKS
+bool write_gui_test_snapshot(WPARAM snapshot_id) {
+    std::array<wchar_t, 4096> directory{};
+    const DWORD length = GetEnvironmentVariableW(
+        L"ACP_GUI_TEST_SNAPSHOT_DIR",
+        directory.data(),
+        static_cast<DWORD>(directory.size()));
+    if (length == 0 || length >= directory.size()) {
+        return false;
+    }
+
+    const auto path = std::filesystem::path(directory.data()) /
+        (L"gui-interaction-" + std::to_wstring(snapshot_id) + L".acp2d");
+    return write_text_file(
+        path,
+        acp::persistence::serialize_project(g_app.document, g_app.blocks));
+}
+#endif
+
 void show_file_error(HWND hwnd, const wchar_t* message) {
     MessageBoxW(hwnd, message, L"Auto CAD Pro", MB_OK | MB_ICONERROR);
 }
@@ -1812,6 +1834,10 @@ void zoom_at(HWND hwnd, POINT cursor, int wheel_delta) {
 
 LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_param) {
     switch (message) {
+#ifdef ACP_ENABLE_GUI_TEST_HOOKS
+        case kGuiTestSnapshotMessage:
+            return write_gui_test_snapshot(w_param) ? 1 : 0;
+#endif
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
                 case kMenuNew:
