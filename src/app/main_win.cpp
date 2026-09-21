@@ -1212,10 +1212,10 @@ void create_layer(HWND hwnd) {
     int suffix = 1;
     while (true) {
         const std::string candidate = "Layer " + std::to_string(suffix);
-        const acp::LayerId id = g_app.document.create_layer(candidate);
-        if (id != 0) {
-            g_app.active_layer = id;
-            g_app.dirty = true;
+        auto command = std::make_unique<acp::CreateLayerCommand>(candidate);
+        auto* command_ptr = command.get();
+        if (apply_history(std::move(command))) {
+            g_app.active_layer = command_ptr->id();
             InvalidateRect(hwnd, nullptr, FALSE);
             return;
         }
@@ -2234,6 +2234,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     return 0;
                 case kMenuExit:
                     if (confirm_discard_unsaved(hwnd)) {
+                        clear_recovery_snapshot();
                         DestroyWindow(hwnd);
                     }
                     return 0;
