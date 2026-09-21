@@ -1,15 +1,62 @@
 #include "acp/persistence.hpp"
 
+#include <fstream>
 #include <iomanip>
+#include <iterator>
+#include <system_error>
 #include <sstream>
 #include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 namespace acp::persistence {
 
 namespace {
+
+bool write_bytes(const std::filesystem::path& path, std::string_view data) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) return false;
+    out.write(data.data(), static_cast<std::streamsize>(data.size()));
+    out.flush();
+    return out.good();
+}
+
+std::optional<std::string> read_bytes(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return std::nullopt;
+    std::string data{
+        std::istreambuf_iterator<char>(in),
+        std::istreambuf_iterator<char>()};
+    if (!in.good() && !in.eof()) return std::nullopt;
+    return data;
+}
+
+bool replace_file_atomic(
+    const std::filesystem::path& source,
+    const std::filesystem::path& destination) {
+
+#ifdef _WIN32
+    return MoveFileExW(
+        source.c_str(),
+        destination.c_str(),
+        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+    std::error_code ec;
+    std::filesystem::rename(source, destination, ec);
+    if (!ec) return true;
+
+    std::filesystem::remove(destination, ec);
+    ec.clear();
+    std::filesystem::rename(source, destination, ec);
+    return !ec;
+#endif
+}
 
 void write_points(std::ostream& out, const std::vector<geo::Vec2>& points) {
     out << points.size();
@@ -430,6 +477,55 @@ std::optional<ProjectData> deserialize_project(std::string_view data) {
     }
 
     return std::nullopt;
+}
+
+bool save_project_atomic(
+    const std::filesystem::path& path,
+    const Document& document,
+    const BlockLibrary& blocks,
+    const ProjectSettings& settings) {
+
+    if (path.empty()) return false;
+
+    std::error_code ec;
+    const auto parent = path.parent_path();
+    if (!parent.empty()) {
+        if (!std::filesystem::exists(parent, ec) || ec) {
+            return false;
+        }
+        if (!std::filesystem::is_directory(parent, ec) || ec) {
+            return false;
+        }
+    }
+
+    const std::string serialized =
+        serialize_project(document, blocks, settings);
+    if (!deserialize_project(serialized).has_value()) {
+        return false;
+    }
+
+    const std::filesystem::path temp{
+        path.wstring() + L".tmp"};
+
+    if (!write_bytes(temp, serialized)) {
+        std::filesystem::remove(temp, ec);
+        return false;
+    }
+
+    const auto verified = read_bytes(temp);
+    if (!verified.has_value() ||
+        *verified != serialized ||
+        !deserialize_project(*verified).has_value()) {
+        std::filesystem::remove(temp, ec);
+        return false;
+    }
+
+    if (!replace_file_atomic(temp, path)) {
+        std::filesystem::remove(temp, ec);
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace acp::persistence
