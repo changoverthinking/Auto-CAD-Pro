@@ -145,6 +145,10 @@ jobs:
         shell: powershell
         run: .\tests\gui_edit_tools_smoke.ps1 -Exe (Join-Path $PWD "build\Release\AutoCADPro.exe")
 
+      - name: GUI layout dirty-state regression
+        shell: powershell
+        run: .\tests\gui_layout_dirty_smoke.ps1 -Exe (Join-Path $PWD "build\Release\AutoCADPro.exe")
+
       - name: Upload GUI edit-tools snapshots
         uses: actions/upload-artifact@v6
         with:
