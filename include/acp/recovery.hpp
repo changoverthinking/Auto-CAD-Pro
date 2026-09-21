@@ -10,7 +10,8 @@ namespace acp::recovery {
 [[nodiscard]] bool write_snapshot(
     const std::filesystem::path& path,
     const Document& document,
-    const BlockLibrary& blocks);
+    const BlockLibrary& blocks,
+    const persistence::ProjectSettings& settings = {});
 
 [[nodiscard]] std::optional<persistence::ProjectData> load_snapshot(
     const std::filesystem::path& path);
