@@ -12,6 +12,7 @@ namespace acp::pdf {
 [[nodiscard]] std::optional<std::string> export_document(
     const Document& document,
     const BlockLibrary* blocks = nullptr,
-    const layout::PageSetup& page = {});
+    const layout::PageSetup& page = {},
+    std::optional<double> fixed_scale_denominator = std::nullopt);
 
 } // namespace acp::pdf
