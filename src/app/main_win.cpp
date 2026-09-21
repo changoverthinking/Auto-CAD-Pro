@@ -578,6 +578,51 @@ const wchar_t* snap_kind_name(acp::snap::Kind kind) {
     return L"";
 }
 
+COLORREF display_color(acp::RgbColor color, bool locked) {
+    if (locked) {
+        const auto blend = [](std::uint8_t component) -> std::uint8_t {
+            return static_cast<std::uint8_t>(
+                (static_cast<unsigned>(component) + 145u * 2u) / 3u);
+        };
+        return RGB(blend(color.r), blend(color.g), blend(color.b));
+    }
+    return RGB(color.r, color.g, color.b);
+}
+
+HPEN create_entity_pen(
+    int width,
+    COLORREF color,
+    acp::LineType line_type) {
+
+    width = std::clamp(width, 1, 8);
+    if (line_type == acp::LineType::Continuous) {
+        return CreatePen(PS_SOLID, width, color);
+    }
+
+    LOGBRUSH brush{};
+    brush.lbStyle = BS_SOLID;
+    brush.lbColor = color;
+
+    const DWORD dashed[] = {12, 8};
+    const DWORD center[] = {18, 6, 3, 6};
+    const DWORD* pattern =
+        line_type == acp::LineType::Center ? center : dashed;
+    const DWORD count =
+        line_type == acp::LineType::Center
+            ? static_cast<DWORD>(std::size(center))
+            : static_cast<DWORD>(std::size(dashed));
+
+    HPEN pen = ExtCreatePen(
+        PS_GEOMETRIC | PS_USERSTYLE | PS_ENDCAP_FLAT | PS_JOIN_ROUND,
+        static_cast<DWORD>(width),
+        &brush,
+        count,
+        pattern);
+    return pen != nullptr
+        ? pen
+        : CreatePen(PS_SOLID, width, color);
+}
+
 void draw_snap_marker(HWND hwnd, HDC dc) {
     if (!g_app.snap_candidate.has_value()) {
         return;
@@ -774,7 +819,11 @@ void draw_dimension(HWND hwnd, HDC dc, const acp::LinearDimensionEntity& entity)
     SetBkMode(dc, old_mode);
 }
 
-void draw_hatch(HWND hwnd, HDC dc, const acp::HatchEntity& entity) {
+void draw_hatch(
+    HWND hwnd,
+    HDC dc,
+    const acp::HatchEntity& entity,
+    COLORREF fill_color) {
     if (!acp::hatch::valid(entity)) {
         return;
     }
@@ -786,7 +835,7 @@ void draw_hatch(HWND hwnd, HDC dc, const acp::HatchEntity& entity) {
     }
 
     if (entity.solid) {
-        HBRUSH brush = CreateSolidBrush(RGB(72, 78, 88));
+        HBRUSH brush = CreateSolidBrush(fill_color);
         if (brush == nullptr) {
             return;
         }
@@ -837,10 +886,13 @@ void draw_document(HWND hwnd, HDC dc) {
             g_app.document.effective_line_weight(id), 0.05, 2.0);
         const int pen_width = std::clamp(
             static_cast<int>(std::lround(weight * 4.0)), 1, 8);
-        const COLORREF entity_color = g_app.document.entity_locked(id)
-            ? RGB(145, 151, 162)
-            : RGB(229, 232, 239);
-        HPEN entity_pen = CreatePen(PS_SOLID, pen_width, entity_color);
+        const COLORREF entity_color = display_color(
+            g_app.document.effective_color(id),
+            g_app.document.entity_locked(id));
+        const acp::LineType line_type =
+            g_app.document.effective_line_type(id);
+        HPEN entity_pen =
+            create_entity_pen(pen_width, entity_color, line_type);
         HGDIOBJ previous_pen = SelectObject(dc, entity_pen);
         SetTextColor(dc, entity_color);
 
@@ -863,7 +915,7 @@ void draw_document(HWND hwnd, HDC dc) {
             } else if constexpr (std::is_same_v<T, acp::LinearDimensionEntity>) {
                 draw_dimension(hwnd, dc, item);
             } else if constexpr (std::is_same_v<T, acp::HatchEntity>) {
-                draw_hatch(hwnd, dc, item);
+                draw_hatch(hwnd, dc, item, entity_color);
             }
         }, *entity);
 
