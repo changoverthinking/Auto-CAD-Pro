@@ -1,0 +1,5 @@
+#pragma once
+
+#define IDD_PROPERTY_INPUT 3001
+#define IDC_PROPERTY_LABEL 3002
+#define IDC_PROPERTY_EDIT 3003
