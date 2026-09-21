@@ -44,7 +44,7 @@ function Click-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
 }
 
 function Snapshot([IntPtr]$hwnd, [int]$id) {
-    $path = Join-Path $PWD ("artifacts\gui-edit-tools-" + $id + ".acp2d")
+    $path = Join-Path $PWD ("artifacts\gui-interaction-" + $id + ".acp2d")
     Remove-Item $path -ErrorAction SilentlyContinue
     $result = [GuiEditNative]::SendMessage($hwnd, 0x8000 + 42, [IntPtr]$id, [IntPtr]::Zero)
     if ($result.ToInt64() -ne 1 -or !(Test-Path $path)) {
@@ -58,7 +58,7 @@ function Line-Count([string]$data) {
 }
 
 New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-Get-ChildItem artifacts -Filter "gui-edit-tools-*.acp2d" -ErrorAction SilentlyContinue |
+Get-ChildItem artifacts -Filter "gui-interaction-2*.acp2d" -ErrorAction SilentlyContinue |
     Remove-Item -Force
 $env:ACP_GUI_TEST_SNAPSHOT_DIR = (Join-Path $PWD "artifacts")
 
