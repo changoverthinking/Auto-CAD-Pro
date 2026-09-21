@@ -69,27 +69,37 @@ if ($parseFailures.Count -gt 0) {
     Fail "PowerShell syntax validation failed."
 }
 
-# 3) Guard historically fragile GUI regression scripts from accidental bulk duplication.
-# This is deliberately generous: it detects catastrophic expansion, not normal test growth.
-$guardedScripts = @{
-    "tests\gui_property_editor_smoke.ps1" = 1200
-    "tests\gui_interaction_smoke.ps1"     = 1600
-    "tests\gui_edit_tools_smoke.ps1"      = 1600
-    "tests\gui_layout_dirty_smoke.ps1"    = 1000
+# 3) Guard every tracked GUI smoke script from accidental bulk duplication.
+# New GUI smoke tests are protected automatically; historically large scripts may
+# use a tighter/looser explicit limit where justified.
+$guiSmokeScripts = & git -C $repoRoot ls-files "tests/gui_*_smoke.ps1"
+if ($LASTEXITCODE -ne 0) {
+    Fail "git ls-files failed while enumerating GUI smoke scripts."
 }
 
-foreach ($entry in $guardedScripts.GetEnumerator()) {
-    $path = Join-Path $repoRoot $entry.Key
-    if (!(Test-Path $path)) {
-        Fail ("Expected guarded regression script is missing: " + $entry.Key)
+$guiSmokeLimits = @{
+    "tests/gui_property_editor_smoke.ps1" = 1200
+    "tests/gui_layout_dirty_smoke.ps1"    = 1000
+}
+$defaultGuiSmokeLimit = 1600
+
+foreach ($relativePath in $guiSmokeScripts) {
+    $path = Join-Path $repoRoot $relativePath
+    $limit = $defaultGuiSmokeLimit
+    $normalized = $relativePath.Replace("\", "/")
+    foreach ($entry in $guiSmokeLimits.GetEnumerator()) {
+        if ($normalized -eq $entry.Key.Replace("\", "/")) {
+            $limit = $entry.Value
+            break
+        }
     }
 
     $lineCount = (Get-Content -Path $path).Count
-    if ($lineCount -gt $entry.Value) {
+    if ($lineCount -gt $limit) {
         Fail (
-            "Regression script grew beyond safety threshold: {0} has {1} lines (limit {2}). " +
+            "GUI regression script grew beyond safety threshold: {0} has {1} lines (limit {2}). " +
             "Review for accidental duplication/corruption before raising the threshold." -f
-                $entry.Key, $lineCount, $entry.Value
+                $relativePath, $lineCount, $limit
         )
     }
 }
