@@ -11,6 +11,7 @@
 #include "acp/edit2d.hpp"
 #include "acp/persistence.hpp"
 #include "acp/pdf.hpp"
+#include "acp/recovery.hpp"
 #include "acp/selection.hpp"
 #include "acp/snap.hpp"
 #include "acp/svg.hpp"
@@ -89,6 +90,8 @@ struct AppState {
 AppState g_app;
 
 constexpr int kStatusHeight = 26;
+constexpr UINT_PTR kAutosaveTimerId = 1;
+constexpr UINT kAutosaveIntervalMs = 30000;
 
 int toolbar_height(const RECT& client) {
     const LONG height = std::max<LONG>(1, client.bottom - client.top);
@@ -1268,6 +1271,81 @@ bool write_text_file(const std::filesystem::path& path, const std::string& data)
     return output.good();
 }
 
+std::filesystem::path recovery_snapshot_path() {
+    std::array<wchar_t, 4096> local_app_data{};
+    const DWORD length = GetEnvironmentVariableW(
+        L"LOCALAPPDATA",
+        local_app_data.data(),
+        static_cast<DWORD>(local_app_data.size()));
+
+    std::filesystem::path root;
+    if (length > 0 && length < local_app_data.size()) {
+        root = std::filesystem::path(local_app_data.data());
+    } else {
+        std::error_code ec;
+        root = std::filesystem::temp_directory_path(ec);
+        if (ec) {
+            root = std::filesystem::current_path(ec);
+        }
+    }
+
+    return root / L"AutoCADPro" / L"recovery.acp";
+}
+
+bool autosave_recovery_snapshot() {
+    if (!g_app.dirty) {
+        return true;
+    }
+    return acp::recovery::write_snapshot(
+        recovery_snapshot_path(),
+        g_app.document,
+        g_app.blocks);
+}
+
+void clear_recovery_snapshot() {
+    (void)acp::recovery::remove_snapshot(recovery_snapshot_path());
+}
+
+void restore_recovery_if_available(HWND hwnd) {
+    const auto path = recovery_snapshot_path();
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || ec) {
+        return;
+    }
+
+    auto recovered = acp::recovery::load_snapshot(path);
+    if (!recovered.has_value()) {
+        const int remove = MessageBoxW(
+            hwnd,
+            L"An invalid recovery snapshot was found.\n\nRemove it?",
+            L"Auto CAD Pro Recovery",
+            MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1);
+        if (remove == IDYES) {
+            clear_recovery_snapshot();
+        }
+        return;
+    }
+
+    const int result = MessageBoxW(
+        hwnd,
+        L"Auto CAD Pro found an autosaved recovery drawing from a previous session.\n\nRecover it now?",
+        L"Auto CAD Pro Recovery",
+        MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON1);
+
+    if (result == IDYES) {
+        g_app.document = std::move(recovered->document);
+        g_app.blocks = std::move(recovered->blocks);
+        g_app.history = acp::History{};
+        g_app.active_layer = acp::kDefaultLayerId;
+        g_app.project_path.reset();
+        g_app.dirty = true;
+        reset_interaction_state();
+        fit_drawing(hwnd);
+    } else {
+        clear_recovery_snapshot();
+    }
+}
+
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
 bool write_gui_test_snapshot(WPARAM snapshot_id) {
     std::array<wchar_t, 4096> directory{};
@@ -1345,6 +1423,7 @@ void open_project(HWND hwnd) {
     g_app.active_layer = acp::kDefaultLayerId;
     g_app.dirty = false;
     g_app.project_path = *path;
+    clear_recovery_snapshot();
     reset_interaction_state();
     fit_drawing(hwnd);
 }
@@ -1370,6 +1449,7 @@ void save_project(HWND hwnd, bool save_as = false) {
 
     g_app.project_path = *path;
     g_app.dirty = false;
+    clear_recovery_snapshot();
 }
 
 void import_dxf(HWND hwnd) {
@@ -1883,6 +1963,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     g_app.active_layer = acp::kDefaultLayerId;
                     g_app.dirty = false;
                     g_app.project_path.reset();
+                    clear_recovery_snapshot();
                     reset_interaction_state();
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
@@ -2341,13 +2422,30 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             return 0;
         }
 
+        case WM_TIMER:
+            if (w_param == kAutosaveTimerId && g_app.dirty) {
+                if (!autosave_recovery_snapshot()) {
+                    KillTimer(hwnd, kAutosaveTimerId);
+                    MessageBoxW(
+                        hwnd,
+                        L"Autosave recovery could not write its snapshot.\n"
+                        L"Automatic recovery has been disabled for this session.",
+                        L"Auto CAD Pro Recovery",
+                        MB_OK | MB_ICONWARNING);
+                }
+                return 0;
+            }
+            break;
+
         case WM_CLOSE:
             if (confirm_discard_unsaved(hwnd)) {
+                clear_recovery_snapshot();
                 DestroyWindow(hwnd);
             }
             return 0;
 
         case WM_DESTROY:
+            KillTimer(hwnd, kAutosaveTimerId);
             PostQuitMessage(0);
             return 0;
 
@@ -2453,6 +2551,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_command) {
 
     if (hwnd == nullptr) {
         return 2;
+    }
+
+    restore_recovery_if_available(hwnd);
+    if (SetTimer(hwnd, kAutosaveTimerId, kAutosaveIntervalMs, nullptr) == 0) {
+        MessageBoxW(
+            hwnd,
+            L"Autosave recovery timer could not be started.",
+            L"Auto CAD Pro Recovery",
+            MB_OK | MB_ICONWARNING);
     }
 
     ShowWindow(hwnd, show_command);
