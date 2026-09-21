@@ -5,6 +5,13 @@
 #include <utility>
 
 namespace acp {
+namespace {
+bool valid_line_type(LineType value) noexcept {
+    return value == LineType::Continuous ||
+           value == LineType::Dashed ||
+           value == LineType::Center;
+}
+} // namespace
 
 AddEntityCommand::AddEntityCommand(Entity entity)
     : entity_(std::move(entity)) {}
@@ -137,6 +144,10 @@ bool UpdateEntityPropertiesCommand::execute(Document& document) {
     if (replacement_.line_weight_override.has_value() &&
         (!std::isfinite(*replacement_.line_weight_override) ||
          *replacement_.line_weight_override < 0.0)) {
+        return false;
+    }
+    if (replacement_.line_type_override.has_value() &&
+        !valid_line_type(*replacement_.line_type_override)) {
         return false;
     }
 
@@ -276,7 +287,8 @@ namespace {
 bool apply_layer_state(Document& document, LayerId id, const Layer& state) {
     Layer* existing = document.layer(id);
     if (existing == nullptr || state.id != id || state.name.empty() ||
-        !std::isfinite(state.line_weight) || state.line_weight < 0.0) {
+        !std::isfinite(state.line_weight) || state.line_weight < 0.0 ||
+        !valid_line_type(state.line_type)) {
         return false;
     }
 
@@ -286,7 +298,9 @@ bool apply_layer_state(Document& document, LayerId id, const Layer& state) {
     }
     return document.set_layer_visible(id, state.visible) &&
            document.set_layer_locked(id, state.locked) &&
-           document.set_layer_line_weight(id, state.line_weight);
+           document.set_layer_line_weight(id, state.line_weight) &&
+           document.set_layer_color(id, state.color) &&
+           document.set_layer_line_type(id, state.line_type);
 }
 } // namespace
 
