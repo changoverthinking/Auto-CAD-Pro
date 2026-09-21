@@ -172,11 +172,6 @@ constexpr int kToolRectangle = 2017;
 constexpr int kToolBlockInsert = 2018;
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
 constexpr UINT kGuiTestSnapshotMessage = WM_APP + 42;
-constexpr UINT kGuiTestPropertyStageMessage = WM_APP + 43;
-constexpr UINT kGuiTestPropertyLengthMessage = WM_APP + 44;
-constexpr UINT kGuiTestPropertyCharMessage = WM_APP + 45;
-int g_property_test_stage = 0;
-std::wstring g_property_test_value;
 #endif
 
 const wchar_t* paper_size_name(acp::layout::PaperSize paper) {
@@ -1233,9 +1228,6 @@ std::wstring format_property_number(double value, int precision = 3) {
 }
 
 bool edit_selected_property(HWND hwnd, DirectProperty property) {
-#ifdef ACP_ENABLE_GUI_TEST_HOOKS
-    g_property_test_stage = 1;
-#endif
     if (!selected_editable() || !g_app.selected.has_value()) {
         MessageBeep(MB_ICONWARNING);
         return false;
@@ -1305,17 +1297,7 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
         if (!entered.has_value()) {
             return false;
         }
-#ifdef ACP_ENABLE_GUI_TEST_HOOKS
-        g_property_test_stage = 2;
-#endif
-#ifdef ACP_ENABLE_GUI_TEST_HOOKS
-        g_property_test_value = *entered;
-#endif
         const std::string utf8 = utf8_from_wide(*entered);
-#ifdef ACP_ENABLE_GUI_TEST_HOOKS
-        g_property_test_stage =
-            utf8 == "EDITED-CAD" ? 31 : 30;
-#endif
         if (utf8.empty()) {
             show_invalid_property(hwnd, L"Text content cannot be empty.");
             return false;
@@ -1469,21 +1451,6 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
     if (apply_history(
             std::make_unique<acp::UpdateEntityCommand>(
                 id, replacement))) {
-#ifdef ACP_ENABLE_GUI_TEST_HOOKS
-        if (property == DirectProperty::TextContent) {
-            const acp::Entity* updated = g_app.document.find(id);
-            if (updated != nullptr &&
-                std::holds_alternative<acp::TextEntity>(*updated) &&
-                std::get<acp::TextEntity>(*updated).text == "EDITED-CAD") {
-                g_property_test_stage = 40;
-            } else {
-                g_property_test_stage =
-                    g_property_test_stage == 31 ? 411 : 410;
-            }
-        } else {
-            g_property_test_stage = 4;
-        }
-#endif
         InvalidateRect(hwnd, nullptr, FALSE);
         return true;
     }
@@ -2716,16 +2683,6 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
         case kGuiTestSnapshotMessage:
             return write_gui_test_snapshot(w_param) ? 1 : 0;
-        case kGuiTestPropertyStageMessage:
-            return static_cast<LRESULT>(g_property_test_stage);
-        case kGuiTestPropertyLengthMessage:
-            return static_cast<LRESULT>(g_property_test_value.size());
-        case kGuiTestPropertyCharMessage: {
-            const std::size_t index = static_cast<std::size_t>(w_param);
-            return index < g_property_test_value.size()
-                ? static_cast<LRESULT>(g_property_test_value[index])
-                : static_cast<LRESULT>(-1);
-        }
 #endif
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
