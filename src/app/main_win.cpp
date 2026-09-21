@@ -142,6 +142,15 @@ constexpr int kMenuToggleOrientation = 1025;
 constexpr int kMenuCyclePrintScale = 1026;
 constexpr int kMenuCreateBlock = 1027;
 constexpr int kMenuInsertBlock = 1028;
+constexpr int kMenuEditLineWeight = 1029;
+constexpr int kMenuEditTextContent = 1030;
+constexpr int kMenuEditTextHeight = 1031;
+constexpr int kMenuEditTextRotation = 1032;
+constexpr int kMenuEditDimensionOverride = 1033;
+constexpr int kMenuEditHatchAngle = 1034;
+constexpr int kMenuEditHatchSpacing = 1035;
+constexpr int kMenuEditBlockScale = 1036;
+constexpr int kMenuEditBlockRotation = 1037;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -381,6 +390,138 @@ std::string utf8_from_wide(const std::wstring& text) {
         text.data(), static_cast<int>(text.size()),
         result.data(), length, nullptr, nullptr);
     return written == length ? result : std::string{};
+}
+
+std::wstring wide_from_utf8(const std::string& text) {
+    if (text.empty()) {
+        return {};
+    }
+    const int length = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS,
+        text.data(), static_cast<int>(text.size()),
+        nullptr, 0);
+    if (length <= 0) {
+        return {};
+    }
+    std::wstring result(static_cast<std::size_t>(length), L'\0');
+    const int written = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS,
+        text.data(), static_cast<int>(text.size()),
+        result.data(), length);
+    return written == length ? result : std::wstring{};
+}
+
+std::optional<double> parse_finite_double(const std::wstring& text) {
+    const wchar_t* begin = text.c_str();
+    wchar_t* end = nullptr;
+    errno = 0;
+    const double value = std::wcstod(begin, &end);
+    if (begin == end || errno == ERANGE || !std::isfinite(value)) {
+        return std::nullopt;
+    }
+    while (end != nullptr && *end != L'\0' &&
+           std::iswspace(static_cast<wint_t>(*end))) {
+        ++end;
+    }
+    if (end == nullptr || *end != L'\0') {
+        return std::nullopt;
+    }
+    return value;
+}
+
+struct PropertyInputDialogData {
+    std::wstring title;
+    std::wstring label;
+    std::wstring value;
+    std::optional<std::wstring> result;
+};
+
+INT_PTR CALLBACK property_input_dialog_proc(
+    HWND dialog,
+    UINT message,
+    WPARAM w_param,
+    LPARAM l_param) {
+
+    auto* data = reinterpret_cast<PropertyInputDialogData*>(
+        GetWindowLongPtrW(dialog, GWLP_USERDATA));
+
+    if (message == WM_INITDIALOG) {
+        data = reinterpret_cast<PropertyInputDialogData*>(l_param);
+        SetWindowLongPtrW(
+            dialog, GWLP_USERDATA,
+            reinterpret_cast<LONG_PTR>(data));
+        if (data == nullptr) {
+            return FALSE;
+        }
+        SetWindowTextW(dialog, data->title.c_str());
+        SetDlgItemTextW(
+            dialog, IDC_PROPERTY_LABEL, data->label.c_str());
+        SetDlgItemTextW(
+            dialog, IDC_PROPERTY_EDIT, data->value.c_str());
+        SendDlgItemMessageW(
+            dialog, IDC_PROPERTY_EDIT, EM_SETSEL, 0, -1);
+        SetFocus(GetDlgItem(dialog, IDC_PROPERTY_EDIT));
+        return FALSE;
+    }
+
+    if (message == WM_COMMAND && data != nullptr) {
+        if (LOWORD(w_param) == IDOK) {
+            const int length =
+                GetWindowTextLengthW(
+                    GetDlgItem(dialog, IDC_PROPERTY_EDIT));
+            std::wstring value(
+                static_cast<std::size_t>(std::max(0, length)), L'\0');
+            if (length > 0) {
+                GetDlgItemTextW(
+                    dialog,
+                    IDC_PROPERTY_EDIT,
+                    value.data(),
+                    length + 1);
+            }
+            data->result = std::move(value);
+            EndDialog(dialog, IDOK);
+            return TRUE;
+        }
+        if (LOWORD(w_param) == IDCANCEL) {
+            EndDialog(dialog, IDCANCEL);
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+std::optional<std::wstring> prompt_property_value(
+    HWND owner,
+    std::wstring title,
+    std::wstring label,
+    std::wstring initial) {
+
+    PropertyInputDialogData data{
+        std::move(title),
+        std::move(label),
+        std::move(initial),
+        std::nullopt
+    };
+
+    const INT_PTR result = DialogBoxParamW(
+        GetModuleHandleW(nullptr),
+        MAKEINTRESOURCEW(IDD_PROPERTY_INPUT),
+        owner,
+        property_input_dialog_proc,
+        reinterpret_cast<LPARAM>(&data));
+    if (result != IDOK) {
+        return std::nullopt;
+    }
+    return data.result;
+}
+
+void show_invalid_property(HWND hwnd, const wchar_t* message) {
+    MessageBoxW(
+        hwnd,
+        message,
+        L"Auto CAD Pro Properties",
+        MB_OK | MB_ICONWARNING);
 }
 
 void erase_last_utf16_codepoint(std::wstring& text) {
