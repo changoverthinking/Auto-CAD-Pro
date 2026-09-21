@@ -18,13 +18,57 @@ public static class GuiTestNative {
     [DllImport("user32.dll")]
     public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
 
+    [DllImport("user32.dll")]
+    public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+    public static IntPtr FindDialogForProcess(uint processId) {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr hWnd, IntPtr lParam) {
+            uint pid;
+            GetWindowThreadProcessId(hWnd, out pid);
+            if (pid != processId) return true;
+
+            var className = new System.Text.StringBuilder(64);
+            GetClassName(hWnd, className, className.Capacity);
+            if (className.ToString() == "#32770") {
+                found = hWnd;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
 }
 "@
 
 function Send-Key([IntPtr]$hwnd, [int]$vk) {
     [GuiTestNative]::SendMessage($hwnd, 0x0100, [IntPtr]$vk, [IntPtr]::Zero) | Out-Null
+}
+
+function Send-CtrlKey([IntPtr]$hwnd, [int]$vk) {
+    [GuiTestNative]::SetForegroundWindow($hwnd) | Out-Null
+    [GuiTestNative]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 50
+    [GuiTestNative]::SendMessage($hwnd, 0x0100, [IntPtr]$vk, [IntPtr]::Zero) | Out-Null
+    [GuiTestNative]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
 }
 
 function Send-Char([IntPtr]$hwnd, [int]$charCode) {
@@ -49,8 +93,13 @@ function Write-Snapshot([IntPtr]$hwnd, [int]$id, [string]$path) {
 New-Item -ItemType Directory -Force -Path artifacts | Out-Null
 $beforeDelete = Join-Path $PWD "artifacts\gui-interaction-1.acp2d"
 $afterDelete = Join-Path $PWD "artifacts\gui-interaction-2.acp2d"
-Remove-Item $beforeDelete, $afterDelete -ErrorAction SilentlyContinue
+$layerCreated = Join-Path $PWD "artifacts\gui-interaction-3.acp2d"
+$layerUndone = Join-Path $PWD "artifacts\gui-interaction-4.acp2d"
+$afterUndoDraw = Join-Path $PWD "artifacts\gui-interaction-5.acp2d"
+Remove-Item $beforeDelete, $afterDelete, $layerCreated, $layerUndone, $afterUndoDraw -ErrorAction SilentlyContinue
 $env:ACP_GUI_TEST_SNAPSHOT_DIR = (Join-Path $PWD "artifacts")
+$recoveryPath = Join-Path $env:LOCALAPPDATA "AutoCADPro\recovery.acp"
+Remove-Item $recoveryPath -ErrorAction SilentlyContinue
 
 $proc = Start-Process -FilePath $Exe -PassThru
 try {
@@ -158,6 +207,31 @@ try {
         throw "GUI Hatch interaction did not persist a HATCH entity"
     }
 
+    # New Layer must participate in History. Undoing it must also normalize
+    # the active layer so subsequent drawing still works on layer 0.
+    [GuiTestNative]::SendMessage($hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
+    Write-Snapshot $hwnd 3 $layerCreated
+    $withLayer = Get-Content -Raw -Path $layerCreated
+    if ($withLayer -notmatch '(?m)^L\s+\d+\s+"Layer 1"\s+') {
+        throw "Layer history regression: New Layer was not persisted"
+    }
+
+    Send-CtrlKey $hwnd 0x5A # Ctrl+Z
+    Write-Snapshot $hwnd 4 $layerUndone
+    $withoutLayer = Get-Content -Raw -Path $layerUndone
+    if ($withoutLayer -match '(?m)^L\s+\d+\s+"Layer 1"\s+') {
+        throw "Layer history regression: Ctrl+Z did not remove New Layer"
+    }
+
+    Send-Key $hwnd 0x43 # C
+    Click-Client $hwnd 600 300
+    Click-Client $hwnd 625 300
+    Write-Snapshot $hwnd 5 $afterUndoDraw
+    $afterLayerUndoDraw = Get-Content -Raw -Path $afterUndoDraw
+    if (($afterLayerUndoDraw | Select-String -Pattern '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+CIRCLE\s+' -AllMatches).Matches.Count -lt 2) {
+        throw "Layer history regression: drawing failed after undo removed active layer"
+    }
+
     # Escape returns to Select. Select the known line midpoint and Delete it.
     Send-Key $hwnd 0x1B
     Click-Client $hwnd 410 260
@@ -174,6 +248,35 @@ try {
     }
     if ($after -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+POLY\s+') {
         throw "Delete regression: Rectangle was lost while deleting Line"
+    }
+
+    # Force the same autosave path used by the 30-second timer.
+    [GuiTestNative]::SendMessage($hwnd, 0x0113, [IntPtr]1, [IntPtr]::Zero) | Out-Null
+    if (!(Test-Path $recoveryPath)) {
+        throw "Autosave regression: recovery snapshot was not created"
+    }
+
+    # Exercise File -> Exit (WM_COMMAND 1002), confirm discard in the real
+    # MessageBox, then prove the recovery snapshot is removed.
+    [GuiTestNative]::PostMessage($hwnd, 0x0111, [IntPtr]1002, [IntPtr]::Zero) | Out-Null
+    $dialog = [IntPtr]::Zero
+    $dialogDeadline = (Get-Date).AddSeconds(10)
+    do {
+        Start-Sleep -Milliseconds 100
+        $dialog = [GuiTestNative]::FindDialogForProcess([uint32]$proc.Id)
+    } while ($dialog -eq [IntPtr]::Zero -and (Get-Date) -lt $dialogDeadline)
+
+    if ($dialog -eq [IntPtr]::Zero) {
+        throw "Exit regression: discard confirmation dialog did not appear"
+    }
+
+    [GuiTestNative]::SendMessage($dialog, 0x0111, [IntPtr]6, [IntPtr]::Zero) | Out-Null
+
+    if (!$proc.WaitForExit(10000)) {
+        throw "Exit regression: application did not close after discard confirmation"
+    }
+    if (Test-Path $recoveryPath) {
+        throw "Exit regression: recovery snapshot remained after explicit discard"
     }
 
     Write-Host "GUI interaction regression test passed"

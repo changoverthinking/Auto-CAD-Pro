@@ -33,7 +33,7 @@ A feature may be labeled production only when all of the following are true:
 | layers/entity properties | verified | layer visibility/locking/weights + persistence tests |
 | blocks/block references | verified | block definition/reference integration tests |
 | text/linear dimensions | verified | annotation document and persistence tests |
-| hatches | verified | hatch entity and persistence tests |
+| hatches | production | hatch entity/persistence tests plus shared angle/spacing-aware clipped pattern geometry used by GUI, SVG and PDF |
 | project save/open | verified | versioned round-trip tests |
 | DXF ASCII import/export subset | verified | controlled 2D entity round-trip tests |
 | drawing bounds/viewport fit | verified | bounds/aspect tests |
@@ -41,8 +41,8 @@ A feature may be labeled production only when all of the following are true:
 | Windows desktop GUI | verified | native Win32 workspace is built on Windows CI; real-window tests cover launch/lifecycle plus Line/Circle/Rectangle/Polyline/Arc/Dimension/Text/Hatch/Copy/Select/Delete interactions and document snapshots |
 | Windows executable artifact | production | CI builds self-contained x64 executable, versioned portable ZIP + SHA-256, validates NSIS installer creation and uploads executable/portable/installer artifacts |
 | constraints | planned | FreeCAD Sketcher upstream audit required |
-| SVG export | prototype | visible 2D geometry, instantiated blocks, UTF-8 text, dimensions, hatches and effective line weights are serialized by the core exporter and exposed in the Windows GUI |
-| PDF export | prototype | vector geometry and printable ASCII text are exported to PDF 1.4; unsupported Unicode text now rejects export instead of being silently replaced with question marks; embedded Unicode font support remains required |
+| SVG export | verified | visible geometry, instantiated blocks, UTF-8 text, dimensions, line weights and angle/spacing-aware hatch output are covered by core tests and exposed in the Windows GUI |
+| PDF export | production | vector geometry, fixed-scale layouts, line weights, patterned/solid hatches and Japanese/Vietnamese Unicode text are exported with bundled Noto Sans JP embedded as Type0/CIDFontType2 with ToUnicode mapping; corrupt fonts are rejected by regression tests |
 | full GUI editing workflow | verified | History-backed geometry/property/annotation workflows, autosave/recovery, page setup, expanded real GUI interaction regression, repeated GUI lifecycle checks and Windows installer gate are active |
 
 ## 2026-09-19 GUI audit fixes
@@ -77,3 +77,13 @@ A feature may be labeled production only when all of the following are true:
 - Windows release output includes executable metadata/manifest, portable ZIP, SHA-256 checksum and a validated NSIS installer.
 - Tag-triggered release workflow can publish GitHub Releases and is Authenticode signing-ready when certificate secrets are configured.
 - PDF Unicode text remains the explicit blocker for promoting PDF export beyond prototype; current behavior safely rejects unsupported text rather than corrupting it.
+
+## 2026-09-21 full 2D function audit
+
+- New Layer now uses History through CreateLayerCommand; Undo removes the layer and Redo restores the same ID/state.
+- Undo/Redo normalizes a stale active layer back to the default layer, preventing silent drawing failures after undoing layer creation.
+- File -> Exit now removes autosave recovery data after an explicit discard, matching WM_CLOSE behavior.
+- Page size, orientation, margins and fixed print scale now persist through project Save/Open and autosave Recovery; legacy ACP2D v1 files without a PAGE record still load with defaults.
+- Hatch angle, spacing and solid/pattern state now drive shared clipped geometry across the real GUI, SVG and PDF rather than a fixed display-only brush.
+- Real GUI edit-tool regression now covers Move, Undo/Redo, Copy, Rotate, Scale, Mirror, Offset, Trim and Extend in addition to the creation/annotation/delete interaction matrix.
+- The Unicode PDF blocker is resolved with a pinned OFL Noto Sans JP runtime asset and pinned stb_truetype source/license provenance.

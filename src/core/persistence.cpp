@@ -250,7 +250,10 @@ bool read_entity_payload(std::istream& in, const BlockLibrary& blocks, Entity& e
 
 } // namespace
 
-std::string serialize_project(const Document& document, const BlockLibrary& blocks) {
+std::string serialize_project(
+    const Document& document,
+    const BlockLibrary& blocks,
+    const ProjectSettings& settings) {
     std::ostringstream out;
     out << std::setprecision(17);
     out << "ACP2D 1\n";
@@ -286,6 +289,17 @@ std::string serialize_project(const Document& document, const BlockLibrary& bloc
         out << '\n';
     }
 
+    const auto& page = settings.page_setup;
+    out << "PAGE "
+        << static_cast<int>(page.paper) << ' '
+        << static_cast<int>(page.orientation) << ' '
+        << page.margins.left << ' '
+        << page.margins.right << ' '
+        << page.margins.top << ' '
+        << page.margins.bottom << ' '
+        << (settings.print_scale_denominator.has_value() ? 1 : 0) << ' '
+        << settings.print_scale_denominator.value_or(0.0) << '\n';
+
     out << "END\n";
     return out.str();
 }
@@ -299,10 +313,55 @@ std::optional<ProjectData> deserialize_project(std::string_view data) {
     ProjectData project;
     std::string record;
     bool saw_default_layer = false;
+    bool saw_page_settings = false;
 
     while (in >> record) {
         if (record == "END") {
             return saw_default_layer ? std::optional<ProjectData>{std::move(project)} : std::nullopt;
+        }
+
+        if (record == "PAGE") {
+            if (saw_page_settings) {
+                return std::nullopt;
+            }
+
+            int paper{};
+            int orientation{};
+            int has_scale{};
+            double scale{};
+            layout::PageSetup page;
+            if (!(in >> paper >> orientation
+                     >> page.margins.left >> page.margins.right
+                     >> page.margins.top >> page.margins.bottom
+                     >> has_scale >> scale)) {
+                return std::nullopt;
+            }
+
+            if (paper < static_cast<int>(layout::PaperSize::A4) ||
+                paper > static_cast<int>(layout::PaperSize::A0) ||
+                orientation < static_cast<int>(layout::Orientation::Portrait) ||
+                orientation > static_cast<int>(layout::Orientation::Landscape) ||
+                (has_scale != 0 && has_scale != 1)) {
+                return std::nullopt;
+            }
+
+            page.paper = static_cast<layout::PaperSize>(paper);
+            page.orientation = static_cast<layout::Orientation>(orientation);
+            if (!layout::printable_size_mm(page).has_value()) {
+                return std::nullopt;
+            }
+
+            if (has_scale != 0) {
+                if (!std::isfinite(scale) || scale <= 0.0) {
+                    return std::nullopt;
+                }
+                project.settings.print_scale_denominator = scale;
+            } else {
+                project.settings.print_scale_denominator.reset();
+            }
+            project.settings.page_setup = page;
+            saw_page_settings = true;
+            continue;
         }
 
         if (record == "L") {

@@ -69,6 +69,21 @@ private:
     std::optional<EntityProperties> original_;
 };
 
+class CreateLayerCommand final : public Command {
+public:
+    explicit CreateLayerCommand(std::string name);
+
+    bool execute(Document& document) override;
+    void undo(Document& document) override;
+    [[nodiscard]] LayerId id() const noexcept { return id_; }
+
+private:
+    std::string name_;
+    std::optional<Layer> layer_;
+    LayerId id_{0};
+    bool executed_{false};
+};
+
 class UpdateLayerCommand final : public Command {
 public:
     UpdateLayerCommand(LayerId id, Layer replacement);

@@ -47,7 +47,8 @@ bool replace_file(
 bool write_snapshot(
     const std::filesystem::path& path,
     const Document& document,
-    const BlockLibrary& blocks) {
+    const BlockLibrary& blocks,
+    const persistence::ProjectSettings& settings) {
 
     std::error_code ec;
     const auto parent = path.parent_path();
@@ -60,7 +61,7 @@ bool write_snapshot(
     const std::filesystem::path temp_path{temp};
 
     const std::string data =
-        persistence::serialize_project(document, blocks);
+        persistence::serialize_project(document, blocks, settings);
 
     if (!write_bytes(temp_path, data)) {
         std::filesystem::remove(temp_path, ec);

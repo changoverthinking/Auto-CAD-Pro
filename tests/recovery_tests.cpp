@@ -41,7 +41,14 @@ int main() {
     const EntityId textId =
         original.insert(TextEntity{{5.0, 6.0}, "RECOVERY", 4.0, 0.25});
 
-    expect(recovery::write_snapshot(snapshot, original, blocks),
+    persistence::ProjectSettings recoverySettings;
+    recoverySettings.page_setup.paper = layout::PaperSize::A2;
+    recoverySettings.page_setup.orientation = layout::Orientation::Portrait;
+    recoverySettings.page_setup.margins = {11.0, 12.0, 13.0, 14.0};
+    recoverySettings.print_scale_denominator = 200.0;
+
+    expect(recovery::write_snapshot(
+               snapshot, original, blocks, recoverySettings),
            "write first recovery snapshot");
     expect(std::filesystem::exists(snapshot),
            "recovery snapshot exists");
@@ -70,6 +77,14 @@ int main() {
         expect(recoveredText.text == "RECOVERY" &&
                recoveredText.height == 4.0,
                "recovery text geometry");
+        expect(loaded->settings.page_setup.paper == layout::PaperSize::A2 &&
+               loaded->settings.page_setup.orientation ==
+                   layout::Orientation::Portrait,
+               "recovery restores page paper and orientation");
+        expect(loaded->settings.print_scale_denominator.has_value() &&
+               geo::nearly_equal(
+                   *loaded->settings.print_scale_denominator, 200.0),
+               "recovery restores print scale");
     }
 
     // Replacing an existing recovery snapshot must leave a complete,

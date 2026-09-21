@@ -2,6 +2,7 @@
 
 #include "acp/annotation.hpp"
 #include "acp/bounds.hpp"
+#include "acp/hatch.hpp"
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
@@ -213,6 +214,21 @@ void polyline(
     out << "S\n";
 }
 
+void filled_polygon(
+    std::ostream& out,
+    const Transform& tx,
+    const std::vector<geo::Vec2>& points) {
+
+    if (points.size() < 3) return;
+    auto p = tx.point(points.front());
+    out << p.x << ' ' << p.y << " m ";
+    for (std::size_t i = 1; i < points.size(); ++i) {
+        p = tx.point(points[i]);
+        out << p.x << ' ' << p.y << " l ";
+    }
+    out << "h B\n";
+}
+
 void sampled_arc(
     std::ostream& out,
     const Transform& tx,
@@ -345,7 +361,15 @@ bool entity(
             }
             return text(out, tx, label, font);
         } else if constexpr (std::is_same_v<T, HatchEntity>) {
-            polyline(out, tx, item.boundary, true);
+            if (!hatch::valid(item)) return false;
+            if (item.solid) {
+                filled_polygon(out, tx, item.boundary);
+            } else {
+                polyline(out, tx, item.boundary, true);
+                for (const auto& hatch_segment : hatch::pattern_segments(item)) {
+                    segment(out, tx, hatch_segment);
+                }
+            }
             return true;
         }
         return false;

@@ -141,6 +141,19 @@ jobs:
         shell: powershell
         run: .\tests\gui_interaction_smoke.ps1 -Exe (Join-Path $PWD "build\Release\AutoCADPro.exe")
 
+      - name: GUI edit-tools regression
+        shell: powershell
+        run: .\tests\gui_edit_tools_smoke.ps1 -Exe (Join-Path $PWD "build\Release\AutoCADPro.exe")
+
+      - name: Upload GUI edit-tools snapshots
+        uses: actions/upload-artifact@v6
+        with:
+          name: AutoCADPro-GUI-Edit-Tool-Snapshots
+          path: |
+            artifacts/gui-interaction-2*.acp2d
+            artifacts/gui-interaction-3*.acp2d
+          if-no-files-found: error
+
       - name: Upload GUI interaction snapshots
         uses: actions/upload-artifact@v6
         with:

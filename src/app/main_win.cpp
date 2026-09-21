@@ -310,6 +310,12 @@ bool confirm_discard_unsaved(HWND hwnd) {
     return result == IDYES;
 }
 
+void ensure_active_layer_exists() {
+    if (g_app.document.layer(g_app.active_layer) == nullptr) {
+        g_app.active_layer = acp::kDefaultLayerId;
+    }
+}
+
 bool active_layer_writable() {
     const acp::Layer* layer = g_app.document.layer(g_app.active_layer);
     return layer != nullptr && layer->visible && !layer->locked;
@@ -599,7 +605,7 @@ void draw_dimension(HWND hwnd, HDC dc, const acp::LinearDimensionEntity& entity)
 }
 
 void draw_hatch(HWND hwnd, HDC dc, const acp::HatchEntity& entity) {
-    if (entity.boundary.size() < 3) {
+    if (!acp::hatch::valid(entity)) {
         return;
     }
 
@@ -609,16 +615,24 @@ void draw_hatch(HWND hwnd, HDC dc, const acp::HatchEntity& entity) {
         points.push_back(world_to_screen(hwnd, point));
     }
 
-    HBRUSH brush = entity.solid
-        ? CreateSolidBrush(RGB(72, 78, 88))
-        : CreateHatchBrush(HS_BDIAGONAL, RGB(120, 126, 138));
-    if (brush == nullptr) {
+    if (entity.solid) {
+        HBRUSH brush = CreateSolidBrush(RGB(72, 78, 88));
+        if (brush == nullptr) {
+            return;
+        }
+        HGDIOBJ old_brush = SelectObject(dc, brush);
+        Polygon(dc, points.data(), static_cast<int>(points.size()));
+        SelectObject(dc, old_brush);
+        DeleteObject(brush);
         return;
     }
-    HGDIOBJ old_brush = SelectObject(dc, brush);
+
+    HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
     Polygon(dc, points.data(), static_cast<int>(points.size()));
+    for (const auto& segment : acp::hatch::pattern_segments(entity)) {
+        draw_segment(hwnd, dc, segment);
+    }
     SelectObject(dc, old_brush);
-    DeleteObject(brush);
 }
 
 void draw_block_primitive(HWND hwnd, HDC dc, const acp::BlockPrimitive& primitive) {
@@ -1212,10 +1226,10 @@ void create_layer(HWND hwnd) {
     int suffix = 1;
     while (true) {
         const std::string candidate = "Layer " + std::to_string(suffix);
-        const acp::LayerId id = g_app.document.create_layer(candidate);
-        if (id != 0) {
-            g_app.active_layer = id;
-            g_app.dirty = true;
+        auto command = std::make_unique<acp::CreateLayerCommand>(candidate);
+        auto* command_ptr = command.get();
+        if (apply_history(std::move(command))) {
+            g_app.active_layer = command_ptr->id();
             InvalidateRect(hwnd, nullptr, FALSE);
             return;
         }
@@ -1363,6 +1377,23 @@ std::filesystem::path recovery_snapshot_path() {
     return root / L"AutoCADPro" / L"recovery.acp";
 }
 
+acp::persistence::ProjectSettings current_project_settings() {
+    return acp::persistence::ProjectSettings{
+        g_app.page_setup,
+        g_app.print_scale_denominator
+    };
+}
+
+void apply_project_settings(const acp::persistence::ProjectSettings& settings) {
+    g_app.page_setup = settings.page_setup;
+    g_app.print_scale_denominator = settings.print_scale_denominator;
+}
+
+void reset_project_settings() {
+    g_app.page_setup = acp::layout::PageSetup{};
+    g_app.print_scale_denominator.reset();
+}
+
 bool autosave_recovery_snapshot() {
     if (!g_app.dirty) {
         return true;
@@ -1370,7 +1401,8 @@ bool autosave_recovery_snapshot() {
     return acp::recovery::write_snapshot(
         recovery_snapshot_path(),
         g_app.document,
-        g_app.blocks);
+        g_app.blocks,
+        current_project_settings());
 }
 
 void clear_recovery_snapshot() {
@@ -1406,6 +1438,7 @@ void restore_recovery_if_available(HWND hwnd) {
     if (result == IDYES) {
         g_app.document = std::move(recovered->document);
         g_app.blocks = std::move(recovered->blocks);
+        apply_project_settings(recovered->settings);
         g_app.history = acp::History{};
         g_app.active_layer = acp::kDefaultLayerId;
         g_app.project_path.reset();
@@ -1432,7 +1465,8 @@ bool write_gui_test_snapshot(WPARAM snapshot_id) {
         (L"gui-interaction-" + std::to_wstring(snapshot_id) + L".acp2d");
     return write_text_file(
         path,
-        acp::persistence::serialize_project(g_app.document, g_app.blocks));
+        acp::persistence::serialize_project(
+            g_app.document, g_app.blocks, current_project_settings()));
 }
 #endif
 
@@ -1490,6 +1524,7 @@ void open_project(HWND hwnd) {
 
     g_app.document = std::move(project->document);
     g_app.blocks = std::move(project->blocks);
+    apply_project_settings(project->settings);
     g_app.history = acp::History{};
     g_app.active_layer = acp::kDefaultLayerId;
     g_app.dirty = false;
@@ -1512,7 +1547,8 @@ void save_project(HWND hwnd, bool save_as = false) {
     }
 
     const std::string data =
-        acp::persistence::serialize_project(g_app.document, g_app.blocks);
+        acp::persistence::serialize_project(
+            g_app.document, g_app.blocks, current_project_settings());
     if (!write_text_file(*path, data)) {
         show_file_error(hwnd, L"Could not save the project.");
         return;
@@ -1549,6 +1585,7 @@ void import_dxf(HWND hwnd) {
 
     g_app.document = std::move(result->document);
     g_app.blocks = acp::BlockLibrary{};
+    reset_project_settings();
     g_app.history = acp::History{};
     g_app.active_layer = acp::kDefaultLayerId;
     g_app.dirty = true;
@@ -2046,6 +2083,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     g_app.document = Document{};
                     g_app.history = acp::History{};
                     g_app.blocks = acp::BlockLibrary{};
+                    reset_project_settings();
                     g_app.active_layer = acp::kDefaultLayerId;
                     g_app.dirty = false;
                     g_app.project_path.reset();
@@ -2234,6 +2272,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     return 0;
                 case kMenuExit:
                     if (confirm_discard_unsaved(hwnd)) {
+                        clear_recovery_snapshot();
                         DestroyWindow(hwnd);
                     }
                     return 0;
@@ -2278,6 +2317,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             if (control_down && w_param == 'Z') {
                 if (g_app.history.undo(g_app.document)) {
                     g_app.dirty = true;
+                    ensure_active_layer_exists();
                     if (g_app.selected.has_value() &&
                         g_app.document.find(*g_app.selected) == nullptr) {
                         g_app.selected.reset();
@@ -2289,6 +2329,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             if (control_down && w_param == 'Y') {
                 if (g_app.history.redo(g_app.document)) {
                     g_app.dirty = true;
+                    ensure_active_layer_exists();
                     InvalidateRect(hwnd, nullptr, FALSE);
                 }
                 return 0;

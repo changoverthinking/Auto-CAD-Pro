@@ -2,6 +2,7 @@
 
 #include "acp/annotation.hpp"
 #include "acp/bounds.hpp"
+#include "acp/hatch.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -157,7 +158,7 @@ void write_hatch(
     const HatchEntity& value,
     double stroke_width) {
 
-    if (value.boundary.size() < 3) {
+    if (!hatch::valid(value)) {
         return;
     }
 
@@ -174,6 +175,12 @@ void write_hatch(
         out << " fill-opacity=\"0.18\"";
     }
     out << " />\n";
+
+    if (!value.solid) {
+        for (const auto& segment : hatch::pattern_segments(value)) {
+            write_segment(out, segment, stroke_width);
+        }
+    }
 }
 
 void write_primitive(
