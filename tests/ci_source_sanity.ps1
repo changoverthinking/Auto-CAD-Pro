@@ -36,11 +36,17 @@ foreach ($file in $scanFiles) {
 
 # 2) Parse every PowerShell script before any expensive configure/build step.
 $parseFailures = New-Object System.Collections.Generic.List[string]
-Get-ChildItem -Path $repoRoot -Recurse -Filter *.ps1 -File | ForEach-Object {
+$trackedPowerShell = & git -C $repoRoot ls-files "*.ps1"
+if ($LASTEXITCODE -ne 0) {
+    Fail "git ls-files failed while enumerating PowerShell scripts."
+}
+
+foreach ($relativePath in $trackedPowerShell) {
+    $scriptPath = Join-Path $repoRoot $relativePath
     $tokens = $null
     $errors = $null
     [System.Management.Automation.Language.Parser]::ParseFile(
-        $_.FullName,
+        $scriptPath,
         [ref]$tokens,
         [ref]$errors
     ) | Out-Null
@@ -49,7 +55,7 @@ Get-ChildItem -Path $repoRoot -Recurse -Filter *.ps1 -File | ForEach-Object {
         foreach ($error in $errors) {
             $parseFailures.Add(
                 ("{0}:{1}:{2} {3}" -f
-                    $_.FullName,
+                    $relativePath,
                     $error.Extent.StartLineNumber,
                     $error.Extent.StartColumnNumber,
                     $error.Message)
