@@ -170,8 +170,154 @@ try {
     Command-Property $hwnd $proc 1029 "0.70"
 
     $textState = Snapshot $hwnd 40
-    if ($textState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+0\.7(?:0+)?\s+TEXT\s+[^\r\n]*\s+7\.25\s+0\.523598[0-9]*\s+"EDITED-CAD"\s*$') {
-        throw "Property editor regression: Text content/height/rotation/lineweight did not persist"
+    $textMatch = [regex]::Match(
+        $textState,
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+"EDITED-CAD"\s*
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+    $dimState = Snapshot $hwnd 41
+    if ($dimState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$') {
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+    $hatchState = Snapshot $hwnd 42
+    $hatchMatch = [regex]::Match(
+        $hatchState,
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+')
+    if (!$hatchMatch.Success) {
+        throw "Property editor regression: edited Hatch record was not found"
+    }
+    $hatchAngle = [double]::Parse($hatchMatch.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
+    $hatchSpacing = [double]::Parse($hatchMatch.Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture)
+    if ([Math]::Abs($hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+        [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
+        throw "Property editor regression: Hatch numeric properties are incorrect"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage($hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+    $blockState = Snapshot $hwnd 43
+    $blockMatch = [regex]::Match(
+        $blockState,
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s*    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+)
+    if (!$textMatch.Success) {
+        throw "Property editor regression: edited Text record was not found"
+    }
+    $weight = [double]::Parse($textMatch.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
+    $height = [double]::Parse($textMatch.Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture)
+    $rotation = [double]::Parse($textMatch.Groups[3].Value, [Globalization.CultureInfo]::InvariantCulture)
+    if ([Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs($rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
+    # DIMENSION override.
+    Send-Key $hwnd 0x44
+    Click-Client $hwnd 420 500
+    Click-Client $hwnd 560 500
+    Click-Client $hwnd 420 460
+    Command-Property $hwnd $proc 1033 "D-100"
+    $dimState = Snapshot $hwnd 41
+    if ($dimState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$') {
+        throw "Property editor regression: Dimension override did not persist"
+    }
+
+    # HATCH angle and spacing.
+    Send-Key $hwnd 0x42
+    Click-Client $hwnd 300 380
+    Click-Client $hwnd 410 450
+    Send-Key $hwnd 0x48
+    Click-Client $hwnd 355 415
+    Command-Property $hwnd $proc 1034 "30"
+    Command-Property $hwnd $proc 1035 "2.5"
+    $hatchState = Snapshot $hwnd 42
+    if ($hatchState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+HATCH\s+"ANSI31"\s+0\.523598[0-9]*\s+2\.5\s+0\s+') {
+        throw "Property editor regression: Hatch angle/spacing did not persist"
+    }
+
+    # BLOCK scale and rotation.
+    Send-Key $hwnd 0x4C
+    Click-Client $hwnd 580 300
+    Click-Client $hwnd 660 300
+    [GuiPropertyNative]::SendMessage($hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+    Command-Property $hwnd $proc 1036 "1.5"
+    Command-Property $hwnd $proc 1037 "45"
+    $blockState = Snapshot $hwnd 43
+    if ($blockState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+BLOCKREF\s+\d+\s+[^\r\n]*\s+0\.785398[0-9]*\s+1\.5\s*$') {
+        throw "Property editor regression: Block scale/rotation did not persist"
+    }
+
+    # Undo/Redo must cover dialog-driven property edits.
+    [GuiPropertyNative]::SendMessage($hwnd, 0x0100, [IntPtr]0x11, [IntPtr]::Zero) | Out-Null
+    # Use physical Ctrl through keybd_event is not needed here because app tests
+    # GetKeyState. Instead invoke menu-equivalent history through actual keyboard
+    # is covered by the main interaction suite; core property history is covered
+    # separately. This suite validates the dialog -> History apply path.
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+)
+    if (!$blockMatch.Success) {
+        throw "Property editor regression: edited BlockRef record was not found"
+    }
+    $blockRotation = [double]::Parse($blockMatch.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
+    $blockScale = [double]::Parse($blockMatch.Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture)
+    if ([Math]::Abs($blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+        [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
+        throw "Property editor regression: Block numeric properties are incorrect"
+    }
+
+    Write-Host "GUI direct property editor regression test passed"
+}
+finally {
+    if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force
+    }
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
+}
+)
+    if (!$textMatch.Success) {
+        throw "Property editor regression: edited Text record was not found"
+    }
+    $weight = [double]::Parse($textMatch.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
+    $height = [double]::Parse($textMatch.Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture)
+    $rotation = [double]::Parse($textMatch.Groups[3].Value, [Globalization.CultureInfo]::InvariantCulture)
+    if ([Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs($rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
     }
 
     # DIMENSION override.
