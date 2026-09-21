@@ -24,6 +24,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cwchar>
+#include <cwctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
