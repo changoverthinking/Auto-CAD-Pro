@@ -11,6 +11,18 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Require PR branch to include latest main
+        if: github.event_name == 'pull_request'
+        shell: powershell
+        run: |
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor origin/main HEAD
+          if ($LASTEXITCODE -ne 0) {
+            throw "PR branch is behind main. Rebase/merge latest main before integration to prevent regression reintroduction."
+          }
 
       - name: Configure
         run: cmake -S . -B build -A x64 -DACP_BUILD_TESTS=ON -DACP_BUILD_APP=ON
@@ -20,6 +32,9 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Repeat core regression suite
+        run: ctest --test-dir build -C Release --repeat until-fail:5 --output-on-failure
 
       - name: Launch GUI and capture real window
         shell: powershell
@@ -92,6 +107,33 @@ jobs:
           finally {
             if (!$proc.HasExited) {
               Stop-Process -Id $proc.Id -Force
+            }
+          }
+
+      - name: Repeated GUI lifecycle smoke
+        shell: powershell
+        run: |
+          $exe = Join-Path $PWD "build\Release\AutoCADPro.exe"
+          1..3 | ForEach-Object {
+            $proc = Start-Process -FilePath $exe -PassThru
+            try {
+              $deadline = (Get-Date).AddSeconds(15)
+              do {
+                Start-Sleep -Milliseconds 300
+                $proc.Refresh()
+              } while ($proc.MainWindowHandle -eq 0 -and !$proc.HasExited -and (Get-Date) -lt $deadline)
+
+              if ($proc.HasExited) {
+                throw "GUI lifecycle run $_ exited before creating a main window. ExitCode=$($proc.ExitCode)"
+              }
+              if ($proc.MainWindowHandle -eq 0) {
+                throw "GUI lifecycle run $_ did not create a main window"
+              }
+            }
+            finally {
+              if (!$proc.HasExited) {
+                Stop-Process -Id $proc.Id -Force
+              }
             }
           }
 
