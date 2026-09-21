@@ -173,7 +173,10 @@ constexpr int kToolBlockInsert = 2018;
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
 constexpr UINT kGuiTestSnapshotMessage = WM_APP + 42;
 constexpr UINT kGuiTestPropertyStageMessage = WM_APP + 43;
+constexpr UINT kGuiTestPropertyLengthMessage = WM_APP + 44;
+constexpr UINT kGuiTestPropertyCharMessage = WM_APP + 45;
 int g_property_test_stage = 0;
+std::wstring g_property_test_value;
 #endif
 
 const wchar_t* paper_size_name(acp::layout::PaperSize paper) {
@@ -1304,6 +1307,9 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
         }
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
         g_property_test_stage = 2;
+#endif
+#ifdef ACP_ENABLE_GUI_TEST_HOOKS
+        g_property_test_value = *entered;
 #endif
         const std::string utf8 = utf8_from_wide(*entered);
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
@@ -2712,6 +2718,14 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             return write_gui_test_snapshot(w_param) ? 1 : 0;
         case kGuiTestPropertyStageMessage:
             return static_cast<LRESULT>(g_property_test_stage);
+        case kGuiTestPropertyLengthMessage:
+            return static_cast<LRESULT>(g_property_test_value.size());
+        case kGuiTestPropertyCharMessage: {
+            const std::size_t index = static_cast<std::size_t>(w_param);
+            return index < g_property_test_value.size()
+                ? static_cast<LRESULT>(g_property_test_value[index])
+                : static_cast<LRESULT>(-1);
+        }
 #endif
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
