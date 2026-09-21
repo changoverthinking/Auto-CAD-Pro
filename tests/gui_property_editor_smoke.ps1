@@ -28,19 +28,30 @@ public static class GuiPropertyNative {
     public static extern bool SetWindowText(IntPtr hWnd, string lpString);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string className, string windowName);
+    public static extern IntPtr FindWindowEx(
+        IntPtr parent,
+        IntPtr childAfter,
+        string className,
+        string windowName);
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("user32.dll")]
-    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    private static extern bool EnumWindows(
+        EnumWindowsProc lpEnumFunc,
+        IntPtr lParam);
 
     [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    private static extern uint GetWindowThreadProcessId(
+        IntPtr hWnd,
+        out uint processId);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+    private static extern int GetClassName(
+        IntPtr hWnd,
+        System.Text.StringBuilder lpClassName,
+        int nMaxCount);
 
     public static IntPtr FindDialogForProcess(uint processId) {
         IntPtr found = IntPtr.Zero;
@@ -63,36 +74,50 @@ public static class GuiPropertyNative {
 "@
 
 function Send-Key([IntPtr]$hwnd, [int]$vk) {
-    [GuiPropertyNative]::SendMessage($hwnd, 0x0100, [IntPtr]$vk, [IntPtr]::Zero) | Out-Null
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0100, [IntPtr]$vk, [IntPtr]::Zero) | Out-Null
 }
 
 function Send-Char([IntPtr]$hwnd, [int]$charCode) {
-    [GuiPropertyNative]::SendMessage($hwnd, 0x0102, [IntPtr]$charCode, [IntPtr]::Zero) | Out-Null
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0102, [IntPtr]$charCode, [IntPtr]::Zero) | Out-Null
 }
 
 function Click-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
     $packed = (($y -band 0xFFFF) -shl 16) -bor ($x -band 0xFFFF)
-    [GuiPropertyNative]::SendMessage($hwnd, 0x0201, [IntPtr]1, [IntPtr]$packed) | Out-Null
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0201, [IntPtr]1, [IntPtr]$packed) | Out-Null
 }
 
 function DoubleClick-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
     $packed = (($y -band 0xFFFF) -shl 16) -bor ($x -band 0xFFFF)
-    [GuiPropertyNative]::PostMessage($hwnd, 0x0203, [IntPtr]1, [IntPtr]$packed) | Out-Null
+    [GuiPropertyNative]::PostMessage(
+        $hwnd, 0x0203, [IntPtr]1, [IntPtr]$packed) | Out-Null
 }
 
-function Set-PropertyDialog([System.Diagnostics.Process]$proc, [string]$value) {
+function Set-PropertyDialog(
+    [System.Diagnostics.Process]$proc,
+    [string]$value) {
+
     $dialog = [IntPtr]::Zero
     $deadline = (Get-Date).AddSeconds(10)
     do {
         Start-Sleep -Milliseconds 100
-        $dialog = [GuiPropertyNative]::FindDialogForProcess([uint32]$proc.Id)
-    } while ($dialog -eq [IntPtr]::Zero -and (Get-Date) -lt $deadline)
+        $dialog =
+            [GuiPropertyNative]::FindDialogForProcess([uint32]$proc.Id)
+    } while (
+        $dialog -eq [IntPtr]::Zero -and
+        (Get-Date) -lt $deadline)
 
     if ($dialog -eq [IntPtr]::Zero) {
         throw "Property editor dialog did not appear"
     }
 
-    $edit = [GuiPropertyNative]::FindWindowEx($dialog, [IntPtr]::Zero, "Edit", $null)
+    $edit = [GuiPropertyNative]::FindWindowEx(
+        $dialog,
+        [IntPtr]::Zero,
+        "Edit",
+        $null)
     if ($edit -eq [IntPtr]::Zero) {
         throw "Property editor did not contain an Edit control"
     }
@@ -101,22 +126,43 @@ function Set-PropertyDialog([System.Diagnostics.Process]$proc, [string]$value) {
         throw "Could not set property editor value"
     }
 
-    [GuiPropertyNative]::SendMessage($dialog, 0x0111, [IntPtr]1, [IntPtr]::Zero) | Out-Null
+    [GuiPropertyNative]::SendMessage(
+        $dialog, 0x0111, [IntPtr]1, [IntPtr]::Zero) | Out-Null
 }
 
-function Command-Property([IntPtr]$hwnd, [System.Diagnostics.Process]$proc, [int]$command, [string]$value) {
-    [GuiPropertyNative]::PostMessage($hwnd, 0x0111, [IntPtr]$command, [IntPtr]::Zero) | Out-Null
+function Command-Property(
+    [IntPtr]$hwnd,
+    [System.Diagnostics.Process]$proc,
+    [int]$command,
+    [string]$value) {
+
+    [GuiPropertyNative]::PostMessage(
+        $hwnd, 0x0111, [IntPtr]$command, [IntPtr]::Zero) | Out-Null
     Set-PropertyDialog $proc $value
 }
 
 function Snapshot([IntPtr]$hwnd, [int]$id) {
-    $path = Join-Path $PWD ("artifacts\gui-interaction-" + $id + ".acp2d")
+    $path = Join-Path $PWD (
+        "artifacts\gui-interaction-" + $id + ".acp2d")
     Remove-Item $path -Force -ErrorAction SilentlyContinue
-    $result = [GuiPropertyNative]::SendMessage($hwnd, 0x8000 + 42, [IntPtr]$id, [IntPtr]::Zero)
+
+    $result = [GuiPropertyNative]::SendMessage(
+        $hwnd,
+        0x8000 + 42,
+        [IntPtr]$id,
+        [IntPtr]::Zero)
+
     if ($result.ToInt64() -ne 1 -or !(Test-Path $path)) {
         throw "Could not create property editor snapshot $id"
     }
+
     return Get-Content -Raw -Path $path
+}
+
+function Parse-InvariantDouble([string]$value) {
+    return [double]::Parse(
+        $value,
+        [Globalization.CultureInfo]::InvariantCulture)
 }
 
 New-Item -ItemType Directory -Force -Path artifacts | Out-Null
@@ -128,7 +174,10 @@ try {
     do {
         Start-Sleep -Milliseconds 300
         $proc.Refresh()
-    } while ($proc.MainWindowHandle -eq 0 -and !$proc.HasExited -and (Get-Date) -lt $deadline)
+    } while (
+        $proc.MainWindowHandle -eq 0 -and
+        !$proc.HasExited -and
+        (Get-Date) -lt $deadline)
 
     if ($proc.HasExited -or $proc.MainWindowHandle -eq 0) {
         throw "AutoCADPro did not create a window for property editor regression"
@@ -143,24 +192,30 @@ try {
     }
 
     # TEXT setup.
-    Send-Key $hwnd 0x58 # X
+    Send-Key $hwnd 0x58
     Click-Client $hwnd 300 260
     Send-Char $hwnd 0x43
     Send-Char $hwnd 0x41
     Send-Char $hwnd 0x44
     Send-Key $hwnd 0x0D
 
-    # Use direct right-panel double-click for Text Content.
+    # Edit Text Content through a real double-click on the right panel.
     $clientWidth = $rect.Right - $rect.Left
     $clientHeight = $rect.Bottom - $rect.Top
-    $toolbarHeight = [Math]::Max(34, [int]($clientHeight / 20))
-    $panelWidth = [Math]::Max(180, [int](($clientWidth * 2) / 10))
+    $toolbarHeight = [Math]::Max(
+        34, [int]($clientHeight / 20))
+    $panelWidth = [Math]::Max(
+        180, [int](($clientWidth * 2) / 10))
     $panelLeft = $clientWidth - $panelWidth
     $panelBottom = $clientHeight - 26
-    $layerY = $toolbarHeight + 32 + 26 # default layer
-    $propertiesTop = [Math]::Max($layerY + 10, $toolbarHeight + [int](($panelBottom - $toolbarHeight) / 2))
+    $layerY = $toolbarHeight + 32 + 26
+    $propertiesTop = [Math]::Max(
+        $layerY + 10,
+        $toolbarHeight +
+            [int](($panelBottom - $toolbarHeight) / 2))
     $valueX = $panelLeft + 120
-    $contentY = $propertiesTop + 34 + (8 * 22) + 11
+    $contentY =
+        $propertiesTop + 34 + (8 * 22) + 11
 
     DoubleClick-Client $hwnd $valueX $contentY
     Set-PropertyDialog $proc "EDITED-CAD"
@@ -170,17 +225,44 @@ try {
     Command-Property $hwnd $proc 1029 "0.70"
 
     $textState = Snapshot $hwnd 40
+    $textPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+' +
+        'TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+' +
+        '"EDITED-CAD"\s*$'
     $textMatch = [regex]::Match(
         $textState,
-        '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+([^\s]+)\s+TEXT\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s+"EDITED-CAD"\s*
+        $textPattern)
+
+    if (!$textMatch.Success) {
+        Write-Host $textState
+        throw "Property editor regression: edited Text record was not found"
+    }
+
+    $weight = Parse-InvariantDouble $textMatch.Groups[1].Value
+    $height = Parse-InvariantDouble $textMatch.Groups[2].Value
+    $rotation = Parse-InvariantDouble $textMatch.Groups[3].Value
+
+    if (
+        [Math]::Abs($weight - 0.70) -gt 1e-9 -or
+        [Math]::Abs($height - 7.25) -gt 1e-9 -or
+        [Math]::Abs(
+            $rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
+        throw "Property editor regression: Text numeric properties are incorrect"
+    }
+
     # DIMENSION override.
     Send-Key $hwnd 0x44
     Click-Client $hwnd 420 500
     Click-Client $hwnd 560 500
     Click-Client $hwnd 420 460
     Command-Property $hwnd $proc 1033 "D-100"
+
     $dimState = Snapshot $hwnd 41
-    if ($dimState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$') {
+    $dimPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$'
+    if ($dimState -notmatch $dimPattern) {
+        Write-Host $dimState
         throw "Property editor regression: Dimension override did not persist"
     }
 
@@ -190,18 +272,31 @@ try {
     Click-Client $hwnd 410 450
     Send-Key $hwnd 0x48
     Click-Client $hwnd 355 415
+
     Command-Property $hwnd $proc 1034 "30"
     Command-Property $hwnd $proc 1035 "2.5"
+
     $hatchState = Snapshot $hwnd 42
+    $hatchPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+'
     $hatchMatch = [regex]::Match(
         $hatchState,
-        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+HATCH\s+"ANSI31"\s+([^\s]+)\s+([^\s]+)\s+0\s+')
+        $hatchPattern)
+
     if (!$hatchMatch.Success) {
+        Write-Host $hatchState
         throw "Property editor regression: edited Hatch record was not found"
     }
-    $hatchAngle = [double]::Parse($hatchMatch.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
-    $hatchSpacing = [double]::Parse($hatchMatch.Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture)
-    if ([Math]::Abs($hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
+
+    $hatchAngle =
+        Parse-InvariantDouble $hatchMatch.Groups[1].Value
+    $hatchSpacing =
+        Parse-InvariantDouble $hatchMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $hatchAngle - ([Math]::PI / 6.0)) -gt 1e-9 -or
         [Math]::Abs($hatchSpacing - 2.5) -gt 1e-9) {
         throw "Property editor regression: Hatch numeric properties are incorrect"
     }
@@ -210,158 +305,37 @@ try {
     Send-Key $hwnd 0x4C
     Click-Client $hwnd 580 300
     Click-Client $hwnd 660 300
-    [GuiPropertyNative]::SendMessage($hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+    [GuiPropertyNative]::SendMessage(
+        $hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+
     Command-Property $hwnd $proc 1036 "1.5"
     Command-Property $hwnd $proc 1037 "45"
+
     $blockState = Snapshot $hwnd 43
+    $blockPattern =
+        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+' +
+        'BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+' +
+        '([^\s]+)\s+([^\s]+)\s*$'
     $blockMatch = [regex]::Match(
         $blockState,
-        '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+[^\s]+\s+BLOCKREF\s+\d+\s+[^\s]+\s+[^\s]+\s+([^\s]+)\s+([^\s]+)\s*    Write-Host "GUI direct property editor regression test passed"
-}
-finally {
-    if (!$proc.HasExited) {
-        Stop-Process -Id $proc.Id -Force
-    }
-    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
-}
-)
-    if (!$textMatch.Success) {
-        throw "Property editor regression: edited Text record was not found"
-    }
-    $weight = [double]::Parse($textMatch.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
-    $height = [double]::Parse($textMatch.Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture)
-    $rotation = [double]::Parse($textMatch.Groups[3].Value, [Globalization.CultureInfo]::InvariantCulture)
-    if ([Math]::Abs($weight - 0.70) -gt 1e-9 -or
-        [Math]::Abs($height - 7.25) -gt 1e-9 -or
-        [Math]::Abs($rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
-        throw "Property editor regression: Text numeric properties are incorrect"
-    }
+        $blockPattern)
 
-    # DIMENSION override.
-    Send-Key $hwnd 0x44
-    Click-Client $hwnd 420 500
-    Click-Client $hwnd 560 500
-    Click-Client $hwnd 420 460
-    Command-Property $hwnd $proc 1033 "D-100"
-    $dimState = Snapshot $hwnd 41
-    if ($dimState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$') {
-        throw "Property editor regression: Dimension override did not persist"
-    }
-
-    # HATCH angle and spacing.
-    Send-Key $hwnd 0x42
-    Click-Client $hwnd 300 380
-    Click-Client $hwnd 410 450
-    Send-Key $hwnd 0x48
-    Click-Client $hwnd 355 415
-    Command-Property $hwnd $proc 1034 "30"
-    Command-Property $hwnd $proc 1035 "2.5"
-    $hatchState = Snapshot $hwnd 42
-    if ($hatchState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+HATCH\s+"ANSI31"\s+0\.523598[0-9]*\s+2\.5\s+0\s+') {
-        throw "Property editor regression: Hatch angle/spacing did not persist"
-    }
-
-    # BLOCK scale and rotation.
-    Send-Key $hwnd 0x4C
-    Click-Client $hwnd 580 300
-    Click-Client $hwnd 660 300
-    [GuiPropertyNative]::SendMessage($hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
-    Command-Property $hwnd $proc 1036 "1.5"
-    Command-Property $hwnd $proc 1037 "45"
-    $blockState = Snapshot $hwnd 43
-    if ($blockState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+BLOCKREF\s+\d+\s+[^\r\n]*\s+0\.785398[0-9]*\s+1\.5\s*$') {
-        throw "Property editor regression: Block scale/rotation did not persist"
-    }
-
-    # Undo/Redo must cover dialog-driven property edits.
-    [GuiPropertyNative]::SendMessage($hwnd, 0x0100, [IntPtr]0x11, [IntPtr]::Zero) | Out-Null
-    # Use physical Ctrl through keybd_event is not needed here because app tests
-    # GetKeyState. Instead invoke menu-equivalent history through actual keyboard
-    # is covered by the main interaction suite; core property history is covered
-    # separately. This suite validates the dialog -> History apply path.
-
-    Write-Host "GUI direct property editor regression test passed"
-}
-finally {
-    if (!$proc.HasExited) {
-        Stop-Process -Id $proc.Id -Force
-    }
-    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
-}
-)
     if (!$blockMatch.Success) {
+        Write-Host $blockState
         throw "Property editor regression: edited BlockRef record was not found"
     }
-    $blockRotation = [double]::Parse($blockMatch.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
-    $blockScale = [double]::Parse($blockMatch.Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture)
-    if ([Math]::Abs($blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
+
+    $blockRotation =
+        Parse-InvariantDouble $blockMatch.Groups[1].Value
+    $blockScale =
+        Parse-InvariantDouble $blockMatch.Groups[2].Value
+
+    if (
+        [Math]::Abs(
+            $blockRotation - ([Math]::PI / 4.0)) -gt 1e-9 -or
         [Math]::Abs($blockScale - 1.5) -gt 1e-9) {
         throw "Property editor regression: Block numeric properties are incorrect"
     }
-
-    Write-Host "GUI direct property editor regression test passed"
-}
-finally {
-    if (!$proc.HasExited) {
-        Stop-Process -Id $proc.Id -Force
-    }
-    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
-}
-)
-    if (!$textMatch.Success) {
-        throw "Property editor regression: edited Text record was not found"
-    }
-    $weight = [double]::Parse($textMatch.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
-    $height = [double]::Parse($textMatch.Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture)
-    $rotation = [double]::Parse($textMatch.Groups[3].Value, [Globalization.CultureInfo]::InvariantCulture)
-    if ([Math]::Abs($weight - 0.70) -gt 1e-9 -or
-        [Math]::Abs($height - 7.25) -gt 1e-9 -or
-        [Math]::Abs($rotation - ([Math]::PI / 6.0)) -gt 1e-9) {
-        throw "Property editor regression: Text numeric properties are incorrect"
-    }
-
-    # DIMENSION override.
-    Send-Key $hwnd 0x44
-    Click-Client $hwnd 420 500
-    Click-Client $hwnd 560 500
-    Click-Client $hwnd 420 460
-    Command-Property $hwnd $proc 1033 "D-100"
-    $dimState = Snapshot $hwnd 41
-    if ($dimState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+DIM\s+[^\r\n]*\s+1\s+"D-100"\s*$') {
-        throw "Property editor regression: Dimension override did not persist"
-    }
-
-    # HATCH angle and spacing.
-    Send-Key $hwnd 0x42
-    Click-Client $hwnd 300 380
-    Click-Client $hwnd 410 450
-    Send-Key $hwnd 0x48
-    Click-Client $hwnd 355 415
-    Command-Property $hwnd $proc 1034 "30"
-    Command-Property $hwnd $proc 1035 "2.5"
-    $hatchState = Snapshot $hwnd 42
-    if ($hatchState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+HATCH\s+"ANSI31"\s+0\.523598[0-9]*\s+2\.5\s+0\s+') {
-        throw "Property editor regression: Hatch angle/spacing did not persist"
-    }
-
-    # BLOCK scale and rotation.
-    Send-Key $hwnd 0x4C
-    Click-Client $hwnd 580 300
-    Click-Client $hwnd 660 300
-    [GuiPropertyNative]::SendMessage($hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
-    Command-Property $hwnd $proc 1036 "1.5"
-    Command-Property $hwnd $proc 1037 "45"
-    $blockState = Snapshot $hwnd 43
-    if ($blockState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+BLOCKREF\s+\d+\s+[^\r\n]*\s+0\.785398[0-9]*\s+1\.5\s*$') {
-        throw "Property editor regression: Block scale/rotation did not persist"
-    }
-
-    # Undo/Redo must cover dialog-driven property edits.
-    [GuiPropertyNative]::SendMessage($hwnd, 0x0100, [IntPtr]0x11, [IntPtr]::Zero) | Out-Null
-    # Use physical Ctrl through keybd_event is not needed here because app tests
-    # GetKeyState. Instead invoke menu-equivalent history through actual keyboard
-    # is covered by the main interaction suite; core property history is covered
-    # separately. This suite validates the dialog -> History apply path.
 
     Write-Host "GUI direct property editor regression test passed"
 }
