@@ -43,6 +43,9 @@ public static class GuiPropertyNative {
         string className,
         string windowName);
 
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetDlgItem(IntPtr hDlg, int nIDDlgItem);
+
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
@@ -117,11 +120,7 @@ function Set-PropertyDialog(
             [GuiPropertyNative]::FindDialogForProcess([uint32]$proc.Id)
         if ($dialog -ne [IntPtr]::Zero -and
             [GuiPropertyNative]::IsWindowVisible($dialog)) {
-            $edit = [GuiPropertyNative]::FindWindowEx(
-                $dialog,
-                [IntPtr]::Zero,
-                "Edit",
-                $null)
+            $edit = [GuiPropertyNative]::GetDlgItem($dialog, 3003)
         }
     } while (
         ($dialog -eq [IntPtr]::Zero -or
