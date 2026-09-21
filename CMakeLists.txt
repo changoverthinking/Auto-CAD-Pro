@@ -77,4 +77,8 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_recovery_tests tests/recovery_tests.cpp)
     target_link_libraries(acp_recovery_tests PRIVATE acp_core)
     add_test(NAME acp_recovery_tests COMMAND acp_recovery_tests)
+
+    add_executable(acp_layout_print_workflow_tests tests/layout_print_workflow_tests.cpp)
+    target_link_libraries(acp_layout_print_workflow_tests PRIVATE acp_core)
+    add_test(NAME acp_layout_print_workflow_tests COMMAND acp_layout_print_workflow_tests)
 endif()
