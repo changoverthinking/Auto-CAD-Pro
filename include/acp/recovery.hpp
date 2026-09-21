@@ -12,7 +12,7 @@ namespace acp::recovery {
     const Document& document,
     const BlockLibrary& blocks);
 
-[[nodiscard]] std::optional<ProjectData> load_snapshot(
+[[nodiscard]] std::optional<persistence::ProjectData> load_snapshot(
     const std::filesystem::path& path);
 
 [[nodiscard]] bool remove_snapshot(
