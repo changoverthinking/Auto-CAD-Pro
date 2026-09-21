@@ -103,7 +103,7 @@ for ($i = 0; $i -le $lines.Count - $blockSize; $i += $blockSize) {
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($block)
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
-        $hash = [Convert]::ToHexString($sha.ComputeHash($bytes))
+        $hash = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace("-", "")
     }
     finally {
         $sha.Dispose()
