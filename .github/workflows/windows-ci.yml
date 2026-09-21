@@ -155,6 +155,26 @@ jobs:
           path: artifacts/AutoCADPro-real-ui.png
           if-no-files-found: error
 
+      - name: Build versioned portable package
+        shell: powershell
+        run: |
+          cpack --config build\CPackConfig.cmake -C Release -G ZIP
+          $package = Get-ChildItem -Path . -Filter "AutoCADPro-*-Windows-x64.zip" | Select-Object -First 1
+          if ($null -eq $package) {
+            throw "Versioned AutoCADPro ZIP package was not created"
+          }
+          $hash = Get-FileHash -Algorithm SHA256 -Path $package.FullName
+          ($hash.Hash.ToLower() + "  " + $package.Name) | Set-Content -NoNewline -Path ($package.FullName + ".sha256")
+
+      - name: Upload Windows portable package
+        uses: actions/upload-artifact@v6
+        with:
+          name: AutoCADPro-Windows-x64-Portable
+          path: |
+            AutoCADPro-*-Windows-x64.zip
+            AutoCADPro-*-Windows-x64.zip.sha256
+          if-no-files-found: error
+
       - name: Upload Windows application
         uses: actions/upload-artifact@v6
         with:
