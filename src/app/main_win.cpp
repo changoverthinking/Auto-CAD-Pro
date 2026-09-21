@@ -310,6 +310,12 @@ bool confirm_discard_unsaved(HWND hwnd) {
     return result == IDYES;
 }
 
+void ensure_active_layer_exists() {
+    if (g_app.document.layer(g_app.active_layer) == nullptr) {
+        g_app.active_layer = acp::kDefaultLayerId;
+    }
+}
+
 bool active_layer_writable() {
     const acp::Layer* layer = g_app.document.layer(g_app.active_layer);
     return layer != nullptr && layer->visible && !layer->locked;
@@ -599,7 +605,7 @@ void draw_dimension(HWND hwnd, HDC dc, const acp::LinearDimensionEntity& entity)
 }
 
 void draw_hatch(HWND hwnd, HDC dc, const acp::HatchEntity& entity) {
-    if (entity.boundary.size() < 3) {
+    if (!acp::hatch::valid(entity)) {
         return;
     }
 
@@ -609,16 +615,24 @@ void draw_hatch(HWND hwnd, HDC dc, const acp::HatchEntity& entity) {
         points.push_back(world_to_screen(hwnd, point));
     }
 
-    HBRUSH brush = entity.solid
-        ? CreateSolidBrush(RGB(72, 78, 88))
-        : CreateHatchBrush(HS_BDIAGONAL, RGB(120, 126, 138));
-    if (brush == nullptr) {
+    if (entity.solid) {
+        HBRUSH brush = CreateSolidBrush(RGB(72, 78, 88));
+        if (brush == nullptr) {
+            return;
+        }
+        HGDIOBJ old_brush = SelectObject(dc, brush);
+        Polygon(dc, points.data(), static_cast<int>(points.size()));
+        SelectObject(dc, old_brush);
+        DeleteObject(brush);
         return;
     }
-    HGDIOBJ old_brush = SelectObject(dc, brush);
+
+    HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
     Polygon(dc, points.data(), static_cast<int>(points.size()));
+    for (const auto& segment : acp::hatch::pattern_segments(entity)) {
+        draw_segment(hwnd, dc, segment);
+    }
     SelectObject(dc, old_brush);
-    DeleteObject(brush);
 }
 
 void draw_block_primitive(HWND hwnd, HDC dc, const acp::BlockPrimitive& primitive) {
@@ -2279,6 +2293,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             if (control_down && w_param == 'Z') {
                 if (g_app.history.undo(g_app.document)) {
                     g_app.dirty = true;
+                    ensure_active_layer_exists();
                     if (g_app.selected.has_value() &&
                         g_app.document.find(*g_app.selected) == nullptr) {
                         g_app.selected.reset();
@@ -2290,6 +2305,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             if (control_down && w_param == 'Y') {
                 if (g_app.history.redo(g_app.document)) {
                     g_app.dirty = true;
+                    ensure_active_layer_exists();
                     InvalidateRect(hwnd, nullptr, FALSE);
                 }
                 return 0;
