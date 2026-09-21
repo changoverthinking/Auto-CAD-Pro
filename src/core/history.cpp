@@ -1,6 +1,7 @@
 #include "acp/history.hpp"
 
 #include <cmath>
+#include <type_traits>
 #include <utility>
 
 namespace acp {
