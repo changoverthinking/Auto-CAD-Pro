@@ -32,6 +32,7 @@ add_library(acp_core
     src/core/layout.cpp
     src/core/svg.cpp
     src/core/pdf.cpp
+    src/core/recovery.cpp
 )
 target_include_directories(acp_core PUBLIC include)
 target_compile_features(acp_core PUBLIC cxx_std_20)
@@ -72,4 +73,8 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_annotation_properties_workflow_tests tests/annotation_properties_workflow_tests.cpp)
     target_link_libraries(acp_annotation_properties_workflow_tests PRIVATE acp_core)
     add_test(NAME acp_annotation_properties_workflow_tests COMMAND acp_annotation_properties_workflow_tests)
+
+    add_executable(acp_recovery_tests tests/recovery_tests.cpp)
+    target_link_libraries(acp_recovery_tests PRIVATE acp_core)
+    add_test(NAME acp_recovery_tests COMMAND acp_recovery_tests)
 endif()
