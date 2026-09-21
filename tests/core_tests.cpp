@@ -937,6 +937,27 @@ int main() {
     expect(propertyDoc.layer(propertyLayer)->name == "PropertyLayer",
            "failed layer update keeps original name");
 
+    Document layerHistoryDoc;
+    History layerHistory;
+    auto createLayerCommand =
+        std::make_unique<CreateLayerCommand>("Undoable Layer");
+    auto* createLayerPtr = createLayerCommand.get();
+    expect(layerHistory.apply(layerHistoryDoc, std::move(createLayerCommand)),
+           "create layer history apply");
+    const LayerId undoableLayerId = createLayerPtr->id();
+    expect(undoableLayerId != 0 &&
+           layerHistoryDoc.layer(undoableLayerId) != nullptr,
+           "create layer history creates layer");
+    expect(layerHistory.undo(layerHistoryDoc),
+           "create layer history undo");
+    expect(layerHistoryDoc.layer(undoableLayerId) == nullptr,
+           "create layer undo removes layer");
+    expect(layerHistory.redo(layerHistoryDoc),
+           "create layer history redo");
+    expect(layerHistoryDoc.layer(undoableLayerId) != nullptr &&
+           layerHistoryDoc.layer(undoableLayerId)->name == "Undoable Layer",
+           "create layer redo restores same layer");
+
     Document documentSnapDoc;
     (void)documentSnapDoc.insert(
         LineEntity{{{0, 0}, {10, 10}}});
