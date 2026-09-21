@@ -268,9 +268,22 @@ jobs:
           path: installer-artifacts/AutoCADPro-*-Windows-x64-Setup.exe
           if-no-files-found: error
 
+      - name: Stage standalone Windows application
+        shell: powershell
+        run: |
+          Remove-Item application-artifacts -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path application-artifacts\assets | Out-Null
+          New-Item -ItemType Directory -Force -Path application-artifacts\licenses\NotoSansJP | Out-Null
+          New-Item -ItemType Directory -Force -Path application-artifacts\licenses\stb | Out-Null
+          Copy-Item build\Release\AutoCADPro.exe application-artifacts\AutoCADPro.exe
+          Copy-Item build\assets\NotoSansJP.ttf application-artifacts\assets\NotoSansJP.ttf
+          Copy-Item third_party\noto\OFL.txt application-artifacts\licenses\NotoSansJP\OFL.txt
+          Copy-Item third_party\noto\SOURCE.md application-artifacts\licenses\NotoSansJP\SOURCE.md
+          Copy-Item third_party\stb\LICENSE application-artifacts\licenses\stb\LICENSE
+
       - name: Upload Windows application
         uses: actions/upload-artifact@v6
         with:
           name: AutoCADPro-Windows-x64
-          path: build/Release/AutoCADPro.exe
+          path: application-artifacts/**
           if-no-files-found: error
