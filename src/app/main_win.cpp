@@ -1463,7 +1463,18 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
             std::make_unique<acp::UpdateEntityCommand>(
                 id, replacement))) {
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
-        g_property_test_stage = 4;
+        if (property == DirectProperty::TextContent) {
+            const acp::Entity* updated = g_app.document.find(id);
+            if (updated != nullptr &&
+                std::holds_alternative<acp::TextEntity>(*updated) &&
+                std::get<acp::TextEntity>(*updated).text == "EDITED-CAD") {
+                g_property_test_stage = 40;
+            } else {
+                g_property_test_stage = 41;
+            }
+        } else {
+            g_property_test_stage = 4;
+        }
 #endif
         InvalidateRect(hwnd, nullptr, FALSE);
         return true;
