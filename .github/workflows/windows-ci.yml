@@ -179,6 +179,17 @@ jobs:
           $hash = Get-FileHash -Algorithm SHA256 -Path $package.FullName
           ($hash.Hash.ToLower() + "  " + $package.Name) | Set-Content -NoNewline -Path ($package.FullName + ".sha256")
 
+          $portableCheck = Join-Path $env:RUNNER_TEMP "autocadpro-portable-check"
+          Remove-Item $portableCheck -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $package.FullName -DestinationPath $portableCheck
+          $portableExe = Get-ChildItem $portableCheck -Recurse -Filter AutoCADPro.exe | Select-Object -First 1
+          $portableFont = Get-ChildItem $portableCheck -Recurse -Filter NotoSansJP.ttf | Select-Object -First 1
+          $portableNotoLicense = Get-ChildItem $portableCheck -Recurse -Filter OFL.txt | Select-Object -First 1
+          $portableStbLicense = Get-ChildItem $portableCheck -Recurse -Filter LICENSE | Where-Object { $_.FullName -match 'licenses\\stb' } | Select-Object -First 1
+          if ($null -eq $portableExe -or $null -eq $portableFont -or $null -eq $portableNotoLicense -or $null -eq $portableStbLicense) {
+            throw "Portable package is missing executable, Unicode font, or license assets"
+          }
+
       - name: Upload Windows portable package
         uses: actions/upload-artifact@v6
         with:
@@ -207,11 +218,48 @@ jobs:
           $version = $versionLine.Matches[0].Groups[1].Value
           $exe = (Resolve-Path "build\Release\AutoCADPro.exe").Path
           $readme = (Resolve-Path "README.md").Path
+          $font = (Resolve-Path "build\assets\NotoSansJP.ttf").Path
+          $notoLicense = (Resolve-Path "third_party\noto\OFL.txt").Path
+          $notoSource = (Resolve-Path "third_party\noto\SOURCE.md").Path
+          $stbLicense = (Resolve-Path "third_party\stb\LICENSE").Path
           $out = (Resolve-Path "installer-artifacts").Path
-          & makensis.exe "/DVERSION=$version" "/DSOURCE_EXE=$exe" "/DREADME_FILE=$readme" "/DOUTPUT_DIR=$out" "installer\AutoCADPro.nsi"
+          & makensis.exe "/DVERSION=$version" "/DSOURCE_EXE=$exe" "/DREADME_FILE=$readme" "/DPDF_FONT_FILE=$font" "/DNOTO_LICENSE_FILE=$notoLicense" "/DNOTO_SOURCE_FILE=$notoSource" "/DSTB_LICENSE_FILE=$stbLicense" "/DOUTPUT_DIR=$out" "installer\AutoCADPro.nsi"
           if ($LASTEXITCODE -ne 0) { throw "NSIS installer build failed" }
           $installer = Get-ChildItem -Path installer-artifacts -Filter "AutoCADPro-*-Windows-x64-Setup.exe" | Select-Object -First 1
           if ($null -eq $installer) { throw "Installer was not created" }
+
+          $installRoot = Join-Path $env:RUNNER_TEMP "AutoCADProInstallerSmoke"
+          Remove-Item $installRoot -Recurse -Force -ErrorAction SilentlyContinue
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList @("/S", "/D=$installRoot") -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw "Silent installer smoke failed with exit code $($install.ExitCode)" }
+          foreach ($required in @(
+            (Join-Path $installRoot "AutoCADPro.exe"),
+            (Join-Path $installRoot "assets\NotoSansJP.ttf"),
+            (Join-Path $installRoot "licenses\NotoSansJP\OFL.txt"),
+            (Join-Path $installRoot "licenses\NotoSansJP\SOURCE.md"),
+            (Join-Path $installRoot "licenses\stb\LICENSE"),
+            (Join-Path $installRoot "Uninstall.exe")
+          )) {
+            if (!(Test-Path $required)) { throw "Installed package is missing: $required" }
+          }
+
+          $installedProc = Start-Process -FilePath (Join-Path $installRoot "AutoCADPro.exe") -PassThru
+          try {
+            $deadline = (Get-Date).AddSeconds(15)
+            do {
+              Start-Sleep -Milliseconds 300
+              $installedProc.Refresh()
+            } while ($installedProc.MainWindowHandle -eq 0 -and !$installedProc.HasExited -and (Get-Date) -lt $deadline)
+            if ($installedProc.HasExited -or $installedProc.MainWindowHandle -eq 0) {
+              throw "Installed AutoCADPro.exe did not launch successfully"
+            }
+          }
+          finally {
+            if (!$installedProc.HasExited) { Stop-Process -Id $installedProc.Id -Force }
+          }
+
+          $uninstall = Start-Process -FilePath (Join-Path $installRoot "Uninstall.exe") -ArgumentList "/S" -PassThru -Wait
+          if ($uninstall.ExitCode -ne 0) { throw "Silent uninstall smoke failed with exit code $($uninstall.ExitCode)" }
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v6
