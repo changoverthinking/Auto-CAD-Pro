@@ -126,8 +126,36 @@ function Set-PropertyDialog(
         throw "Could not set property editor value"
     }
 
+    $ok = [GuiPropertyNative]::FindWindowEx(
+        $dialog,
+        [IntPtr]::Zero,
+        "Button",
+        "OK")
+    if ($ok -eq [IntPtr]::Zero) {
+        throw "Property editor did not contain an OK button"
+    }
+
+    # BM_CLICK follows the same button notification path as a real user click.
     [GuiPropertyNative]::SendMessage(
-        $dialog, 0x0111, [IntPtr]1, [IntPtr]::Zero) | Out-Null
+        $ok, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+
+    # The property command that opened this modal dialog resumes only after
+    # EndDialog returns. Wait until the dialog has disappeared so the main
+    # window has time to finish applying the History command before another
+    # command or snapshot is sent.
+    $closeDeadline = (Get-Date).AddSeconds(10)
+    do {
+        Start-Sleep -Milliseconds 50
+        $remaining =
+            [GuiPropertyNative]::FindDialogForProcess([uint32]$proc.Id)
+    } while (
+        $remaining -ne [IntPtr]::Zero -and
+        (Get-Date) -lt $closeDeadline)
+
+    if ($remaining -ne [IntPtr]::Zero) {
+        throw "Property editor dialog did not close after OK"
+    }
+    Start-Sleep -Milliseconds 150
 }
 
 function Command-Property(
