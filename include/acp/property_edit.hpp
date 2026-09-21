@@ -11,6 +11,14 @@ namespace acp::property_edit {
     const EntityProperties& current,
     std::optional<double> line_weight);
 
+[[nodiscard]] std::optional<EntityProperties> color_override(
+    const EntityProperties& current,
+    std::optional<RgbColor> color);
+
+[[nodiscard]] std::optional<EntityProperties> line_type_override(
+    const EntityProperties& current,
+    std::optional<LineType> line_type);
+
 [[nodiscard]] std::optional<Entity> text_content(
     const Entity& current,
     std::string utf8_text);
