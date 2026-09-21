@@ -27,7 +27,7 @@ Current Windows 2D release foundation:
 - versioned portable ZIP + SHA-256 and validated NSIS Windows installer;
 - tag-triggered GitHub release workflow with optional Authenticode signing hooks.
 
-The Windows GUI is now in the verified gate. The remaining explicit 2D export blocker is full Unicode PDF text embedding/subsetting; unsupported Unicode currently fails safely instead of producing corrupted text.
+The Windows GUI is in the verified gate and the 2D release audit is green. PDF now embeds the bundled Noto Sans JP Unicode font with ToUnicode mapping for Japanese/Vietnamese text instead of relying on system fonts.
 
 ## Development gates
 
@@ -67,7 +67,7 @@ The authoritative maturity matrix is maintained in `docs/FEATURE_GATES.md`.
 - layouts and printing
 - recovery/autosave
 - performance/stability hardening
-- embedded/subset Unicode fonts for reliable PDF text
+- embedded Unicode fonts for reliable PDF text
 - Windows installer and signing-ready release pipeline
 
 ### Phase 3 — 3D
@@ -76,9 +76,9 @@ Only starts after the 2D release gate is green. FreeCAD/OpenCascade-derived capa
 ### Phase 4 — Blender interoperability
 Only after the 3D kernel and data model are stable.
 
-## Known export limitation
+## Unicode vector export
 
-SVG is the current Unicode-safe vector export path. The PDF exporter intentionally rejects drawings containing text that cannot be represented by its current built-in PDF font instead of silently replacing UTF-8 characters with `?`. Proper embedded/subset Unicode font support is required before PDF text can be promoted beyond this prototype gate.
+SVG preserves UTF-8 text directly. PDF embeds the pinned Noto Sans JP runtime font as a Type0/CIDFontType2 resource with a ToUnicode map, covering Japanese, Vietnamese and common Latin text without depending on fonts installed on the target machine. Font source/license provenance is recorded under `third_party/noto` and `third_party/stb`.
 
 ## Open-source policy
 
@@ -104,4 +104,4 @@ Tagged builds (`v*`) use `.github/workflows/release.yml` to build release artifa
 
 ## Current 2D release status
 
-The main branch is protected by repeated core/workflow tests, real GUI launch/lifecycle tests, real GUI interaction regression, large-document regression and installer validation. 3D development should not begin until the remaining explicit 2D blocker—Unicode PDF font embedding/subsetting—is resolved or formally deferred.
+The main branch is protected by repeated core/workflow tests, real GUI launch/lifecycle tests, creation/annotation/edit-tool interaction matrices, large-document regression and installer validation. The full 2D function audit has resolved the previously identified Unicode PDF blocker, page-setup persistence gap, layer-history gap, recovery-discard gap and hatch rendering/export inconsistency.
