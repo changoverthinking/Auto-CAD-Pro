@@ -12,6 +12,8 @@ permissions:
 jobs:
   release:
     runs-on: windows-2025
+    env:
+      HAS_SIGNING_CERT: ${{ secrets.WINDOWS_CERT_BASE64 != '' && secrets.WINDOWS_CERT_PASSWORD != '' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -68,7 +70,7 @@ jobs:
           ($hash.Hash.ToLower() + "  " + $installer.Name) | Set-Content -NoNewline -Path ($installer.FullName + ".sha256")
 
       - name: Optional Authenticode signing
-        if: ${{ secrets.WINDOWS_CERT_BASE64 != '' && secrets.WINDOWS_CERT_PASSWORD != '' }}
+        if: env.HAS_SIGNING_CERT == 'true'
         shell: powershell
         env:
           WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
@@ -90,7 +92,7 @@ jobs:
           Remove-Item $certPath -Force
 
       - name: Refresh installer checksum after signing
-        if: ${{ secrets.WINDOWS_CERT_BASE64 != '' && secrets.WINDOWS_CERT_PASSWORD != '' }}
+        if: env.HAS_SIGNING_CERT == 'true'
         shell: powershell
         run: |
           $installer = Get-ChildItem -Path artifacts -Filter "AutoCADPro-*-Windows-x64-Setup.exe" | Select-Object -First 1
