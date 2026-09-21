@@ -74,7 +74,7 @@ bool write_snapshot(
     return true;
 }
 
-std::optional<ProjectData> load_snapshot(
+std::optional<persistence::ProjectData> load_snapshot(
     const std::filesystem::path& path) {
 
     std::ifstream in(path, std::ios::binary);
