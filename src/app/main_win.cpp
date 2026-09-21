@@ -1516,8 +1516,8 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     FillRect(dc, &prop_header, prop_brush);
     DeleteObject(prop_brush);
     RECT prop_title{panel.left + 10, properties_top, panel.right - 8, properties_top + 28};
-    DrawTextW(dc, L"Properties", -1, &prop_title,
-              DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    DrawTextW(dc, L"Properties  (double-click value)", -1, &prop_title,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
     int py = properties_top + 34;
     SetTextColor(dc, RGB(185, 198, 209));
@@ -1543,7 +1543,7 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
             draw_property(L"Layer", value);
             swprintf_s(value, L"%.2f mm",
                        g_app.document.effective_line_weight(*g_app.selected));
-            draw_property(L"Lineweight", value);
+            draw_property(L"Lineweight*", value);
             draw_property(L"Visible", props->visible ? L"Yes" : L"No");
             draw_property(L"Locked",
                           g_app.document.entity_locked(*g_app.selected) ? L"Yes" : L"No");
@@ -1553,26 +1553,49 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
                 const auto& text = std::get<acp::TextEntity>(*entity);
                 draw_property(L"Type", L"Text");
                 swprintf_s(value, L"%.2f", text.height);
-                draw_property(L"Height", value);
+                draw_property(L"Height*", value);
                 swprintf_s(value, L"%.1f deg",
                            text.rotation * 180.0 / std::numbers::pi);
-                draw_property(L"Rotation", value);
+                draw_property(L"Rotation*", value);
+                const std::wstring content = wide_from_utf8(text.text);
+                draw_property(L"Content*", content.c_str());
             } else if (std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
                 const auto& dimension = std::get<acp::LinearDimensionEntity>(*entity);
                 draw_property(L"Type", L"Dimension");
                 swprintf_s(value, L"%.2f", acp::annotation::measurement(dimension));
                 draw_property(L"Measurement", value);
-                draw_property(L"Override",
-                              dimension.text_override.has_value() ? L"Yes" : L"No");
+                if (dimension.text_override.has_value()) {
+                    const std::wstring override_text =
+                        wide_from_utf8(*dimension.text_override);
+                    draw_property(L"Override*", override_text.c_str());
+                } else {
+                    draw_property(L"Override*", L"(measured)");
+                }
             } else if (std::holds_alternative<acp::HatchEntity>(*entity)) {
                 const auto& hatch = std::get<acp::HatchEntity>(*entity);
                 draw_property(L"Type", L"Hatch");
                 draw_property(L"Fill", hatch.solid ? L"Solid" : L"Pattern");
                 swprintf_s(value, L"%.1f deg",
                            hatch.angle * 180.0 / std::numbers::pi);
-                draw_property(L"Angle", value);
+                draw_property(L"Angle*", value);
                 swprintf_s(value, L"%.2f", hatch.spacing);
-                draw_property(L"Spacing", value);
+                draw_property(L"Spacing*", value);
+            } else if (std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
+                const auto& block =
+                    std::get<acp::BlockReferenceEntity>(*entity);
+                draw_property(L"Type", L"BlockRef");
+                const acp::BlockDefinition* definition =
+                    g_app.blocks.find(block.block_id);
+                const std::wstring block_name =
+                    definition != nullptr
+                        ? wide_from_utf8(definition->name)
+                        : L"(missing)";
+                draw_property(L"Block", block_name.c_str());
+                swprintf_s(value, L"%.3f", block.scale);
+                draw_property(L"Scale*", value);
+                swprintf_s(value, L"%.1f deg",
+                           block.rotation * 180.0 / std::numbers::pi);
+                draw_property(L"Rotation*", value);
             }
         }
     } else {
