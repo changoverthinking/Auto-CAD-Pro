@@ -23,6 +23,31 @@ std::optional<EntityProperties> line_weight_override(
     return replacement;
 }
 
+std::optional<EntityProperties> color_override(
+    const EntityProperties& current,
+    std::optional<RgbColor> color) {
+
+    EntityProperties replacement = current;
+    replacement.color_override = color;
+    return replacement;
+}
+
+std::optional<EntityProperties> line_type_override(
+    const EntityProperties& current,
+    std::optional<LineType> line_type) {
+
+    if (line_type.has_value() &&
+        *line_type != LineType::Continuous &&
+        *line_type != LineType::Dashed &&
+        *line_type != LineType::Center) {
+        return std::nullopt;
+    }
+
+    EntityProperties replacement = current;
+    replacement.line_type_override = line_type;
+    return replacement;
+}
+
 std::optional<Entity> text_content(
     const Entity& current,
     std::string utf8_text) {
