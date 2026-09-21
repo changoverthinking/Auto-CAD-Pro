@@ -155,6 +155,10 @@ constexpr int kMenuEditBlockScale = 1036;
 constexpr int kMenuEditBlockRotation = 1037;
 constexpr int kMenuEditLayerName = 1038;
 constexpr int kMenuEditLayerWeight = 1039;
+constexpr int kMenuEditEntityColor = 1040;
+constexpr int kMenuEditEntityLineType = 1041;
+constexpr int kMenuEditLayerColor = 1042;
+constexpr int kMenuEditLayerLineType = 1043;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -579,6 +583,51 @@ const wchar_t* snap_kind_name(acp::snap::Kind kind) {
     return L"";
 }
 
+COLORREF display_color(acp::RgbColor color, bool locked) {
+    if (locked) {
+        const auto blend = [](std::uint8_t component) -> std::uint8_t {
+            return static_cast<std::uint8_t>(
+                (static_cast<unsigned>(component) + 145u * 2u) / 3u);
+        };
+        return RGB(blend(color.r), blend(color.g), blend(color.b));
+    }
+    return RGB(color.r, color.g, color.b);
+}
+
+HPEN create_entity_pen(
+    int width,
+    COLORREF color,
+    acp::LineType line_type) {
+
+    width = std::clamp(width, 1, 8);
+    if (line_type == acp::LineType::Continuous) {
+        return CreatePen(PS_SOLID, width, color);
+    }
+
+    LOGBRUSH brush{};
+    brush.lbStyle = BS_SOLID;
+    brush.lbColor = color;
+
+    const DWORD dashed[] = {12, 8};
+    const DWORD center[] = {18, 6, 3, 6};
+    const DWORD* pattern =
+        line_type == acp::LineType::Center ? center : dashed;
+    const DWORD count =
+        line_type == acp::LineType::Center
+            ? static_cast<DWORD>(std::size(center))
+            : static_cast<DWORD>(std::size(dashed));
+
+    HPEN pen = ExtCreatePen(
+        PS_GEOMETRIC | PS_USERSTYLE | PS_ENDCAP_FLAT | PS_JOIN_ROUND,
+        static_cast<DWORD>(width),
+        &brush,
+        count,
+        pattern);
+    return pen != nullptr
+        ? pen
+        : CreatePen(PS_SOLID, width, color);
+}
+
 void draw_snap_marker(HWND hwnd, HDC dc) {
     if (!g_app.snap_candidate.has_value()) {
         return;
@@ -775,7 +824,11 @@ void draw_dimension(HWND hwnd, HDC dc, const acp::LinearDimensionEntity& entity)
     SetBkMode(dc, old_mode);
 }
 
-void draw_hatch(HWND hwnd, HDC dc, const acp::HatchEntity& entity) {
+void draw_hatch(
+    HWND hwnd,
+    HDC dc,
+    const acp::HatchEntity& entity,
+    COLORREF fill_color) {
     if (!acp::hatch::valid(entity)) {
         return;
     }
@@ -787,7 +840,7 @@ void draw_hatch(HWND hwnd, HDC dc, const acp::HatchEntity& entity) {
     }
 
     if (entity.solid) {
-        HBRUSH brush = CreateSolidBrush(RGB(72, 78, 88));
+        HBRUSH brush = CreateSolidBrush(fill_color);
         if (brush == nullptr) {
             return;
         }
@@ -838,10 +891,13 @@ void draw_document(HWND hwnd, HDC dc) {
             g_app.document.effective_line_weight(id), 0.05, 2.0);
         const int pen_width = std::clamp(
             static_cast<int>(std::lround(weight * 4.0)), 1, 8);
-        const COLORREF entity_color = g_app.document.entity_locked(id)
-            ? RGB(145, 151, 162)
-            : RGB(229, 232, 239);
-        HPEN entity_pen = CreatePen(PS_SOLID, pen_width, entity_color);
+        const COLORREF entity_color = display_color(
+            g_app.document.effective_color(id),
+            g_app.document.entity_locked(id));
+        const acp::LineType line_type =
+            g_app.document.effective_line_type(id);
+        HPEN entity_pen =
+            create_entity_pen(pen_width, entity_color, line_type);
         HGDIOBJ previous_pen = SelectObject(dc, entity_pen);
         SetTextColor(dc, entity_color);
 
@@ -864,7 +920,7 @@ void draw_document(HWND hwnd, HDC dc) {
             } else if constexpr (std::is_same_v<T, acp::LinearDimensionEntity>) {
                 draw_dimension(hwnd, dc, item);
             } else if constexpr (std::is_same_v<T, acp::HatchEntity>) {
-                draw_hatch(hwnd, dc, item);
+                draw_hatch(hwnd, dc, item, entity_color);
             }
         }, *entity);
 
@@ -1221,13 +1277,68 @@ enum class DirectProperty {
     HatchAngle,
     HatchSpacing,
     BlockScale,
-    BlockRotation
+    BlockRotation,
+    Color,
+    LineType
 };
 
 std::wstring format_property_number(double value, int precision = 3) {
     wchar_t buffer[96]{};
     swprintf_s(buffer, L"%.*f", precision, value);
     return buffer;
+}
+
+std::wstring format_rgb(acp::RgbColor color) {
+    wchar_t buffer[16]{};
+    swprintf_s(
+        buffer, L"#%02X%02X%02X",
+        static_cast<unsigned>(color.r),
+        static_cast<unsigned>(color.g),
+        static_cast<unsigned>(color.b));
+    return buffer;
+}
+
+std::optional<acp::RgbColor> parse_rgb(std::wstring_view text) {
+    if (text.size() != 7 || text.front() != L'#') return std::nullopt;
+    auto hex_value = [](wchar_t ch) -> int {
+        if (ch >= L'0' && ch <= L'9') return ch - L'0';
+        if (ch >= L'A' && ch <= L'F') return ch - L'A' + 10;
+        if (ch >= L'a' && ch <= L'f') return ch - L'a' + 10;
+        return -1;
+    };
+    std::array<int, 6> values{};
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        values[i] = hex_value(text[i + 1]);
+        if (values[i] < 0) return std::nullopt;
+    }
+    return acp::RgbColor{
+        static_cast<std::uint8_t>(values[0] * 16 + values[1]),
+        static_cast<std::uint8_t>(values[2] * 16 + values[3]),
+        static_cast<std::uint8_t>(values[4] * 16 + values[5])};
+}
+
+const wchar_t* line_type_name(acp::LineType value) {
+    switch (value) {
+        case acp::LineType::Continuous: return L"Continuous";
+        case acp::LineType::Dashed: return L"Dashed";
+        case acp::LineType::Center: return L"Center";
+    }
+    return L"Continuous";
+}
+
+std::optional<acp::LineType> parse_line_type(std::wstring value) {
+    value.erase(
+        std::remove_if(
+            value.begin(), value.end(),
+            [](wchar_t ch) { return std::iswspace(ch) != 0; }),
+        value.end());
+    if (_wcsicmp(value.c_str(), L"Continuous") == 0)
+        return acp::LineType::Continuous;
+    if (_wcsicmp(value.c_str(), L"Dashed") == 0)
+        return acp::LineType::Dashed;
+    if (_wcsicmp(value.c_str(), L"Center") == 0)
+        return acp::LineType::Center;
+    return std::nullopt;
 }
 
 bool edit_selected_property(HWND hwnd, DirectProperty property) {
@@ -1282,6 +1393,68 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
             return false;
         }
 
+        if (apply_history(
+                std::make_unique<acp::UpdateEntityPropertiesCommand>(
+                    id, *replacement))) {
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return true;
+        }
+        return false;
+    }
+
+    if (property == DirectProperty::Color ||
+        property == DirectProperty::LineType) {
+        const acp::EntityProperties* current =
+            g_app.document.properties(id);
+        if (current == nullptr) return false;
+
+        std::optional<acp::EntityProperties> replacement;
+        if (property == DirectProperty::Color) {
+            const auto entered = prompt_property_value(
+                hwnd, L"Entity Color",
+                L"#RRGGBB (blank = ByLayer):",
+                current->color_override.has_value()
+                    ? format_rgb(*current->color_override) : L"");
+            if (!entered.has_value()) return false;
+            if (entered->empty()) {
+                replacement =
+                    acp::property_edit::color_override(*current, std::nullopt);
+            } else {
+                const auto parsed = parse_rgb(*entered);
+                if (!parsed.has_value()) {
+                    show_invalid_property(
+                        hwnd,
+                        L"Color must use #RRGGBB format, for example #FF0000.");
+                    return false;
+                }
+                replacement =
+                    acp::property_edit::color_override(*current, *parsed);
+            }
+        } else {
+            const auto entered = prompt_property_value(
+                hwnd, L"Entity Linetype",
+                L"Continuous, Dashed or Center (blank = ByLayer):",
+                current->line_type_override.has_value()
+                    ? std::wstring{line_type_name(*current->line_type_override)}
+                    : L"");
+            if (!entered.has_value()) return false;
+            if (entered->empty()) {
+                replacement =
+                    acp::property_edit::line_type_override(*current, std::nullopt);
+            } else {
+                const auto parsed = parse_line_type(*entered);
+                if (!parsed.has_value()) {
+                    show_invalid_property(
+                        hwnd,
+                        L"Linetype must be Continuous, Dashed or Center.");
+                    return false;
+                }
+                replacement =
+                    acp::property_edit::line_type_override(*current, *parsed);
+            }
+        }
+
+        if (!replacement.has_value()) return false;
         if (apply_history(
                 std::make_unique<acp::UpdateEntityPropertiesCommand>(
                     id, *replacement))) {
@@ -1484,7 +1657,9 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
 
 enum class DirectLayerProperty {
     Name,
-    LineWeight
+    LineWeight,
+    Color,
+    LineType
 };
 
 bool edit_active_layer_property(HWND hwnd, DirectLayerProperty property) {
@@ -1526,7 +1701,7 @@ bool edit_active_layer_property(HWND hwnd, DirectLayerProperty property) {
             }
         }
         replacement.name = utf8;
-    } else {
+    } else if (property == DirectLayerProperty::LineWeight) {
         const auto entered = prompt_property_value(
             hwnd,
             L"Layer Line Weight",
@@ -1544,6 +1719,33 @@ bool edit_active_layer_property(HWND hwnd, DirectLayerProperty property) {
             return false;
         }
         replacement.line_weight = *parsed;
+    } else if (property == DirectLayerProperty::Color) {
+        const auto entered = prompt_property_value(
+            hwnd, L"Layer Color", L"#RRGGBB:",
+            format_rgb(current->color));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_rgb(*entered);
+        if (!parsed.has_value()) {
+            show_invalid_property(
+                hwnd,
+                L"Color must use #RRGGBB format, for example #00FFFF.");
+            return false;
+        }
+        replacement.color = *parsed;
+    } else {
+        const auto entered = prompt_property_value(
+            hwnd, L"Layer Linetype",
+            L"Continuous, Dashed or Center:",
+            line_type_name(current->line_type));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_line_type(*entered);
+        if (!parsed.has_value()) {
+            show_invalid_property(
+                hwnd,
+                L"Linetype must be Continuous, Dashed or Center.");
+            return false;
+        }
+        replacement.line_type = *parsed;
     }
 
     if (apply_history(
@@ -1600,13 +1802,31 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
 
         RECT vis_rect{row.left + 2, row.top, row.left + 28, row.bottom};
         RECT lock_rect{row.left + 30, row.top, row.left + 56, row.bottom};
-        RECT name_rect{row.left + 60, row.top, row.right - 4, row.bottom};
+        RECT name_rect{row.left + 60, row.top, row.right - 44, row.bottom};
         DrawTextW(dc, layer->visible ? L"V" : L"-", -1, &vis_rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         DrawTextW(dc, layer->locked ? L"L" : L"-", -1, &lock_rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         DrawTextW(dc, name, -1, &name_rect,
                   DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+        RECT swatch{row.right - 38, row.top + 5,
+                    row.right - 24, row.bottom - 5};
+        HBRUSH swatch_brush = CreateSolidBrush(
+            RGB(layer->color.r, layer->color.g, layer->color.b));
+        FillRect(dc, &swatch, swatch_brush);
+        DeleteObject(swatch_brush);
+        FrameRect(dc, &swatch,
+                  static_cast<HBRUSH>(GetStockObject(GRAY_BRUSH)));
+
+        RECT type_rect{row.right - 22, row.top, row.right - 2, row.bottom};
+        const wchar_t* type_mark =
+            layer->line_type == acp::LineType::Continuous
+                ? L"—"
+                : layer->line_type == acp::LineType::Dashed
+                    ? L"- -" : L"-·-";
+        DrawTextW(dc, type_mark, -1, &type_rect,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         y += 26;
     }
 
@@ -1810,8 +2030,16 @@ bool handle_layer_panel_double_click(HWND hwnd, POINT point) {
                 return true;
             }
             g_app.active_layer = id;
-            (void)edit_active_layer_property(
-                hwnd, DirectLayerProperty::Name);
+            if (point.x >= row.right - 22) {
+                (void)edit_active_layer_property(
+                    hwnd, DirectLayerProperty::LineType);
+            } else if (point.x >= row.right - 40) {
+                (void)edit_active_layer_property(
+                    hwnd, DirectLayerProperty::Color);
+            } else {
+                (void)edit_active_layer_property(
+                    hwnd, DirectLayerProperty::Name);
+            }
             return true;
         }
         y += 26;
