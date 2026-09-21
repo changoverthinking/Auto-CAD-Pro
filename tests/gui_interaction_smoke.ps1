@@ -224,8 +224,8 @@ try {
     }
 
     Send-Key $hwnd 0x43 # C
-    Click-Client $hwnd 820 260
-    Click-Client $hwnd 840 260
+    Click-Client $hwnd 600 300
+    Click-Client $hwnd 625 300
     Write-Snapshot $hwnd 5 $afterUndoDraw
     $afterLayerUndoDraw = Get-Content -Raw -Path $afterUndoDraw
     if (($afterLayerUndoDraw | Select-String -Pattern '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+CIRCLE\s+' -AllMatches).Matches.Count -lt 2) {
