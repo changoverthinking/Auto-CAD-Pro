@@ -16,12 +16,16 @@
 #include "acp/snap.hpp"
 #include "acp/svg.hpp"
 #include "acp/transform.hpp"
+#include "resource.h"
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cmath>
 #include <cstddef>
 #include <cwchar>
+#include <cwctype>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -139,6 +143,15 @@ constexpr int kMenuToggleOrientation = 1025;
 constexpr int kMenuCyclePrintScale = 1026;
 constexpr int kMenuCreateBlock = 1027;
 constexpr int kMenuInsertBlock = 1028;
+constexpr int kMenuEditLineWeight = 1029;
+constexpr int kMenuEditTextContent = 1030;
+constexpr int kMenuEditTextHeight = 1031;
+constexpr int kMenuEditTextRotation = 1032;
+constexpr int kMenuEditDimensionOverride = 1033;
+constexpr int kMenuEditHatchAngle = 1034;
+constexpr int kMenuEditHatchSpacing = 1035;
+constexpr int kMenuEditBlockScale = 1036;
+constexpr int kMenuEditBlockRotation = 1037;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -378,6 +391,140 @@ std::string utf8_from_wide(const std::wstring& text) {
         text.data(), static_cast<int>(text.size()),
         result.data(), length, nullptr, nullptr);
     return written == length ? result : std::string{};
+}
+
+std::wstring wide_from_utf8(const std::string& text) {
+    if (text.empty()) {
+        return {};
+    }
+    const int length = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS,
+        text.data(), static_cast<int>(text.size()),
+        nullptr, 0);
+    if (length <= 0) {
+        return {};
+    }
+    std::wstring result(static_cast<std::size_t>(length), L'\0');
+    const int written = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS,
+        text.data(), static_cast<int>(text.size()),
+        result.data(), length);
+    return written == length ? result : std::wstring{};
+}
+
+std::optional<double> parse_finite_double(const std::wstring& text) {
+    const wchar_t* begin = text.c_str();
+    wchar_t* end = nullptr;
+    errno = 0;
+    const double value = std::wcstod(begin, &end);
+    if (begin == end || errno == ERANGE || !std::isfinite(value)) {
+        return std::nullopt;
+    }
+    while (end != nullptr && *end != L'\0' &&
+           std::iswspace(static_cast<wint_t>(*end))) {
+        ++end;
+    }
+    if (end == nullptr || *end != L'\0') {
+        return std::nullopt;
+    }
+    return value;
+}
+
+struct PropertyInputDialogData {
+    std::wstring title;
+    std::wstring label;
+    std::wstring value;
+    std::optional<std::wstring> result;
+};
+
+INT_PTR CALLBACK property_input_dialog_proc(
+    HWND dialog,
+    UINT message,
+    WPARAM w_param,
+    LPARAM l_param) {
+
+    auto* data = reinterpret_cast<PropertyInputDialogData*>(
+        GetWindowLongPtrW(dialog, GWLP_USERDATA));
+
+    if (message == WM_INITDIALOG) {
+        data = reinterpret_cast<PropertyInputDialogData*>(l_param);
+        SetWindowLongPtrW(
+            dialog, GWLP_USERDATA,
+            reinterpret_cast<LONG_PTR>(data));
+        if (data == nullptr) {
+            return FALSE;
+        }
+        SetWindowTextW(dialog, data->title.c_str());
+        SetDlgItemTextW(
+            dialog, IDC_PROPERTY_LABEL, data->label.c_str());
+        SetDlgItemTextW(
+            dialog, IDC_PROPERTY_EDIT, data->value.c_str());
+        SendDlgItemMessageW(
+            dialog, IDC_PROPERTY_EDIT, EM_SETSEL, 0, -1);
+        SetFocus(GetDlgItem(dialog, IDC_PROPERTY_EDIT));
+        return FALSE;
+    }
+
+    if (message == WM_COMMAND && data != nullptr) {
+        if (LOWORD(w_param) == IDOK) {
+            const int length =
+                GetWindowTextLengthW(
+                    GetDlgItem(dialog, IDC_PROPERTY_EDIT));
+            std::wstring value(
+                static_cast<std::size_t>(std::max(0, length)) + 1u,
+                L'\0');
+            if (length > 0) {
+                GetDlgItemTextW(
+                    dialog,
+                    IDC_PROPERTY_EDIT,
+                    value.data(),
+                    length + 1);
+            }
+            value.resize(static_cast<std::size_t>(std::max(0, length)));
+            data->result = std::move(value);
+            EndDialog(dialog, IDOK);
+            return TRUE;
+        }
+        if (LOWORD(w_param) == IDCANCEL) {
+            EndDialog(dialog, IDCANCEL);
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+std::optional<std::wstring> prompt_property_value(
+    HWND owner,
+    std::wstring title,
+    std::wstring label,
+    std::wstring initial) {
+
+    PropertyInputDialogData data{
+        std::move(title),
+        std::move(label),
+        std::move(initial),
+        std::nullopt
+    };
+
+    const INT_PTR result = DialogBoxParamW(
+        GetModuleHandleW(nullptr),
+        MAKEINTRESOURCEW(IDD_PROPERTY_INPUT),
+        owner,
+        property_input_dialog_proc,
+        reinterpret_cast<LPARAM>(&data));
+    if (result != IDOK) {
+        return std::nullopt;
+    }
+    return data.result;
+}
+
+void show_invalid_property(HWND hwnd, const wchar_t* message) {
+    MessageBoxW(
+        hwnd,
+        message,
+        L"Auto CAD Pro Properties",
+        MB_OK | MB_ICONWARNING);
 }
 
 void erase_last_utf16_codepoint(std::wstring& text) {
@@ -1062,6 +1209,254 @@ bool handle_left_tool_rail_click(HWND hwnd, POINT point) {
 
 
 
+enum class DirectProperty {
+    LineWeight,
+    TextContent,
+    TextHeight,
+    TextRotation,
+    DimensionOverride,
+    HatchAngle,
+    HatchSpacing,
+    BlockScale,
+    BlockRotation
+};
+
+std::wstring format_property_number(double value, int precision = 3) {
+    wchar_t buffer[96]{};
+    swprintf_s(buffer, L"%.*f", precision, value);
+    return buffer;
+}
+
+bool edit_selected_property(HWND hwnd, DirectProperty property) {
+    if (!selected_editable() || !g_app.selected.has_value()) {
+        MessageBeep(MB_ICONWARNING);
+        return false;
+    }
+
+    const acp::EntityId id = *g_app.selected;
+    const acp::Entity* entity = g_app.document.find(id);
+    if (entity == nullptr) {
+        return false;
+    }
+
+    if (property == DirectProperty::LineWeight) {
+        const acp::EntityProperties* current =
+            g_app.document.properties(id);
+        if (current == nullptr) {
+            return false;
+        }
+
+        const std::wstring initial =
+            current->line_weight_override.has_value()
+                ? format_property_number(*current->line_weight_override, 3)
+                : L"";
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Line Weight",
+            L"Line weight in mm (blank = ByLayer):",
+            initial);
+        if (!entered.has_value()) {
+            return false;
+        }
+
+        acp::EntityProperties replacement = *current;
+        if (entered->empty()) {
+            replacement.line_weight_override.reset();
+        } else {
+            const auto parsed = parse_finite_double(*entered);
+            if (!parsed.has_value() || *parsed < 0.0) {
+                show_invalid_property(
+                    hwnd,
+                    L"Line weight must be a finite number greater than or equal to 0.");
+                return false;
+            }
+            replacement.line_weight_override = *parsed;
+        }
+
+        if (apply_history(
+                std::make_unique<acp::UpdateEntityPropertiesCommand>(
+                    id, replacement))) {
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return true;
+        }
+        return false;
+    }
+
+    acp::Entity replacement = *entity;
+
+    if (property == DirectProperty::TextContent) {
+        if (!std::holds_alternative<acp::TextEntity>(replacement)) {
+            return false;
+        }
+        auto& text = std::get<acp::TextEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Text Content",
+            L"Text:",
+            wide_from_utf8(text.text));
+        if (!entered.has_value()) {
+            return false;
+        }
+        const std::string utf8 = utf8_from_wide(*entered);
+        if (utf8.empty()) {
+            show_invalid_property(hwnd, L"Text content cannot be empty.");
+            return false;
+        }
+        text.text = utf8;
+        if (!acp::annotation::valid_text(text)) {
+            show_invalid_property(hwnd, L"The edited text entity would be invalid.");
+            return false;
+        }
+    } else if (property == DirectProperty::TextHeight) {
+        if (!std::holds_alternative<acp::TextEntity>(replacement)) {
+            return false;
+        }
+        auto& text = std::get<acp::TextEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Text Height",
+            L"Height:",
+            format_property_number(text.height));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value() || *parsed <= acp::geo::kEpsilon) {
+            show_invalid_property(hwnd, L"Text height must be greater than 0.");
+            return false;
+        }
+        text.height = *parsed;
+    } else if (property == DirectProperty::TextRotation) {
+        if (!std::holds_alternative<acp::TextEntity>(replacement)) {
+            return false;
+        }
+        auto& text = std::get<acp::TextEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Text Rotation",
+            L"Rotation in degrees:",
+            format_property_number(
+                text.rotation * 180.0 / std::numbers::pi));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value()) {
+            show_invalid_property(hwnd, L"Rotation must be a finite number.");
+            return false;
+        }
+        text.rotation = *parsed * std::numbers::pi / 180.0;
+    } else if (property == DirectProperty::DimensionOverride) {
+        if (!std::holds_alternative<acp::LinearDimensionEntity>(replacement)) {
+            return false;
+        }
+        auto& dimension =
+            std::get<acp::LinearDimensionEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Dimension Text Override",
+            L"Override text (blank = measured value):",
+            dimension.text_override.has_value()
+                ? wide_from_utf8(*dimension.text_override)
+                : L"");
+        if (!entered.has_value()) return false;
+        if (entered->empty()) {
+            dimension.text_override.reset();
+        } else {
+            const std::string utf8 = utf8_from_wide(*entered);
+            if (utf8.empty()) {
+                show_invalid_property(hwnd, L"Dimension override is not valid UTF-8 text.");
+                return false;
+            }
+            dimension.text_override = utf8;
+        }
+        if (!acp::annotation::valid_linear_dimension(dimension)) {
+            show_invalid_property(hwnd, L"The edited dimension would be invalid.");
+            return false;
+        }
+    } else if (property == DirectProperty::HatchAngle) {
+        if (!std::holds_alternative<acp::HatchEntity>(replacement)) {
+            return false;
+        }
+        auto& hatch = std::get<acp::HatchEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Hatch Angle",
+            L"Angle in degrees:",
+            format_property_number(
+                hatch.angle * 180.0 / std::numbers::pi));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value()) {
+            show_invalid_property(hwnd, L"Hatch angle must be a finite number.");
+            return false;
+        }
+        hatch.angle = *parsed * std::numbers::pi / 180.0;
+    } else if (property == DirectProperty::HatchSpacing) {
+        if (!std::holds_alternative<acp::HatchEntity>(replacement)) {
+            return false;
+        }
+        auto& hatch = std::get<acp::HatchEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Hatch Spacing",
+            L"Spacing:",
+            format_property_number(hatch.spacing));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value() || *parsed <= acp::geo::kEpsilon) {
+            show_invalid_property(hwnd, L"Hatch spacing must be greater than 0.");
+            return false;
+        }
+        hatch.spacing = *parsed;
+        if (!acp::hatch::valid(hatch)) {
+            show_invalid_property(hwnd, L"The edited hatch would be invalid.");
+            return false;
+        }
+    } else if (property == DirectProperty::BlockScale) {
+        if (!std::holds_alternative<acp::BlockReferenceEntity>(replacement)) {
+            return false;
+        }
+        auto& block = std::get<acp::BlockReferenceEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Block Scale",
+            L"Uniform scale:",
+            format_property_number(block.scale));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value() || *parsed <= acp::geo::kEpsilon) {
+            show_invalid_property(hwnd, L"Block scale must be greater than 0.");
+            return false;
+        }
+        block.scale = *parsed;
+    } else if (property == DirectProperty::BlockRotation) {
+        if (!std::holds_alternative<acp::BlockReferenceEntity>(replacement)) {
+            return false;
+        }
+        auto& block = std::get<acp::BlockReferenceEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Block Rotation",
+            L"Rotation in degrees:",
+            format_property_number(
+                block.rotation * 180.0 / std::numbers::pi));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value()) {
+            show_invalid_property(hwnd, L"Block rotation must be a finite number.");
+            return false;
+        }
+        block.rotation = *parsed * std::numbers::pi / 180.0;
+    } else {
+        return false;
+    }
+
+    if (apply_history(
+            std::make_unique<acp::UpdateEntityCommand>(
+                id, replacement))) {
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return true;
+    }
+    return false;
+}
+
 void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     const int top = toolbar_height(client);
     const int width = layer_panel_width(client);
@@ -1123,8 +1518,8 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     FillRect(dc, &prop_header, prop_brush);
     DeleteObject(prop_brush);
     RECT prop_title{panel.left + 10, properties_top, panel.right - 8, properties_top + 28};
-    DrawTextW(dc, L"Properties", -1, &prop_title,
-              DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    DrawTextW(dc, L"Properties  (double-click value)", -1, &prop_title,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
     int py = properties_top + 34;
     SetTextColor(dc, RGB(185, 198, 209));
@@ -1150,7 +1545,7 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
             draw_property(L"Layer", value);
             swprintf_s(value, L"%.2f mm",
                        g_app.document.effective_line_weight(*g_app.selected));
-            draw_property(L"Lineweight", value);
+            draw_property(L"Lineweight*", value);
             draw_property(L"Visible", props->visible ? L"Yes" : L"No");
             draw_property(L"Locked",
                           g_app.document.entity_locked(*g_app.selected) ? L"Yes" : L"No");
@@ -1160,26 +1555,49 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
                 const auto& text = std::get<acp::TextEntity>(*entity);
                 draw_property(L"Type", L"Text");
                 swprintf_s(value, L"%.2f", text.height);
-                draw_property(L"Height", value);
+                draw_property(L"Height*", value);
                 swprintf_s(value, L"%.1f deg",
                            text.rotation * 180.0 / std::numbers::pi);
-                draw_property(L"Rotation", value);
+                draw_property(L"Rotation*", value);
+                const std::wstring content = wide_from_utf8(text.text);
+                draw_property(L"Content*", content.c_str());
             } else if (std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
                 const auto& dimension = std::get<acp::LinearDimensionEntity>(*entity);
                 draw_property(L"Type", L"Dimension");
                 swprintf_s(value, L"%.2f", acp::annotation::measurement(dimension));
                 draw_property(L"Measurement", value);
-                draw_property(L"Override",
-                              dimension.text_override.has_value() ? L"Yes" : L"No");
+                if (dimension.text_override.has_value()) {
+                    const std::wstring override_text =
+                        wide_from_utf8(*dimension.text_override);
+                    draw_property(L"Override*", override_text.c_str());
+                } else {
+                    draw_property(L"Override*", L"(measured)");
+                }
             } else if (std::holds_alternative<acp::HatchEntity>(*entity)) {
                 const auto& hatch = std::get<acp::HatchEntity>(*entity);
                 draw_property(L"Type", L"Hatch");
                 draw_property(L"Fill", hatch.solid ? L"Solid" : L"Pattern");
                 swprintf_s(value, L"%.1f deg",
                            hatch.angle * 180.0 / std::numbers::pi);
-                draw_property(L"Angle", value);
+                draw_property(L"Angle*", value);
                 swprintf_s(value, L"%.2f", hatch.spacing);
-                draw_property(L"Spacing", value);
+                draw_property(L"Spacing*", value);
+            } else if (std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
+                const auto& block =
+                    std::get<acp::BlockReferenceEntity>(*entity);
+                draw_property(L"Type", L"BlockRef");
+                const acp::BlockDefinition* definition =
+                    g_app.blocks.find(block.block_id);
+                const std::wstring block_name =
+                    definition != nullptr
+                        ? wide_from_utf8(definition->name)
+                        : L"(missing)";
+                draw_property(L"Block", block_name.c_str());
+                swprintf_s(value, L"%.3f", block.scale);
+                draw_property(L"Scale*", value);
+                swprintf_s(value, L"%.1f deg",
+                           block.rotation * 180.0 / std::numbers::pi);
+                draw_property(L"Rotation*", value);
             }
         }
     } else {
@@ -1207,6 +1625,65 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     (void)hwnd;
 }
 
+
+bool handle_property_panel_double_click(HWND hwnd, POINT point) {
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    const int top = toolbar_height(client);
+    const int panel_width = layer_panel_width(client);
+    const int panel_left = client.right - panel_width;
+    const int panel_bottom = client.bottom - kStatusHeight;
+    if (point.x < panel_left + 104 ||
+        point.x >= client.right - 8 ||
+        point.y < top ||
+        point.y >= panel_bottom ||
+        !g_app.selected.has_value()) {
+        return false;
+    }
+
+    int layer_y = top + 32;
+    for (const acp::LayerId id : g_app.document.layer_ids()) {
+        if (g_app.document.layer(id) != nullptr) {
+            layer_y += 26;
+        }
+    }
+    const int properties_top =
+        std::max<LONG>(
+            layer_y + 10,
+            top + (panel_bottom - top) / 2);
+    const int values_top = properties_top + 34;
+    if (point.y < values_top) {
+        return false;
+    }
+
+    const int row = (point.y - values_top) / 22;
+    if (row == 2) {
+        return edit_selected_property(
+            hwnd, DirectProperty::LineWeight);
+    }
+
+    const acp::Entity* entity =
+        g_app.document.find(*g_app.selected);
+    if (entity == nullptr) {
+        return false;
+    }
+
+    if (std::holds_alternative<acp::TextEntity>(*entity)) {
+        if (row == 6) return edit_selected_property(hwnd, DirectProperty::TextHeight);
+        if (row == 7) return edit_selected_property(hwnd, DirectProperty::TextRotation);
+        if (row == 8) return edit_selected_property(hwnd, DirectProperty::TextContent);
+    } else if (std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
+        if (row == 7) return edit_selected_property(hwnd, DirectProperty::DimensionOverride);
+    } else if (std::holds_alternative<acp::HatchEntity>(*entity)) {
+        if (row == 7) return edit_selected_property(hwnd, DirectProperty::HatchAngle);
+        if (row == 8) return edit_selected_property(hwnd, DirectProperty::HatchSpacing);
+    } else if (std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
+        if (row == 7) return edit_selected_property(hwnd, DirectProperty::BlockScale);
+        if (row == 8) return edit_selected_property(hwnd, DirectProperty::BlockRotation);
+    }
+
+    return true;
+}
 
 bool handle_layer_panel_click(HWND hwnd, POINT point) {
     RECT client{};
@@ -2304,6 +2781,33 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     g_app.snap_candidate.reset();
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
+                case kMenuEditLineWeight:
+                    (void)edit_selected_property(hwnd, DirectProperty::LineWeight);
+                    return 0;
+                case kMenuEditTextContent:
+                    (void)edit_selected_property(hwnd, DirectProperty::TextContent);
+                    return 0;
+                case kMenuEditTextHeight:
+                    (void)edit_selected_property(hwnd, DirectProperty::TextHeight);
+                    return 0;
+                case kMenuEditTextRotation:
+                    (void)edit_selected_property(hwnd, DirectProperty::TextRotation);
+                    return 0;
+                case kMenuEditDimensionOverride:
+                    (void)edit_selected_property(hwnd, DirectProperty::DimensionOverride);
+                    return 0;
+                case kMenuEditHatchAngle:
+                    (void)edit_selected_property(hwnd, DirectProperty::HatchAngle);
+                    return 0;
+                case kMenuEditHatchSpacing:
+                    (void)edit_selected_property(hwnd, DirectProperty::HatchSpacing);
+                    return 0;
+                case kMenuEditBlockScale:
+                    (void)edit_selected_property(hwnd, DirectProperty::BlockScale);
+                    return 0;
+                case kMenuEditBlockRotation:
+                    (void)edit_selected_property(hwnd, DirectProperty::BlockRotation);
+                    return 0;
                 case kMenuCycleEntityWeight:
                     if (selected_editable()) {
                         if (const acp::EntityProperties* props =
@@ -2631,6 +3135,14 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             }
             break;
 
+        case WM_LBUTTONDBLCLK: {
+            const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
+            if (handle_property_panel_double_click(hwnd, p)) {
+                return 0;
+            }
+            break;
+        }
+
         case WM_LBUTTONDOWN: {
             const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
             handle_left_click(hwnd, p);
@@ -2805,6 +3317,16 @@ HMENU create_app_menu() {
     AppendMenuW(layout_menu, MF_STRING, kMenuCyclePrintScale, L"Cycle Print &Scale");
     AppendMenuW(entity, MF_STRING, kMenuToggleEntityVisible, L"Toggle &Visibility");
     AppendMenuW(entity, MF_STRING, kMenuCycleEntityWeight, L"Cycle Line &Weight");
+    AppendMenuW(entity, MF_STRING, kMenuEditLineWeight, L"Edit Line Weight...");
+    AppendMenuW(entity, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(entity, MF_STRING, kMenuEditTextContent, L"Text: Edit Content...");
+    AppendMenuW(entity, MF_STRING, kMenuEditTextHeight, L"Text: Edit Height...");
+    AppendMenuW(entity, MF_STRING, kMenuEditTextRotation, L"Text: Edit Rotation...");
+    AppendMenuW(entity, MF_STRING, kMenuEditDimensionOverride, L"Dimension: Edit Override...");
+    AppendMenuW(entity, MF_STRING, kMenuEditHatchAngle, L"Hatch: Edit Angle...");
+    AppendMenuW(entity, MF_STRING, kMenuEditHatchSpacing, L"Hatch: Edit Spacing...");
+    AppendMenuW(entity, MF_STRING, kMenuEditBlockScale, L"Block: Edit Scale...");
+    AppendMenuW(entity, MF_STRING, kMenuEditBlockRotation, L"Block: Edit Rotation...");
     AppendMenuW(entity, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(entity, MF_STRING, kMenuTextCycleHeight, L"Text: Cycle &Height");
     AppendMenuW(entity, MF_STRING, kMenuTextRotate15, L"Text: Rotate +15 deg");
@@ -2827,7 +3349,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_command) {
 
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wc.lpfnWndProc = window_proc;
     wc.hInstance = instance;
     wc.hCursor = LoadCursorW(nullptr, IDC_CROSS);
