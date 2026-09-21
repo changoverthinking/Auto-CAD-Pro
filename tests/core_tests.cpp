@@ -1258,9 +1258,14 @@ int main() {
     std::filesystem::remove_all(atomicSaveRoot, atomicSaveEc);
 
     Document unicodePdfDoc;
-    unicodePdfDoc.insert(TextEntity{{0, 0}, "日本語 Tiếng Việt: Đường kính", 2.5, 0.0});
-    unicodePdfDoc.insert(LinearDimensionEntity{
-        {0, 0}, {100, 0}, {0, -10}, std::string{"寸法 100"}});
+    expect(
+        unicodePdfDoc.insert(
+            TextEntity{{0, 0}, "日本語 Tiếng Việt: Đường kính", 2.5, 0.0}) != 0,
+        "unicode PDF test inserts text entity");
+    expect(
+        unicodePdfDoc.insert(LinearDimensionEntity{
+            {0, 0}, {100, 0}, {0, -10}, std::string{"寸法 100"}}) != 0,
+        "unicode PDF test inserts dimension entity");
     expect(!pdf::export_document(unicodePdfDoc).has_value(),
            "pdf still rejects Unicode when no bundled font is supplied");
 
