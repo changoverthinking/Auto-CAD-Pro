@@ -32,9 +32,8 @@ function Click-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
     [GuiTestNative]::SendMessage($hwnd, 0x0201, [IntPtr]1, [IntPtr]$packed) | Out-Null
 }
 
-function Write-Snapshot([IntPtr]$hwnd, [string]$path) {
-    $env:ACP_GUI_TEST_SNAPSHOT = $path
-    $result = [GuiTestNative]::SendMessage($hwnd, 0x8000 + 42, [IntPtr]::Zero, [IntPtr]::Zero)
+function Write-Snapshot([IntPtr]$hwnd, [int]$id, [string]$path) {
+    $result = [GuiTestNative]::SendMessage($hwnd, 0x8000 + 42, [IntPtr]$id, [IntPtr]::Zero)
     if ($result.ToInt64() -ne 1) {
         throw "GUI snapshot hook failed for $path"
     }
@@ -44,9 +43,10 @@ function Write-Snapshot([IntPtr]$hwnd, [string]$path) {
 }
 
 New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-$beforeDelete = Join-Path $PWD "artifacts\gui-interaction-before-delete.acp2d"
-$afterDelete = Join-Path $PWD "artifacts\gui-interaction-after-delete.acp2d"
+$beforeDelete = Join-Path $PWD "artifacts\gui-interaction-1.acp2d"
+$afterDelete = Join-Path $PWD "artifacts\gui-interaction-2.acp2d"
 Remove-Item $beforeDelete, $afterDelete -ErrorAction SilentlyContinue
+$env:ACP_GUI_TEST_SNAPSHOT_DIR = (Join-Path $PWD "artifacts")
 
 $proc = Start-Process -FilePath $Exe -PassThru
 try {
@@ -90,7 +90,7 @@ try {
     Click-Client $hwnd 360 430
     Click-Client $hwnd 520 540
 
-    Write-Snapshot $hwnd $beforeDelete
+    Write-Snapshot $hwnd 1 $beforeDelete
     $before = Get-Content -Raw -Path $beforeDelete
 
     if ($before -notmatch '(?m)^E\s+\d+\s+\d+\s+\d+\s+1\s+0\s+0\.25\s+LINE\s+') {
@@ -108,7 +108,7 @@ try {
     Click-Client $hwnd 410 260
     Send-Key $hwnd 0x2E
 
-    Write-Snapshot $hwnd $afterDelete
+    Write-Snapshot $hwnd 2 $afterDelete
     $after = Get-Content -Raw -Path $afterDelete
 
     if ($after -match '(?m)^E\s+\d+\s+\d+\s+\d+\s+1\s+0\s+0\.25\s+LINE\s+') {
@@ -127,5 +127,5 @@ finally {
     if (!$proc.HasExited) {
         Stop-Process -Id $proc.Id -Force
     }
-    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT -ErrorAction SilentlyContinue
+    Remove-Item Env:ACP_GUI_TEST_SNAPSHOT_DIR -ErrorAction SilentlyContinue
 }
