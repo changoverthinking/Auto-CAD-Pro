@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -1126,6 +1127,95 @@ int main() {
     }
     expect(!pdf::export_document(Document{}).has_value(),
            "pdf rejects empty drawing");
+
+    std::error_code atomicSaveEc;
+    const auto atomicSaveRoot =
+        std::filesystem::temp_directory_path(atomicSaveEc) /
+        "autocadpro-atomic-project-save-test";
+    expect(!atomicSaveEc, "atomic project save temp directory available");
+    std::filesystem::remove_all(atomicSaveRoot, atomicSaveEc);
+    atomicSaveEc.clear();
+    std::filesystem::create_directories(atomicSaveRoot, atomicSaveEc);
+    expect(!atomicSaveEc, "atomic project save test directory created");
+
+    const auto atomicSavePath = atomicSaveRoot / "drawing.acp";
+    Document atomicSaveDoc;
+    BlockLibrary atomicSaveBlocks;
+    (void)atomicSaveDoc.insert(LineEntity{{{1, 2}, {30, 40}}});
+
+    persistence::ProjectSettings atomicSaveSettings;
+    atomicSaveSettings.page_setup.paper = layout::PaperSize::A3;
+    atomicSaveSettings.print_scale_denominator = 100.0;
+
+    expect(persistence::save_project_atomic(
+               atomicSavePath,
+               atomicSaveDoc,
+               atomicSaveBlocks,
+               atomicSaveSettings),
+           "atomic project save creates validated file");
+    expect(std::filesystem::exists(atomicSavePath),
+           "atomic project save destination exists");
+
+    {
+        std::ifstream saved(atomicSavePath, std::ios::binary);
+        const std::string bytes{
+            std::istreambuf_iterator<char>(saved),
+            std::istreambuf_iterator<char>()};
+        const auto loaded = persistence::deserialize_project(bytes);
+        expect(loaded.has_value() &&
+               loaded->document.size() == 1 &&
+               loaded->settings.print_scale_denominator.has_value() &&
+               geo::nearly_equal(
+                   *loaded->settings.print_scale_denominator, 100.0),
+               "atomic project save roundtrip validates");
+    }
+
+    Document atomicReplacementDoc;
+    (void)atomicReplacementDoc.insert(
+        CircleEntity{{{100, 100}, 25.0}});
+    expect(persistence::save_project_atomic(
+               atomicSavePath,
+               atomicReplacementDoc,
+               atomicSaveBlocks,
+               atomicSaveSettings),
+           "atomic project save replaces existing file");
+
+    std::string beforeFailedSave;
+    {
+        std::ifstream saved(atomicSavePath, std::ios::binary);
+        beforeFailedSave.assign(
+            std::istreambuf_iterator<char>(saved),
+            std::istreambuf_iterator<char>());
+    }
+
+    const std::filesystem::path blockedTemp{
+        atomicSavePath.wstring() + L".tmp"};
+    std::filesystem::remove_all(blockedTemp, atomicSaveEc);
+    atomicSaveEc.clear();
+    std::filesystem::create_directory(blockedTemp, atomicSaveEc);
+    expect(!atomicSaveEc, "atomic save failure fixture created");
+
+    Document failedAtomicDoc;
+    (void)failedAtomicDoc.insert(
+        TextEntity{{0, 0}, "MUST_NOT_REPLACE", 2.5, 0.0});
+    expect(!persistence::save_project_atomic(
+                atomicSavePath,
+                failedAtomicDoc,
+                atomicSaveBlocks,
+                atomicSaveSettings),
+           "atomic project save reports temp-write failure");
+
+    {
+        std::ifstream saved(atomicSavePath, std::ios::binary);
+        const std::string afterFailedSave{
+            std::istreambuf_iterator<char>(saved),
+            std::istreambuf_iterator<char>()};
+        expect(afterFailedSave == beforeFailedSave &&
+               afterFailedSave.find("MUST_NOT_REPLACE") == std::string::npos,
+               "failed atomic save preserves previous project file");
+    }
+
+    std::filesystem::remove_all(atomicSaveRoot, atomicSaveEc);
 
     Document unicodePdfDoc;
     unicodePdfDoc.insert(TextEntity{{0, 0}, "日本語 Tiếng Việt: Đường kính", 2.5, 0.0});
