@@ -24,6 +24,38 @@
 namespace acp::pdf {
 namespace {
 
+RgbColor paper_color(RgbColor color) noexcept {
+    if (color.r >= 245 && color.g >= 245 && color.b >= 245) {
+        return {0, 0, 0};
+    }
+    return color;
+}
+
+void write_pdf_graphics_style(
+    std::ostream& out,
+    RgbColor color,
+    LineType line_type) {
+
+    color = paper_color(color);
+    const double r = static_cast<double>(color.r) / 255.0;
+    const double g = static_cast<double>(color.g) / 255.0;
+    const double b = static_cast<double>(color.b) / 255.0;
+    out << r << ' ' << g << ' ' << b << " RG "
+        << r << ' ' << g << ' ' << b << " rg\n";
+
+    switch (line_type) {
+        case LineType::Continuous:
+            out << "[] 0 d\n";
+            break;
+        case LineType::Dashed:
+            out << "[8 5] 0 d\n";
+            break;
+        case LineType::Center:
+            out << "[14 5 3 5] 0 d\n";
+            break;
+    }
+}
+
 constexpr double kPointsPerMm = 72.0 / 25.4;
 
 bool ascii_pdf_text_supported(std::string_view text) noexcept {
@@ -585,6 +617,10 @@ std::optional<std::string> export_document(
         const double width_points = std::clamp(
             document.effective_line_weight(id), 0.05, 2.0) * kPointsPerMm;
         content << width_points << " w\n";
+        write_pdf_graphics_style(
+            content,
+            document.effective_color(id),
+            document.effective_line_type(id));
         if (!entity(content, tx, *value, blocks,
                     font.has_value() ? &*font : nullptr)) {
             return std::nullopt;
