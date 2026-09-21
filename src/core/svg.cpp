@@ -17,6 +17,33 @@ namespace acp::svg {
 
 namespace {
 
+RgbColor paper_color(RgbColor color) noexcept {
+    if (color.r >= 245 && color.g >= 245 && color.b >= 245) {
+        return {0, 0, 0};
+    }
+    return color;
+}
+
+std::string color_hex(RgbColor color) {
+    color = paper_color(color);
+    std::ostringstream out;
+    out << '#'
+        << std::hex << std::uppercase << std::setfill('0')
+        << std::setw(2) << static_cast<int>(color.r)
+        << std::setw(2) << static_cast<int>(color.g)
+        << std::setw(2) << static_cast<int>(color.b);
+    return out.str();
+}
+
+const char* dash_array(LineType line_type) noexcept {
+    switch (line_type) {
+        case LineType::Dashed: return "12 8";
+        case LineType::Center: return "18 6 3 6";
+        case LineType::Continuous: return nullptr;
+    }
+    return nullptr;
+}
+
 std::string xml_escape(std::string_view text) {
     std::string result;
     result.reserve(text.size());
@@ -272,7 +299,15 @@ std::optional<std::string> export_document(
         }
         const double stroke_width = std::clamp(
             document.effective_line_weight(id), 0.05, 2.0);
+        const RgbColor color = document.effective_color(id);
+        const LineType line_type = document.effective_line_type(id);
+        out << "<g color=\"" << color_hex(color) << "\"";
+        if (const char* dash = dash_array(line_type)) {
+            out << " stroke-dasharray=\"" << dash << "\"";
+        }
+        out << ">\n";
         write_entity(out, *entity, blocks, stroke_width);
+        out << "</g>\n";
     }
 
     out << "</svg>\n";
