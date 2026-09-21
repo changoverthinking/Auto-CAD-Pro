@@ -68,4 +68,8 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_edit_tools_workflow_tests tests/edit_tools_workflow_tests.cpp)
     target_link_libraries(acp_edit_tools_workflow_tests PRIVATE acp_core)
     add_test(NAME acp_edit_tools_workflow_tests COMMAND acp_edit_tools_workflow_tests)
+
+    add_executable(acp_annotation_properties_workflow_tests tests/annotation_properties_workflow_tests.cpp)
+    target_link_libraries(acp_annotation_properties_workflow_tests PRIVATE acp_core)
+    add_test(NAME acp_annotation_properties_workflow_tests COMMAND acp_annotation_properties_workflow_tests)
 endif()
