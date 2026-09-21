@@ -524,6 +524,44 @@ int main() {
     expect(geo::nearly_equal(hatch::perimeter(hatchEntity), 30.0),
            "hatch boundary perimeter");
 
+    const auto horizontalHatch =
+        hatch::pattern_segments(hatchEntity);
+    expect(!horizontalHatch.empty(),
+           "hatch pattern generates clipped segments");
+    if (!horizontalHatch.empty()) {
+        expect(geo::nearly_equal(
+                   horizontalHatch.front().a.y,
+                   horizontalHatch.front().b.y,
+                   1e-8),
+               "zero-angle hatch produces horizontal pattern");
+    }
+
+    HatchEntity verticalHatch = hatchEntity;
+    verticalHatch.angle = std::numbers::pi / 2.0;
+    const auto verticalSegments =
+        hatch::pattern_segments(verticalHatch);
+    expect(!verticalSegments.empty(),
+           "rotated hatch pattern generates segments");
+    if (!verticalSegments.empty()) {
+        expect(geo::nearly_equal(
+                   verticalSegments.front().a.x,
+                   verticalSegments.front().b.x,
+                   1e-8),
+               "90-degree hatch produces vertical pattern");
+    }
+
+    HatchEntity sparseHatch = hatchEntity;
+    sparseHatch.spacing = 2.0;
+    const auto sparseSegments =
+        hatch::pattern_segments(sparseHatch);
+    expect(sparseSegments.size() < horizontalHatch.size(),
+           "larger hatch spacing produces fewer lines");
+
+    HatchEntity solidPattern = hatchEntity;
+    solidPattern.solid = true;
+    expect(hatch::pattern_segments(solidPattern).empty(),
+           "solid hatch does not generate pattern segments");
+
     Document hatchDoc;
     const EntityId hatchId = hatchDoc.insert(hatchEntity);
     const auto hatchHit = selection::hit_test(hatchDoc, {5, 0.2}, 0.5);
