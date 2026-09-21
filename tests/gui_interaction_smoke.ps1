@@ -96,7 +96,12 @@ $afterDelete = Join-Path $PWD "artifacts\gui-interaction-2.acp2d"
 $layerCreated = Join-Path $PWD "artifacts\gui-interaction-3.acp2d"
 $layerUndone = Join-Path $PWD "artifacts\gui-interaction-4.acp2d"
 $afterUndoDraw = Join-Path $PWD "artifacts\gui-interaction-5.acp2d"
-Remove-Item $beforeDelete, $afterDelete, $layerCreated, $layerUndone, $afterUndoDraw -ErrorAction SilentlyContinue
+$blockCreated = Join-Path $PWD "artifacts\gui-interaction-6.acp2d"
+$blockInserted = Join-Path $PWD "artifacts\gui-interaction-7.acp2d"
+$blockInsertUndone = Join-Path $PWD "artifacts\gui-interaction-8.acp2d"
+$blockCreateUndone = Join-Path $PWD "artifacts\gui-interaction-9.acp2d"
+$blockRedone = Join-Path $PWD "artifacts\gui-interaction-10.acp2d"
+Remove-Item $beforeDelete, $afterDelete, $layerCreated, $layerUndone, $afterUndoDraw, $blockCreated, $blockInserted, $blockInsertUndone, $blockCreateUndone, $blockRedone -ErrorAction SilentlyContinue
 $env:ACP_GUI_TEST_SNAPSHOT_DIR = (Join-Path $PWD "artifacts")
 $recoveryPath = Join-Path $env:LOCALAPPDATA "AutoCADPro\recovery.acp"
 Remove-Item $recoveryPath -ErrorAction SilentlyContinue
@@ -248,6 +253,54 @@ try {
     }
     if ($after -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+POLY\s+') {
         throw "Delete regression: Rectangle was lost while deleting Line"
+    }
+
+    # BLOCK workflow: create a new line, convert selected geometry into a
+    # block definition/reference, insert a second reference, then prove
+    # project-aware Undo/Redo crosses both Document and BlockLibrary.
+    Send-Key $hwnd 0x4C # L
+    Click-Client $hwnd 260 350
+    Click-Client $hwnd 340 350
+
+    [GuiTestNative]::SendMessage($hwnd, 0x0111, [IntPtr]1027, [IntPtr]::Zero) | Out-Null
+    Write-Snapshot $hwnd 6 $blockCreated
+    $createdBlockState = Get-Content -Raw -Path $blockCreated
+    if ($createdBlockState -notmatch '(?m)^B\s+\d+\s+"Block 1"\s+' -or
+        ($createdBlockState | Select-String -Pattern '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+BLOCKREF\s+' -AllMatches).Matches.Count -ne 1) {
+        throw "Block regression: Create from Selected did not create one definition/reference"
+    }
+
+    [GuiTestNative]::SendMessage($hwnd, 0x0111, [IntPtr]1028, [IntPtr]::Zero) | Out-Null
+    Click-Client $hwnd 460 350
+    Write-Snapshot $hwnd 7 $blockInserted
+    $insertedBlockState = Get-Content -Raw -Path $blockInserted
+    if (($insertedBlockState | Select-String -Pattern '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+BLOCKREF\s+' -AllMatches).Matches.Count -ne 2) {
+        throw "Block regression: Insert Active did not create a second reference"
+    }
+
+    Send-CtrlKey $hwnd 0x5A # Undo insert
+    Write-Snapshot $hwnd 8 $blockInsertUndone
+    $insertUndoState = Get-Content -Raw -Path $blockInsertUndone
+    if (($insertUndoState | Select-String -Pattern '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+BLOCKREF\s+' -AllMatches).Matches.Count -ne 1) {
+        throw "Block regression: Undo did not remove inserted reference"
+    }
+
+    Send-CtrlKey $hwnd 0x5A # Undo create
+    Write-Snapshot $hwnd 9 $blockCreateUndone
+    $createUndoState = Get-Content -Raw -Path $blockCreateUndone
+    if ($createUndoState -match '(?m)^B\s+\d+\s+"Block 1"\s+' -or
+        $createUndoState -match '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+BLOCKREF\s+' -or
+        $createUndoState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+LINE\s+') {
+        throw "Block regression: Undo create did not restore source primitive and remove definition"
+    }
+
+    Send-CtrlKey $hwnd 0x59 # Redo create
+    Send-CtrlKey $hwnd 0x59 # Redo insert
+    Write-Snapshot $hwnd 10 $blockRedone
+    $redoBlockState = Get-Content -Raw -Path $blockRedone
+    if ($redoBlockState -notmatch '(?m)^B\s+\d+\s+"Block 1"\s+' -or
+        ($redoBlockState | Select-String -Pattern '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+BLOCKREF\s+' -AllMatches).Matches.Count -ne 2) {
+        throw "Block regression: Redo did not restore definition and both references"
     }
 
     # Force the same autosave path used by the 30-second timer.
