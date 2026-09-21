@@ -93,13 +93,13 @@ try {
     Write-Snapshot $hwnd 1 $beforeDelete
     $before = Get-Content -Raw -Path $beforeDelete
 
-    if ($before -notmatch '(?m)^E\s+\d+\s+\d+\s+\d+\s+1\s+0\s+0\.25\s+LINE\s+') {
+    if ($before -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+LINE\s+') {
         throw "GUI Line interaction did not persist a LINE entity"
     }
-    if ($before -notmatch '(?m)^E\s+\d+\s+\d+\s+\d+\s+1\s+0\s+0\.25\s+CIRCLE\s+') {
+    if ($before -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+CIRCLE\s+') {
         throw "GUI Circle interaction did not persist a CIRCLE entity"
     }
-    if ($before -notmatch '(?m)^E\s+\d+\s+\d+\s+\d+\s+1\s+0\s+0\.25\s+POLYLINE\s+') {
+    if ($before -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+POLY\s+') {
         throw "GUI Rectangle interaction did not persist a closed POLY entity"
     }
 
@@ -111,13 +111,13 @@ try {
     Write-Snapshot $hwnd 2 $afterDelete
     $after = Get-Content -Raw -Path $afterDelete
 
-    if ($after -match '(?m)^E\s+\d+\s+\d+\s+\d+\s+1\s+0\s+0\.25\s+LINE\s+') {
+    if ($after -match '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+LINE\s+') {
         throw "GUI Select/Delete interaction failed to remove the line"
     }
-    if ($after -notmatch '(?m)^E\s+\d+\s+\d+\s+\d+\s+1\s+0\s+0\.25\s+CIRCLE\s+') {
+    if ($after -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+CIRCLE\s+') {
         throw "Delete regression: Circle was lost while deleting Line"
     }
-    if ($after -notmatch '(?m)^E\s+\d+\s+\d+\s+\d+\s+1\s+0\s+0\.25\s+POLYLINE\s+') {
+    if ($after -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0(?:\.0+)?\s+POLY\s+') {
         throw "Delete regression: Rectangle was lost while deleting Line"
     }
 
