@@ -227,7 +227,42 @@ try {
     Send-Char $hwnd 0x44
     Send-Key $hwnd 0x0D
 
-    # Edit Text Content through a real double-click on the right panel.
+    # First prove the direct menu -> native dialog -> History path one
+    # property at a time, with a serialized snapshot after each step.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
+    $contentState = Snapshot $hwnd 44
+    if ($contentState -notmatch '"EDITED-CAD"') {
+        Write-Host "CONTENT STATE:"
+        Write-Host $contentState
+        throw "Property editor regression: Text Content menu edit did not apply"
+    }
+
+    Command-Property $hwnd $proc 1031 "7.25"
+    $heightState = Snapshot $hwnd 45
+    if ($heightState -notmatch 'TEXT\s+[^\r\n]*\s+7\.25\s+') {
+        Write-Host "HEIGHT STATE:"
+        Write-Host $heightState
+        throw "Property editor regression: Text Height menu edit did not apply"
+    }
+
+    Command-Property $hwnd $proc 1032 "30"
+    $rotationState = Snapshot $hwnd 46
+    if ($rotationState -notmatch 'TEXT\s+[^\r\n]*\s+0\.523598') {
+        Write-Host "ROTATION STATE:"
+        Write-Host $rotationState
+        throw "Property editor regression: Text Rotation menu edit did not apply"
+    }
+
+    Command-Property $hwnd $proc 1029 "0.70"
+    $weightState = Snapshot $hwnd 47
+    if ($weightState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+') {
+        Write-Host "WEIGHT STATE:"
+        Write-Host $weightState
+        throw "Property editor regression: Line Weight menu edit did not apply"
+    }
+
+    # Now prove the right-panel double-click route itself. Change content a
+    # second time through the value cell.
     $clientWidth = $rect.Right - $rect.Left
     $clientHeight = $rect.Bottom - $rect.Top
     $toolbarHeight = [Math]::Max(
@@ -246,11 +281,16 @@ try {
         $propertiesTop + 34 + (8 * 22) + 11
 
     DoubleClick-Client $hwnd $valueX $contentY
-    Set-PropertyDialog $proc "EDITED-CAD"
+    Set-PropertyDialog $proc "PANEL-CAD"
+    $panelState = Snapshot $hwnd 48
+    if ($panelState -notmatch '"PANEL-CAD"') {
+        Write-Host "PANEL STATE:"
+        Write-Host $panelState
+        throw "Property editor regression: right-panel double-click edit did not apply"
+    }
 
-    Command-Property $hwnd $proc 1031 "7.25"
-    Command-Property $hwnd $proc 1032 "30"
-    Command-Property $hwnd $proc 1029 "0.70"
+    # Set the final content expected by the aggregate assertion.
+    Command-Property $hwnd $proc 1030 "EDITED-CAD"
 
     $textState = Snapshot $hwnd 40
     $textPattern =
