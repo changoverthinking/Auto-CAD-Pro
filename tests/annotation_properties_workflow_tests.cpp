@@ -107,6 +107,8 @@ int main() {
     EntityProperties properties = *document.properties(textId);
     properties.visible = false;
     properties.line_weight_override = 0.50;
+    properties.color_override = RgbColor{12, 34, 56};
+    properties.line_type_override = LineType::Center;
     expect(history.apply(
                document,
                std::make_unique<UpdateEntityPropertiesCommand>(
@@ -114,6 +116,26 @@ int main() {
            "generic property edit");
     expect(history.undo(document), "generic property undo");
     expect(history.redo(document), "generic property redo");
+
+    const LayerId styledLayer = document.create_layer("Styled");
+    expect(styledLayer != 0, "styled layer create");
+    expect(document.set_layer_color(
+               styledLayer, RgbColor{120, 80, 40}),
+           "styled layer color");
+    expect(document.set_layer_line_type(
+               styledLayer, LineType::Dashed),
+           "styled layer linetype");
+
+    const EntityId byLayerId =
+        document.insert(LineEntity{{{1, 1}, {9, 1}}});
+    expect(document.set_entity_layer(byLayerId, styledLayer),
+           "assign bylayer entity");
+    expect(document.effective_color(byLayerId) ==
+               RgbColor{120, 80, 40},
+           "effective bylayer color");
+    expect(document.effective_line_type(byLayerId) ==
+               LineType::Dashed,
+           "effective bylayer linetype");
 
     const std::string serialized =
         persistence::serialize_project(document, blocks);
@@ -138,10 +160,25 @@ int main() {
                loadedHatch.spacing == 2.0,
                "hatch properties persisted");
 
+        const auto* loadedStyledLayer =
+            loaded->document.layer(styledLayer);
+        expect(loadedStyledLayer != nullptr &&
+               loadedStyledLayer->color == RgbColor{120, 80, 40} &&
+               loadedStyledLayer->line_type == LineType::Dashed,
+               "layer color and linetype persisted");
+        expect(loaded->document.effective_color(byLayerId) ==
+                   RgbColor{120, 80, 40} &&
+               loaded->document.effective_line_type(byLayerId) ==
+                   LineType::Dashed,
+               "bylayer style persists through save/open");
+
         const auto* loadedProps = loaded->document.properties(textId);
         expect(loadedProps != nullptr &&
                !loadedProps->visible &&
-               loadedProps->line_weight_override.has_value(),
+               loadedProps->line_weight_override.has_value() &&
+               loadedProps->color_override.has_value() &&
+               *loadedProps->color_override == RgbColor{12, 34, 56} &&
+               loadedProps->line_type_override == LineType::Center,
                "generic properties persisted");
     }
 
