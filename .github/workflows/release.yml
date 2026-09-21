@@ -1,0 +1,120 @@
+name: Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure release
+        run: cmake -S . -B build -A x64 -DACP_BUILD_TESTS=ON -DACP_BUILD_APP=ON -DACP_ENABLE_GUI_TEST_HOOKS=OFF
+
+      - name: Build release
+        run: cmake --build build --config Release --parallel
+
+      - name: Run release regression suite
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Build portable ZIP
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          cpack --config build\CPackConfig.cmake -C Release -G ZIP
+          $zip = Get-ChildItem -Path . -Filter "AutoCADPro-*-Windows-x64.zip" | Select-Object -First 1
+          if ($null -eq $zip) { throw "Portable ZIP was not created" }
+          Move-Item $zip.FullName artifacts\$($zip.Name)
+          $hash = Get-FileHash -Algorithm SHA256 -Path artifacts\$($zip.Name)
+          ($hash.Hash.ToLower() + "  " + $zip.Name) | Set-Content -NoNewline -Path artifacts\$($zip.Name + ".sha256")
+
+      - name: Install NSIS
+        shell: powershell
+        run: |
+          $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue
+          if ($null -eq $makensis) {
+            choco install nsis -y --no-progress
+          }
+          if ($null -eq (Get-Command makensis.exe -ErrorAction SilentlyContinue)) {
+            $env:PATH += ";C:\Program Files (x86)\NSIS"
+          }
+          if ($null -eq (Get-Command makensis.exe -ErrorAction SilentlyContinue)) {
+            throw "makensis.exe is not available"
+          }
+
+      - name: Build Windows installer
+        shell: powershell
+        run: |
+          $versionLine = Select-String -Path CMakeLists.txt -Pattern 'project\(AutoCADPro VERSION ([0-9]+\.[0-9]+\.[0-9]+)'
+          if ($null -eq $versionLine) { throw "Could not determine project version" }
+          $version = $versionLine.Matches[0].Groups[1].Value
+          $exe = (Resolve-Path "build\Release\AutoCADPro.exe").Path
+          $readme = (Resolve-Path "README.md").Path
+          $out = (Resolve-Path "artifacts").Path
+          & makensis.exe "/DVERSION=$version" "/DSOURCE_EXE=$exe" "/DREADME_FILE=$readme" "/DOUTPUT_DIR=$out" "installer\AutoCADPro.nsi"
+          if ($LASTEXITCODE -ne 0) { throw "NSIS installer build failed" }
+          $installer = Get-ChildItem -Path artifacts -Filter "AutoCADPro-*-Windows-x64-Setup.exe" | Select-Object -First 1
+          if ($null -eq $installer) { throw "Installer was not created" }
+          $hash = Get-FileHash -Algorithm SHA256 -Path $installer.FullName
+          ($hash.Hash.ToLower() + "  " + $installer.Name) | Set-Content -NoNewline -Path ($installer.FullName + ".sha256")
+
+      - name: Optional Authenticode signing
+        if: ${{ secrets.WINDOWS_CERT_BASE64 != '' && secrets.WINDOWS_CERT_PASSWORD != '' }}
+        shell: powershell
+        env:
+          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP "autocadpro-release.pfx"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if ($null -eq $signtool) { throw "signtool.exe not found" }
+          $targets = @(
+            "build\Release\AutoCADPro.exe"
+          ) + (Get-ChildItem artifacts -Filter "AutoCADPro-*-Windows-x64-Setup.exe" | ForEach-Object { $_.FullName })
+          foreach ($target in $targets) {
+            & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $target
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed: $target" }
+          }
+          Remove-Item $certPath -Force
+
+      - name: Refresh installer checksum after signing
+        if: ${{ secrets.WINDOWS_CERT_BASE64 != '' && secrets.WINDOWS_CERT_PASSWORD != '' }}
+        shell: powershell
+        run: |
+          $installer = Get-ChildItem -Path artifacts -Filter "AutoCADPro-*-Windows-x64-Setup.exe" | Select-Object -First 1
+          $hash = Get-FileHash -Algorithm SHA256 -Path $installer.FullName
+          ($hash.Hash.ToLower() + "  " + $installer.Name) | Set-Content -NoNewline -Path ($installer.FullName + ".sha256")
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: AutoCADPro-Release
+          path: |
+            artifacts/AutoCADPro-*-Windows-x64.zip
+            artifacts/AutoCADPro-*-Windows-x64.zip.sha256
+            artifacts/AutoCADPro-*-Windows-x64-Setup.exe
+            artifacts/AutoCADPro-*-Windows-x64-Setup.exe.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/AutoCADPro-*-Windows-x64.zip
+            artifacts/AutoCADPro-*-Windows-x64.zip.sha256
+            artifacts/AutoCADPro-*-Windows-x64-Setup.exe
+            artifacts/AutoCADPro-*-Windows-x64-Setup.exe.sha256
+          generate_release_notes: true
