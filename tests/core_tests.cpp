@@ -702,10 +702,34 @@ int main() {
         "reject missing block reference on load");
 
 
+    const auto legacyStyleProject = persistence::deserialize_project(
+        "ACP2D 1\n"
+        "L 1 \"0\" 1 0 0.25\n"
+        "E 1 1 1 0 0 LINE 0 0 10 0\n"
+        "END\n");
+    expect(legacyStyleProject.has_value(),
+           "legacy project without style extensions loads");
+    if (legacyStyleProject.has_value()) {
+        expect(legacyStyleProject->document.effective_color(1) ==
+                   RgbColor{255, 255, 255} &&
+               legacyStyleProject->document.effective_line_type(1) ==
+                   LineType::Continuous,
+               "legacy project receives default color and linetype");
+    }
+
+    expect(!persistence::deserialize_project(
+        "ACP2D 1\n"
+        "L 1 \"0\" 1 0 0.25\n"
+        "LX 1 300 0 0 0\n"
+        "END\n").has_value(),
+        "reject invalid persisted RGB extension");
+
     Document dxfDoc;
     const LayerId dxfWalls = dxfDoc.create_layer("Walls");
     const EntityId dxfLineId = dxfDoc.insert(LineEntity{{{1, 2}, {11, 2}}});
     expect(dxfDoc.set_entity_layer(dxfLineId, dxfWalls), "assign dxf line layer");
+    dxfDoc.properties(dxfLineId)->color_override = RgbColor{255, 0, 0};
+    dxfDoc.properties(dxfLineId)->line_type_override = LineType::Center;
     (void)dxfDoc.insert(CircleEntity{{{5, 5}, 2.5}});
     (void)dxfDoc.insert(ArcEntity{{{10, 10}, 4.0, 0.0, std::numbers::pi / 2.0, true}});
     (void)dxfDoc.insert(PolylineEntity{{{0, 0}, {3, 0}, {3, 4}}, true});
@@ -715,6 +739,13 @@ int main() {
     expect(dxfText.find("LWPOLYLINE") != std::string::npos &&
            dxfText.find("DXF NOTE") != std::string::npos,
            "export dxf ascii entity records");
+    expect(dxfText.find("CONTINUOUS") != std::string::npos &&
+           dxfText.find("DASHED") != std::string::npos &&
+           dxfText.find("CENTER") != std::string::npos,
+           "dxf exports linetype table");
+    expect(dxfText.find("420\n16711680\n") != std::string::npos &&
+           dxfText.find("6\nCENTER\n") != std::string::npos,
+           "dxf exports effective truecolor and linetype");
 
     const EntityId dxfUnsupportedDimension = dxfDoc.insert(
         LinearDimensionEntity{{0, 0}, {10, 0}, {0, 3}, std::nullopt});
@@ -754,6 +785,7 @@ int main() {
 
         bool foundText = false;
         bool foundArc = false;
+        bool foundStyledLine = false;
         for (const EntityId entityId : dxfLoaded->document.ids()) {
             const Entity* loadedEntity = dxfLoaded->document.find(entityId);
             if (loadedEntity == nullptr) continue;
@@ -766,9 +798,20 @@ int main() {
                 foundArc = geo::nearly_equal(loadedArc.radius, 4.0) &&
                            geo::nearly_equal(loadedArc.end_angle, std::numbers::pi / 2.0, 1e-8);
             }
+            if (std::holds_alternative<LineEntity>(*loadedEntity)) {
+                const auto* style =
+                    dxfLoaded->document.properties(entityId);
+                foundStyledLine =
+                    style != nullptr &&
+                    style->color_override.has_value() &&
+                    *style->color_override == RgbColor{255, 0, 0} &&
+                    style->line_type_override == LineType::Center;
+            }
         }
         expect(foundText, "dxf roundtrip preserves text");
         expect(foundArc, "dxf roundtrip preserves arc angles");
+        expect(foundStyledLine,
+               "dxf roundtrip preserves effective color and linetype");
     }
 
     const auto dxfUnsupported = dxf::import_ascii(
@@ -1098,6 +1141,8 @@ int main() {
         svgDoc.insert(LineEntity{{{0, 0}, {100, 0}}});
     expect(svgDoc.properties(svgLineId) != nullptr, "svg line properties exist");
     svgDoc.properties(svgLineId)->line_weight_override = 0.50;
+    svgDoc.properties(svgLineId)->color_override = RgbColor{255, 0, 0};
+    svgDoc.properties(svgLineId)->line_type_override = LineType::Center;
     (void)svgDoc.insert(CircleEntity{{{50, 25}, 10.0}});
     (void)svgDoc.insert(ArcEntity{{
         {50, 25}, 20.0, 0.0, std::numbers::pi / 2.0, true}});
@@ -1140,6 +1185,9 @@ int main() {
                "svg escapes text");
         expect(svgText->find("stroke-width=\"0.5\"") != std::string::npos,
                "svg preserves effective line weight");
+        expect(svgText->find("color=\"#FF0000\"") != std::string::npos &&
+               svgText->find("stroke-dasharray=\"18 6 3 6\"") != std::string::npos,
+               "svg preserves effective color and linetype");
         expect(svgText->find("HIDDEN_SENTINEL") == std::string::npos,
                "svg excludes hidden entities");
     }
@@ -1164,6 +1212,9 @@ int main() {
                "pdf emits vector geometry and text");
         expect(pdfText->find("HIDDEN_SENTINEL") == std::string::npos,
                "pdf excludes hidden entities");
+        expect(pdfText->find("1 0 0 RG 1 0 0 rg") != std::string::npos &&
+               pdfText->find("[14 5 3 5] 0 d") != std::string::npos,
+               "pdf preserves effective color and linetype");
     }
     expect(!pdf::export_document(Document{}).has_value(),
            "pdf rejects empty drawing");
