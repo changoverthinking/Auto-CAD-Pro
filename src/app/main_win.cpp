@@ -1207,6 +1207,254 @@ bool handle_left_tool_rail_click(HWND hwnd, POINT point) {
 
 
 
+enum class DirectProperty {
+    LineWeight,
+    TextContent,
+    TextHeight,
+    TextRotation,
+    DimensionOverride,
+    HatchAngle,
+    HatchSpacing,
+    BlockScale,
+    BlockRotation
+};
+
+std::wstring format_property_number(double value, int precision = 3) {
+    wchar_t buffer[96]{};
+    swprintf_s(buffer, L"%.*f", precision, value);
+    return buffer;
+}
+
+bool edit_selected_property(HWND hwnd, DirectProperty property) {
+    if (!selected_editable() || !g_app.selected.has_value()) {
+        MessageBeep(MB_ICONWARNING);
+        return false;
+    }
+
+    const acp::EntityId id = *g_app.selected;
+    const acp::Entity* entity = g_app.document.find(id);
+    if (entity == nullptr) {
+        return false;
+    }
+
+    if (property == DirectProperty::LineWeight) {
+        const acp::EntityProperties* current =
+            g_app.document.properties(id);
+        if (current == nullptr) {
+            return false;
+        }
+
+        const std::wstring initial =
+            current->line_weight_override.has_value()
+                ? format_property_number(*current->line_weight_override, 3)
+                : L"";
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Line Weight",
+            L"Line weight in mm (blank = ByLayer):",
+            initial);
+        if (!entered.has_value()) {
+            return false;
+        }
+
+        acp::EntityProperties replacement = *current;
+        if (entered->empty()) {
+            replacement.line_weight_override.reset();
+        } else {
+            const auto parsed = parse_finite_double(*entered);
+            if (!parsed.has_value() || *parsed < 0.0) {
+                show_invalid_property(
+                    hwnd,
+                    L"Line weight must be a finite number greater than or equal to 0.");
+                return false;
+            }
+            replacement.line_weight_override = *parsed;
+        }
+
+        if (apply_history(
+                std::make_unique<acp::UpdateEntityPropertiesCommand>(
+                    id, replacement))) {
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return true;
+        }
+        return false;
+    }
+
+    acp::Entity replacement = *entity;
+
+    if (property == DirectProperty::TextContent) {
+        if (!std::holds_alternative<acp::TextEntity>(replacement)) {
+            return false;
+        }
+        auto& text = std::get<acp::TextEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Text Content",
+            L"Text:",
+            wide_from_utf8(text.text));
+        if (!entered.has_value()) {
+            return false;
+        }
+        const std::string utf8 = utf8_from_wide(*entered);
+        if (utf8.empty()) {
+            show_invalid_property(hwnd, L"Text content cannot be empty.");
+            return false;
+        }
+        text.text = utf8;
+        if (!acp::annotation::valid_text(text)) {
+            show_invalid_property(hwnd, L"The edited text entity would be invalid.");
+            return false;
+        }
+    } else if (property == DirectProperty::TextHeight) {
+        if (!std::holds_alternative<acp::TextEntity>(replacement)) {
+            return false;
+        }
+        auto& text = std::get<acp::TextEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Text Height",
+            L"Height:",
+            format_property_number(text.height));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value() || *parsed <= acp::geo::kEpsilon) {
+            show_invalid_property(hwnd, L"Text height must be greater than 0.");
+            return false;
+        }
+        text.height = *parsed;
+    } else if (property == DirectProperty::TextRotation) {
+        if (!std::holds_alternative<acp::TextEntity>(replacement)) {
+            return false;
+        }
+        auto& text = std::get<acp::TextEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Text Rotation",
+            L"Rotation in degrees:",
+            format_property_number(
+                text.rotation * 180.0 / std::numbers::pi));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value()) {
+            show_invalid_property(hwnd, L"Rotation must be a finite number.");
+            return false;
+        }
+        text.rotation = *parsed * std::numbers::pi / 180.0;
+    } else if (property == DirectProperty::DimensionOverride) {
+        if (!std::holds_alternative<acp::LinearDimensionEntity>(replacement)) {
+            return false;
+        }
+        auto& dimension =
+            std::get<acp::LinearDimensionEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Dimension Text Override",
+            L"Override text (blank = measured value):",
+            dimension.text_override.has_value()
+                ? wide_from_utf8(*dimension.text_override)
+                : L"");
+        if (!entered.has_value()) return false;
+        if (entered->empty()) {
+            dimension.text_override.reset();
+        } else {
+            const std::string utf8 = utf8_from_wide(*entered);
+            if (utf8.empty()) {
+                show_invalid_property(hwnd, L"Dimension override is not valid UTF-8 text.");
+                return false;
+            }
+            dimension.text_override = utf8;
+        }
+        if (!acp::annotation::valid_linear_dimension(dimension)) {
+            show_invalid_property(hwnd, L"The edited dimension would be invalid.");
+            return false;
+        }
+    } else if (property == DirectProperty::HatchAngle) {
+        if (!std::holds_alternative<acp::HatchEntity>(replacement)) {
+            return false;
+        }
+        auto& hatch = std::get<acp::HatchEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Hatch Angle",
+            L"Angle in degrees:",
+            format_property_number(
+                hatch.angle * 180.0 / std::numbers::pi));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value()) {
+            show_invalid_property(hwnd, L"Hatch angle must be a finite number.");
+            return false;
+        }
+        hatch.angle = *parsed * std::numbers::pi / 180.0;
+    } else if (property == DirectProperty::HatchSpacing) {
+        if (!std::holds_alternative<acp::HatchEntity>(replacement)) {
+            return false;
+        }
+        auto& hatch = std::get<acp::HatchEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Hatch Spacing",
+            L"Spacing:",
+            format_property_number(hatch.spacing));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value() || *parsed <= acp::geo::kEpsilon) {
+            show_invalid_property(hwnd, L"Hatch spacing must be greater than 0.");
+            return false;
+        }
+        hatch.spacing = *parsed;
+        if (!acp::hatch::valid(hatch)) {
+            show_invalid_property(hwnd, L"The edited hatch would be invalid.");
+            return false;
+        }
+    } else if (property == DirectProperty::BlockScale) {
+        if (!std::holds_alternative<acp::BlockReferenceEntity>(replacement)) {
+            return false;
+        }
+        auto& block = std::get<acp::BlockReferenceEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Block Scale",
+            L"Uniform scale:",
+            format_property_number(block.scale));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value() || *parsed <= acp::geo::kEpsilon) {
+            show_invalid_property(hwnd, L"Block scale must be greater than 0.");
+            return false;
+        }
+        block.scale = *parsed;
+    } else if (property == DirectProperty::BlockRotation) {
+        if (!std::holds_alternative<acp::BlockReferenceEntity>(replacement)) {
+            return false;
+        }
+        auto& block = std::get<acp::BlockReferenceEntity>(replacement);
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Block Rotation",
+            L"Rotation in degrees:",
+            format_property_number(
+                block.rotation * 180.0 / std::numbers::pi));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value()) {
+            show_invalid_property(hwnd, L"Block rotation must be a finite number.");
+            return false;
+        }
+        block.rotation = *parsed * std::numbers::pi / 180.0;
+    } else {
+        return false;
+    }
+
+    if (apply_history(
+            std::make_unique<acp::UpdateEntityCommand>(
+                id, replacement))) {
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return true;
+    }
+    return false;
+}
+
 void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     const int top = toolbar_height(client);
     const int width = layer_panel_width(client);
