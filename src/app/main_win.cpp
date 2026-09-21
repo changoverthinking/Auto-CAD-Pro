@@ -1319,9 +1319,6 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
             show_invalid_property(hwnd, L"The edited text entity would be invalid.");
             return false;
         }
-#ifdef ACP_ENABLE_GUI_TEST_HOOKS
-        g_property_test_stage = 3;
-#endif
     } else if (property == DirectProperty::TextHeight) {
         if (!std::holds_alternative<acp::TextEntity>(replacement)) {
             return false;
