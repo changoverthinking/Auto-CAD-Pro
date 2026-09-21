@@ -28,6 +28,15 @@ public static class GuiPropertyNative {
     public static extern bool SetWindowText(IntPtr hWnd, string lpString);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetWindowText(
+        IntPtr hWnd,
+        System.Text.StringBuilder lpString,
+        int nMaxCount);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr FindWindowEx(
         IntPtr parent,
         IntPtr childAfter,
@@ -100,30 +109,42 @@ function Set-PropertyDialog(
     [string]$value) {
 
     $dialog = [IntPtr]::Zero
+    $edit = [IntPtr]::Zero
     $deadline = (Get-Date).AddSeconds(10)
     do {
         Start-Sleep -Milliseconds 100
         $dialog =
             [GuiPropertyNative]::FindDialogForProcess([uint32]$proc.Id)
+        if ($dialog -ne [IntPtr]::Zero -and
+            [GuiPropertyNative]::IsWindowVisible($dialog)) {
+            $edit = [GuiPropertyNative]::FindWindowEx(
+                $dialog,
+                [IntPtr]::Zero,
+                "Edit",
+                $null)
+        }
     } while (
-        $dialog -eq [IntPtr]::Zero -and
+        ($dialog -eq [IntPtr]::Zero -or
+         $edit -eq [IntPtr]::Zero -or
+         ![GuiPropertyNative]::IsWindowVisible($dialog)) -and
         (Get-Date) -lt $deadline)
 
-    if ($dialog -eq [IntPtr]::Zero) {
-        throw "Property editor dialog did not appear"
+    if ($dialog -eq [IntPtr]::Zero -or
+        $edit -eq [IntPtr]::Zero) {
+        throw "Property editor dialog/edit control did not become ready"
     }
 
-    $edit = [GuiPropertyNative]::FindWindowEx(
-        $dialog,
-        [IntPtr]::Zero,
-        "Edit",
-        $null)
-    if ($edit -eq [IntPtr]::Zero) {
-        throw "Property editor did not contain an Edit control"
-    }
-
+    # Allow WM_INITDIALOG to finish setting the initial value before replacing it.
+    Start-Sleep -Milliseconds 100
     if (![GuiPropertyNative]::SetWindowText($edit, $value)) {
         throw "Could not set property editor value"
+    }
+
+    $verify = New-Object System.Text.StringBuilder 512
+    [GuiPropertyNative]::GetWindowText($edit, $verify, $verify.Capacity) | Out-Null
+    if ($verify.ToString() -ne $value) {
+        throw ("Property editor value race: expected '" + $value +
+               "', edit control contained '" + $verify.ToString() + "'")
     }
 
     $ok = [GuiPropertyNative]::FindWindowEx(
