@@ -81,4 +81,8 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_layout_print_workflow_tests tests/layout_print_workflow_tests.cpp)
     target_link_libraries(acp_layout_print_workflow_tests PRIVATE acp_core)
     add_test(NAME acp_layout_print_workflow_tests COMMAND acp_layout_print_workflow_tests)
+
+    add_executable(acp_large_document_tests tests/large_document_tests.cpp)
+    target_link_libraries(acp_large_document_tests PRIVATE acp_core)
+    add_test(NAME acp_large_document_tests COMMAND acp_large_document_tests)
 endif()
