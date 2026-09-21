@@ -324,6 +324,19 @@ void ensure_active_layer_exists() {
     }
 }
 
+void ensure_active_block_exists() {
+    if (g_app.active_block.has_value() &&
+        g_app.blocks.find(*g_app.active_block) != nullptr) {
+        return;
+    }
+
+    const auto ids = g_app.blocks.ids();
+    g_app.active_block =
+        ids.empty()
+            ? std::nullopt
+            : std::optional<acp::BlockId>{ids.back()};
+}
+
 bool active_layer_writable() {
     const acp::Layer* layer = g_app.document.layer(g_app.active_layer);
     return layer != nullptr && layer->visible && !layer->locked;
@@ -774,6 +787,27 @@ void draw_preview(HWND hwnd, HDC dc) {
     const POINT first = world_to_screen(hwnd, g_app.first_point);
     const POINT second = world_to_screen(hwnd, current);
 
+    if (g_app.tool == Tool::BlockInsert) {
+        ensure_active_block_exists();
+        if (!g_app.active_block.has_value() ||
+            !active_layer_writable()) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+
+        auto command = std::make_unique<acp::AddEntityCommand>(
+            acp::BlockReferenceEntity{
+                *g_app.active_block, world, 0.0, 1.0});
+        auto* command_ptr = command.get();
+        if (apply_history(std::move(command))) {
+            g_app.document.set_entity_layer(
+                command_ptr->id(), g_app.active_layer);
+            g_app.selected = command_ptr->id();
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+
     if (g_app.tool == Tool::Text) {
         const POINT p = world_to_screen(hwnd, g_app.first_point);
         std::wstring preview = g_app.text_buffer;
@@ -911,6 +945,10 @@ void draw_tool_icon(HDC dc, Tool tool, RECT area, COLORREF color) {
             line(cx - 7, cy - 7, cx + 7, cy - 7);
             line(cx, cy - 7, cx, cy + 8);
             break;
+        case Tool::BlockInsert:
+            Rectangle(dc, cx - 8, cy - 8, cx + 4, cy + 4);
+            Rectangle(dc, cx - 3, cy - 3, cx + 9, cy + 9);
+            break;
     }
 
     SelectObject(dc, old_brush);
@@ -993,7 +1031,7 @@ void draw_left_tool_rail(HDC dc, const RECT& client) {
     constexpr Tool items[] = {
         Tool::Select, Tool::Line, Tool::Polyline, Tool::Circle, Tool::Arc,
         Tool::Rectangle, Tool::Move, Tool::Trim, Tool::Dimension,
-        Tool::Hatch, Tool::Text
+        Tool::Hatch, Tool::Text, Tool::BlockInsert
     };
 
     SetBkMode(dc, TRANSPARENT);
@@ -1246,6 +1284,73 @@ void create_layer(HWND hwnd) {
             return;
         }
     }
+}
+
+void create_block_from_selected(HWND hwnd) {
+    if (!selected_editable()) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+
+    const acp::Entity* entity =
+        g_app.document.find(*g_app.selected);
+    if (entity == nullptr ||
+        !(std::holds_alternative<LineEntity>(*entity) ||
+          std::holds_alternative<CircleEntity>(*entity) ||
+          std::holds_alternative<ArcEntity>(*entity) ||
+          std::holds_alternative<PolylineEntity>(*entity))) {
+        MessageBoxW(
+            hwnd,
+            L"Create Block currently accepts Line, Circle, Arc or Polyline geometry.",
+            L"Auto CAD Pro Blocks",
+            MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    int suffix = 1;
+    while (suffix <= 9999) {
+        const std::string name =
+            "Block " + std::to_string(suffix);
+
+        bool exists = false;
+        for (const acp::BlockId id : g_app.blocks.ids()) {
+            const acp::BlockDefinition* definition =
+                g_app.blocks.find(id);
+            if (definition != nullptr &&
+                definition->name == name) {
+                exists = true;
+                break;
+            }
+        }
+        if (exists) {
+            ++suffix;
+            continue;
+        }
+
+        auto command =
+            std::make_unique<acp::CreateBlockFromEntityCommand>(
+                *g_app.selected, name);
+        auto* command_ptr = command.get();
+        if (apply_history(std::move(command))) {
+            g_app.active_block = command_ptr->block_id();
+            set_tool(hwnd, Tool::Select);
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return;
+    }
+}
+
+void begin_insert_active_block(HWND hwnd) {
+    ensure_active_block_exists();
+    if (!g_app.active_block.has_value()) {
+        MessageBoxW(
+            hwnd,
+            L"No block definition is available. Create a block first.",
+            L"Auto CAD Pro Blocks",
+            MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    set_tool(hwnd, Tool::BlockInsert);
 }
 
 void assign_selected_to_active_layer(HWND hwnd) {
@@ -1713,7 +1818,8 @@ void handle_left_click(HWND hwnd, POINT point) {
          g_app.tool == Tool::Arc ||
          g_app.tool == Tool::Rectangle ||
          g_app.tool == Tool::Dimension ||
-         g_app.tool == Tool::Text) &&
+         g_app.tool == Tool::Text ||
+         g_app.tool == Tool::BlockInsert) &&
         !active_layer_writable()) {
         return;
     }
@@ -2161,6 +2267,12 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     g_app.dirty = true;
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
+                case kMenuCreateBlock:
+                    create_block_from_selected(hwnd);
+                    return 0;
+                case kMenuInsertBlock:
+                    begin_insert_active_block(hwnd);
+                    return 0;
                 case kMenuNewLayer:
                     create_layer(hwnd);
                     return 0;
@@ -2324,6 +2436,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 case kToolDimension: set_tool(hwnd, Tool::Dimension); return 0;
                 case kToolHatch: set_tool(hwnd, Tool::Hatch); return 0;
                 case kToolText: set_tool(hwnd, Tool::Text); return 0;
+                case kToolBlockInsert: begin_insert_active_block(hwnd); return 0;
                 default: break;
             }
             break;
@@ -2346,9 +2459,10 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 return 0;
             }
             if (control_down && w_param == 'Z') {
-                if (g_app.history.undo(g_app.document)) {
+                if (g_app.history.undo(g_app.document, g_app.blocks)) {
                     g_app.dirty = true;
                     ensure_active_layer_exists();
+                    ensure_active_block_exists();
                     if (g_app.selected.has_value() &&
                         g_app.document.find(*g_app.selected) == nullptr) {
                         g_app.selected.reset();
@@ -2358,9 +2472,10 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 return 0;
             }
             if (control_down && w_param == 'Y') {
-                if (g_app.history.redo(g_app.document)) {
+                if (g_app.history.redo(g_app.document, g_app.blocks)) {
                     g_app.dirty = true;
                     ensure_active_layer_exists();
+                    ensure_active_block_exists();
                     InvalidateRect(hwnd, nullptr, FALSE);
                 }
                 return 0;
@@ -2425,6 +2540,10 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 g_app.polyline_points.clear();
                 g_app.has_first_point = false;
                 InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+            if (w_param == 'K') {
+                begin_insert_active_block(hwnd);
                 return 0;
             }
             if (w_param == 'L') {
@@ -2635,6 +2754,7 @@ HMENU create_app_menu() {
     HMENU view = CreatePopupMenu();
     HMENU layer = CreatePopupMenu();
     HMENU entity = CreatePopupMenu();
+    HMENU block_menu = CreatePopupMenu();
     HMENU layout_menu = CreatePopupMenu();
 
     AppendMenuW(file, MF_STRING, kMenuNew, L"&New");
@@ -2669,6 +2789,7 @@ HMENU create_app_menu() {
     AppendMenuW(draw, MF_STRING, kToolDimension, L"&Dimension\tD");
     AppendMenuW(draw, MF_STRING, kToolHatch, L"&Hatch\tH");
     AppendMenuW(draw, MF_STRING, kToolText, L"Te&xt\tX");
+    AppendMenuW(draw, MF_STRING, kToolBlockInsert, L"Insert &Block\tK");
 
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"&File");
     AppendMenuW(view, MF_STRING, kMenuZoomExtents, L"Zoom &Extents");
@@ -2677,6 +2798,8 @@ HMENU create_app_menu() {
     AppendMenuW(layer, MF_STRING, kMenuAssignLayer, L"&Assign Selected to Active");
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerVisible, L"Toggle &Visibility");
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerLock, L"Toggle &Lock");
+    AppendMenuW(block_menu, MF_STRING, kMenuCreateBlock, L"&Create from Selected");
+    AppendMenuW(block_menu, MF_STRING, kMenuInsertBlock, L"&Insert Active\tK");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(draw), L"&Draw");
     AppendMenuW(layout_menu, MF_STRING, kMenuCyclePaperSize, L"Cycle &Paper Size");
     AppendMenuW(layout_menu, MF_STRING, kMenuToggleOrientation, L"Toggle &Orientation");
@@ -2692,6 +2815,7 @@ HMENU create_app_menu() {
     AppendMenuW(entity, MF_STRING, kMenuHatchCycleSpacing, L"Hatch: Cycle Spacing");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(layer), L"&Layer");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(entity), L"&Entity");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(block_menu), L"&Block");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(layout_menu), L"&Layout");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"&View");
     return menu;
