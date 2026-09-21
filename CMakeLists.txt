@@ -64,4 +64,8 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_workflow_regression_tests tests/workflow_regression_tests.cpp)
     target_link_libraries(acp_workflow_regression_tests PRIVATE acp_core)
     add_test(NAME acp_workflow_regression_tests COMMAND acp_workflow_regression_tests)
+
+    add_executable(acp_edit_tools_workflow_tests tests/edit_tools_workflow_tests.cpp)
+    target_link_libraries(acp_edit_tools_workflow_tests PRIVATE acp_core)
+    add_test(NAME acp_edit_tools_workflow_tests COMMAND acp_edit_tools_workflow_tests)
 endif()
