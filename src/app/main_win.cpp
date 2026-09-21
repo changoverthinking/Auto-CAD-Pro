@@ -16,12 +16,15 @@
 #include "acp/snap.hpp"
 #include "acp/svg.hpp"
 #include "acp/transform.hpp"
+#include "resource.h"
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cmath>
 #include <cstddef>
 #include <cwchar>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
