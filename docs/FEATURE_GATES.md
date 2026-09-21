@@ -34,12 +34,12 @@ A feature may be labeled production only when all of the following are true:
 | blocks/block references | verified | block definition/reference integration tests |
 | text/linear dimensions | verified | annotation document and persistence tests |
 | hatches | production | hatch entity/persistence tests plus shared angle/spacing-aware clipped pattern geometry used by GUI, SVG and PDF |
-| project save/open | verified | versioned round-trip tests |
-| DXF ASCII import/export subset | verified | controlled 2D entity round-trip tests |
+| project save/open | production | versioned round-trip + page settings persistence + validated temp/readback/parse/atomic-replace saves; forced temp-write failure preserves the previous project file |
+| DXF ASCII import/export subset | verified | controlled Line/Circle/Arc/LWPolyline/Text round-trip, degenerate-input rejection and exported/skipped reporting; GUI warns before omitting unsupported visible entities |
 | drawing bounds/viewport fit | verified | bounds/aspect tests |
 | page setup/print scale model | production | A4-A0, portrait/landscape, Fit/1:50/1:100/1:200 workflow, fixed-scale PDF acceptance/rejection tests and real GUI controls |
 | Windows desktop GUI | verified | native Win32 workspace is built on Windows CI; real-window tests cover launch/lifecycle plus Line/Circle/Rectangle/Polyline/Arc/Dimension/Text/Hatch/Copy/Select/Delete interactions and document snapshots |
-| Windows executable artifact | production | CI builds self-contained x64 executable, versioned portable ZIP + SHA-256, validates NSIS installer creation and uploads executable/portable/installer artifacts |
+| Windows executable artifact | production | CI builds a runnable app bundle, validates portable ZIP contents, silently installs NSIS, verifies bundled Unicode font/licenses, launches the installed app, silently uninstalls, and uploads app/portable/installer artifacts |
 | constraints | planned | FreeCAD Sketcher upstream audit required |
 | SVG export | verified | visible geometry, instantiated blocks, UTF-8 text, dimensions, line weights and angle/spacing-aware hatch output are covered by core tests and exposed in the Windows GUI |
 | PDF export | production | vector geometry, fixed-scale layouts, line weights, patterned/solid hatches and Japanese/Vietnamese Unicode text are exported with bundled Noto Sans JP embedded as Type0/CIDFontType2 with ToUnicode mapping; corrupt fonts are rejected by regression tests |
@@ -76,7 +76,7 @@ A feature may be labeled production only when all of the following are true:
 - A 5,120-entity regression gate covers bounds, selection, object snap and project round-trip; current Windows CI completes this case in roughly 0.04-0.05 seconds per run.
 - Windows release output includes executable metadata/manifest, portable ZIP, SHA-256 checksum and a validated NSIS installer.
 - Tag-triggered release workflow can publish GitHub Releases and is Authenticode signing-ready when certificate secrets are configured.
-- PDF Unicode text remains the explicit blocker for promoting PDF export beyond prototype; current behavior safely rejects unsupported text rather than corrupting it.
+- PDF Unicode production support is now resolved by the pinned bundled font path documented below.
 
 ## 2026-09-21 full 2D function audit
 
@@ -87,3 +87,13 @@ A feature may be labeled production only when all of the following are true:
 - Hatch angle, spacing and solid/pattern state now drive shared clipped geometry across the real GUI, SVG and PDF rather than a fixed display-only brush.
 - Real GUI edit-tool regression now covers Move, Undo/Redo, Copy, Rotate, Scale, Mirror, Offset, Trim and Extend in addition to the creation/annotation/delete interaction matrix.
 - The Unicode PDF blocker is resolved with a pinned OFL Noto Sans JP runtime asset and pinned stb_truetype source/license provenance.
+
+## 2026-09-21 final file/package integrity audit
+
+- Project Save/Save As no longer truncates the destination directly: data is serialized, parsed, written to a same-directory temporary file, read back byte-for-byte, parsed again, then atomically replaces the destination on Windows with write-through semantics.
+- A forced temporary-write failure regression proves the previous .acp file remains byte-identical.
+- DXF import now rejects zero-length LINE entities, one-point open polylines and closed polylines with fewer than three points.
+- DXF export reports supported vs omitted visible entities; the Windows GUI requires explicit confirmation before a lossy subset export.
+- Portable ZIP content is expanded and validated in CI for the executable, Noto Sans JP font and license assets.
+- NSIS installer now installs the Unicode font and third-party provenance/license files. CI silently installs it to a clean directory, verifies all runtime assets, launches the installed executable, and silently uninstalls it.
+- Signing order is now application first, then packaging, then outer installer signing; therefore signed releases package the signed application binary rather than an unsigned inner executable.
