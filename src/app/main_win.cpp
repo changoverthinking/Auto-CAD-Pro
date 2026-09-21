@@ -471,7 +471,8 @@ INT_PTR CALLBACK property_input_dialog_proc(
                 GetWindowTextLengthW(
                     GetDlgItem(dialog, IDC_PROPERTY_EDIT));
             std::wstring value(
-                static_cast<std::size_t>(std::max(0, length)), L'\0');
+                static_cast<std::size_t>(std::max(0, length)) + 1u,
+                L'\0');
             if (length > 0) {
                 GetDlgItemTextW(
                     dialog,
@@ -479,6 +480,7 @@ INT_PTR CALLBACK property_input_dialog_proc(
                     value.data(),
                     length + 1);
             }
+            value.resize(static_cast<std::size_t>(std::max(0, length)));
             data->result = std::move(value);
             EndDialog(dialog, IDOK);
             return TRUE;
