@@ -787,27 +787,6 @@ void draw_preview(HWND hwnd, HDC dc) {
     const POINT first = world_to_screen(hwnd, g_app.first_point);
     const POINT second = world_to_screen(hwnd, current);
 
-    if (g_app.tool == Tool::BlockInsert) {
-        ensure_active_block_exists();
-        if (!g_app.active_block.has_value() ||
-            !active_layer_writable()) {
-            MessageBeep(MB_ICONWARNING);
-            return;
-        }
-
-        auto command = std::make_unique<acp::AddEntityCommand>(
-            acp::BlockReferenceEntity{
-                *g_app.active_block, world, 0.0, 1.0});
-        auto* command_ptr = command.get();
-        if (apply_history(std::move(command))) {
-            g_app.document.set_entity_layer(
-                command_ptr->id(), g_app.active_layer);
-            g_app.selected = command_ptr->id();
-        }
-        InvalidateRect(hwnd, nullptr, FALSE);
-        return;
-    }
-
     if (g_app.tool == Tool::Text) {
         const POINT p = world_to_screen(hwnd, g_app.first_point);
         std::wstring preview = g_app.text_buffer;
@@ -1835,6 +1814,26 @@ void handle_left_click(HWND hwnd, POINT point) {
         return;
     }
 
+    if (g_app.tool == Tool::BlockInsert) {
+        ensure_active_block_exists();
+        if (!g_app.active_block.has_value() ||
+            !active_layer_writable()) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+
+        auto command = std::make_unique<acp::AddEntityCommand>(
+            acp::BlockReferenceEntity{
+                *g_app.active_block, world, 0.0, 1.0});
+        auto* command_ptr = command.get();
+        if (apply_history(std::move(command))) {
+            g_app.document.set_entity_layer(
+                command_ptr->id(), g_app.active_layer);
+            g_app.selected = command_ptr->id();
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
 
     if (g_app.tool == Tool::Text) {
         if (!g_app.has_first_point) {
