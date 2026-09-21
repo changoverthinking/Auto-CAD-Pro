@@ -154,6 +154,10 @@ constexpr int kMenuEditBlockScale = 1036;
 constexpr int kMenuEditBlockRotation = 1037;
 constexpr int kMenuEditLayerName = 1038;
 constexpr int kMenuEditLayerWeight = 1039;
+constexpr int kMenuEditEntityColor = 1040;
+constexpr int kMenuEditEntityLineType = 1041;
+constexpr int kMenuEditLayerColor = 1042;
+constexpr int kMenuEditLayerLineType = 1043;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -1272,13 +1276,77 @@ enum class DirectProperty {
     HatchAngle,
     HatchSpacing,
     BlockScale,
-    BlockRotation
+    BlockRotation,
+    Color,
+    LineType
 };
 
 std::wstring format_property_number(double value, int precision = 3) {
     wchar_t buffer[96]{};
     swprintf_s(buffer, L"%.*f", precision, value);
     return buffer;
+}
+
+std::wstring format_rgb(acp::RgbColor color) {
+    wchar_t buffer[16]{};
+    swprintf_s(
+        buffer, L"#%02X%02X%02X",
+        static_cast<unsigned>(color.r),
+        static_cast<unsigned>(color.g),
+        static_cast<unsigned>(color.b));
+    return buffer;
+}
+
+std::optional<acp::RgbColor> parse_rgb(std::wstring_view text) {
+    if (text.size() != 7 || text.front() != L'#') {
+        return std::nullopt;
+    }
+
+    auto hex_value = [](wchar_t ch) -> int {
+        if (ch >= L'0' && ch <= L'9') return ch - L'0';
+        if (ch >= L'A' && ch <= L'F') return ch - L'A' + 10;
+        if (ch >= L'a' && ch <= L'f') return ch - L'a' + 10;
+        return -1;
+    };
+
+    std::array<int, 6> values{};
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        values[i] = hex_value(text[i + 1]);
+        if (values[i] < 0) return std::nullopt;
+    }
+
+    return acp::RgbColor{
+        static_cast<std::uint8_t>(values[0] * 16 + values[1]),
+        static_cast<std::uint8_t>(values[2] * 16 + values[3]),
+        static_cast<std::uint8_t>(values[4] * 16 + values[5])};
+}
+
+const wchar_t* line_type_name(acp::LineType value) {
+    switch (value) {
+        case acp::LineType::Continuous: return L"Continuous";
+        case acp::LineType::Dashed: return L"Dashed";
+        case acp::LineType::Center: return L"Center";
+    }
+    return L"Continuous";
+}
+
+std::optional<acp::LineType> parse_line_type(std::wstring value) {
+    value.erase(
+        std::remove_if(
+            value.begin(), value.end(),
+            [](wchar_t ch) { return std::iswspace(ch) != 0; }),
+        value.end());
+
+    if (_wcsicmp(value.c_str(), L"Continuous") == 0) {
+        return acp::LineType::Continuous;
+    }
+    if (_wcsicmp(value.c_str(), L"Dashed") == 0) {
+        return acp::LineType::Dashed;
+    }
+    if (_wcsicmp(value.c_str(), L"Center") == 0) {
+        return acp::LineType::Center;
+    }
+    return std::nullopt;
 }
 
 bool edit_selected_property(HWND hwnd, DirectProperty property) {
@@ -1325,6 +1393,70 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
                 return false;
             }
             replacement.line_weight_override = *parsed;
+        }
+
+        if (apply_history(
+                std::make_unique<acp::UpdateEntityPropertiesCommand>(
+                    id, replacement))) {
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return true;
+        }
+        return false;
+    }
+
+    if (property == DirectProperty::Color ||
+        property == DirectProperty::LineType) {
+
+        const acp::EntityProperties* current =
+            g_app.document.properties(id);
+        if (current == nullptr) {
+            return false;
+        }
+
+        acp::EntityProperties replacement = *current;
+
+        if (property == DirectProperty::Color) {
+            const auto entered = prompt_property_value(
+                hwnd,
+                L"Entity Color",
+                L"#RRGGBB (blank = ByLayer):",
+                current->color_override.has_value()
+                    ? format_rgb(*current->color_override)
+                    : L"");
+            if (!entered.has_value()) return false;
+            if (entered->empty()) {
+                replacement.color_override.reset();
+            } else {
+                const auto parsed = parse_rgb(*entered);
+                if (!parsed.has_value()) {
+                    show_invalid_property(
+                        hwnd,
+                        L"Color must use #RRGGBB format, for example #FF0000.");
+                    return false;
+                }
+                replacement.color_override = *parsed;
+            }
+        } else {
+            const auto entered = prompt_property_value(
+                hwnd,
+                L"Entity Linetype",
+                L"Continuous, Dashed or Center (blank = ByLayer):",
+                current->line_type_override.has_value()
+                    ? std::wstring{line_type_name(*current->line_type_override)}
+                    : L"");
+            if (!entered.has_value()) return false;
+            if (entered->empty()) {
+                replacement.line_type_override.reset();
+            } else {
+                const auto parsed = parse_line_type(*entered);
+                if (!parsed.has_value()) {
+                    show_invalid_property(
+                        hwnd,
+                        L"Linetype must be Continuous, Dashed or Center.");
+                    return false;
+                }
+                replacement.line_type_override = *parsed;
+            }
         }
 
         if (apply_history(
@@ -1513,7 +1645,9 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
 
 enum class DirectLayerProperty {
     Name,
-    LineWeight
+    LineWeight,
+    Color,
+    LineType
 };
 
 bool edit_active_layer_property(HWND hwnd, DirectLayerProperty property) {
@@ -1555,7 +1689,7 @@ bool edit_active_layer_property(HWND hwnd, DirectLayerProperty property) {
             }
         }
         replacement.name = utf8;
-    } else {
+    } else if (property == DirectLayerProperty::LineWeight) {
         const auto entered = prompt_property_value(
             hwnd,
             L"Layer Line Weight",
@@ -1573,6 +1707,36 @@ bool edit_active_layer_property(HWND hwnd, DirectLayerProperty property) {
             return false;
         }
         replacement.line_weight = *parsed;
+    } else if (property == DirectLayerProperty::Color) {
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Layer Color",
+            L"#RRGGBB:",
+            format_rgb(current->color));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_rgb(*entered);
+        if (!parsed.has_value()) {
+            show_invalid_property(
+                hwnd,
+                L"Color must use #RRGGBB format, for example #00FFFF.");
+            return false;
+        }
+        replacement.color = *parsed;
+    } else {
+        const auto entered = prompt_property_value(
+            hwnd,
+            L"Layer Linetype",
+            L"Continuous, Dashed or Center:",
+            line_type_name(current->line_type));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_line_type(*entered);
+        if (!parsed.has_value()) {
+            show_invalid_property(
+                hwnd,
+                L"Linetype must be Continuous, Dashed or Center.");
+            return false;
+        }
+        replacement.line_type = *parsed;
     }
 
     if (apply_history(
@@ -2923,6 +3087,14 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     (void)edit_active_layer_property(
                         hwnd, DirectLayerProperty::LineWeight);
                     return 0;
+                case kMenuEditLayerColor:
+                    (void)edit_active_layer_property(
+                        hwnd, DirectLayerProperty::Color);
+                    return 0;
+                case kMenuEditLayerLineType:
+                    (void)edit_active_layer_property(
+                        hwnd, DirectLayerProperty::LineType);
+                    return 0;
                 case kMenuAssignLayer:
                     assign_selected_to_active_layer(hwnd);
                     return 0;
@@ -2954,6 +3126,12 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     return 0;
                 case kMenuEditLineWeight:
                     (void)edit_selected_property(hwnd, DirectProperty::LineWeight);
+                    return 0;
+                case kMenuEditEntityColor:
+                    (void)edit_selected_property(hwnd, DirectProperty::Color);
+                    return 0;
+                case kMenuEditEntityLineType:
+                    (void)edit_selected_property(hwnd, DirectProperty::LineType);
                     return 0;
                 case kMenuEditTextContent:
                     (void)edit_selected_property(hwnd, DirectProperty::TextContent);
@@ -3480,6 +3658,8 @@ HMENU create_app_menu() {
     AppendMenuW(layer, MF_STRING, kMenuNewLayer, L"&New Layer");
     AppendMenuW(layer, MF_STRING, kMenuEditLayerName, L"&Rename Active Layer...");
     AppendMenuW(layer, MF_STRING, kMenuEditLayerWeight, L"Edit Active Layer &Line Weight...");
+    AppendMenuW(layer, MF_STRING, kMenuEditLayerColor, L"Edit Active Layer &Color...");
+    AppendMenuW(layer, MF_STRING, kMenuEditLayerLineType, L"Edit Active Layer Line&type...");
     AppendMenuW(layer, MF_STRING, kMenuAssignLayer, L"&Assign Selected to Active");
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerVisible, L"Toggle &Visibility");
     AppendMenuW(layer, MF_STRING, kMenuToggleLayerLock, L"Toggle &Lock");
@@ -3492,6 +3672,8 @@ HMENU create_app_menu() {
     AppendMenuW(entity, MF_STRING, kMenuToggleEntityVisible, L"Toggle &Visibility");
     AppendMenuW(entity, MF_STRING, kMenuCycleEntityWeight, L"Cycle Line &Weight");
     AppendMenuW(entity, MF_STRING, kMenuEditLineWeight, L"Edit Line Weight...");
+    AppendMenuW(entity, MF_STRING, kMenuEditEntityColor, L"Edit Color...");
+    AppendMenuW(entity, MF_STRING, kMenuEditEntityLineType, L"Edit Linetype...");
     AppendMenuW(entity, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(entity, MF_STRING, kMenuEditTextContent, L"Text: Edit Content...");
     AppendMenuW(entity, MF_STRING, kMenuEditTextHeight, L"Text: Edit Height...");
