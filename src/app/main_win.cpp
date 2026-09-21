@@ -10,6 +10,7 @@
 #include "acp/dxf.hpp"
 #include "acp/edit2d.hpp"
 #include "acp/persistence.hpp"
+#include "acp/property_edit.hpp"
 #include "acp/pdf.hpp"
 #include "acp/recovery.hpp"
 #include "acp/selection.hpp"
@@ -1261,80 +1262,79 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
             return false;
         }
 
-        acp::EntityProperties replacement = *current;
-        if (entered->empty()) {
-            replacement.line_weight_override.reset();
-        } else {
-            const auto parsed = parse_finite_double(*entered);
-            if (!parsed.has_value() || *parsed < 0.0) {
+        std::optional<double> value;
+        if (!entered->empty()) {
+            value = parse_finite_double(*entered);
+            if (!value.has_value()) {
                 show_invalid_property(
                     hwnd,
                     L"Line weight must be a finite number greater than or equal to 0.");
                 return false;
             }
-            replacement.line_weight_override = *parsed;
+        }
+
+        const auto replacement =
+            acp::property_edit::line_weight_override(*current, value);
+        if (!replacement.has_value()) {
+            show_invalid_property(
+                hwnd,
+                L"Line weight must be a finite number greater than or equal to 0.");
+            return false;
         }
 
         if (apply_history(
                 std::make_unique<acp::UpdateEntityPropertiesCommand>(
-                    id, replacement))) {
+                    id, *replacement))) {
             InvalidateRect(hwnd, nullptr, FALSE);
             return true;
         }
         return false;
     }
 
-    acp::Entity replacement = *entity;
+    std::optional<acp::Entity> replacement;
 
     if (property == DirectProperty::TextContent) {
-        if (!std::holds_alternative<acp::TextEntity>(replacement)) {
+        if (!std::holds_alternative<acp::TextEntity>(*entity)) {
             return false;
         }
-        auto& text = std::get<acp::TextEntity>(replacement);
+        const auto& text = std::get<acp::TextEntity>(*entity);
         const auto entered = prompt_property_value(
-            hwnd,
-            L"Text Content",
-            L"Text:",
-            wide_from_utf8(text.text));
-        if (!entered.has_value()) {
-            return false;
-        }
-        const std::string utf8 = utf8_from_wide(*entered);
-        if (utf8.empty()) {
-            show_invalid_property(hwnd, L"Text content cannot be empty.");
-            return false;
-        }
-        text.text = utf8;
-        if (!acp::annotation::valid_text(text)) {
-            show_invalid_property(hwnd, L"The edited text entity would be invalid.");
+            hwnd, L"Text Content", L"Text:", wide_from_utf8(text.text));
+        if (!entered.has_value()) return false;
+
+        replacement = acp::property_edit::text_content(
+            *entity, utf8_from_wide(*entered));
+        if (!replacement.has_value()) {
+            show_invalid_property(hwnd, L"Text content cannot be empty or invalid.");
             return false;
         }
     } else if (property == DirectProperty::TextHeight) {
-        if (!std::holds_alternative<acp::TextEntity>(replacement)) {
+        if (!std::holds_alternative<acp::TextEntity>(*entity)) {
             return false;
         }
-        auto& text = std::get<acp::TextEntity>(replacement);
+        const auto& text = std::get<acp::TextEntity>(*entity);
         const auto entered = prompt_property_value(
-            hwnd,
-            L"Text Height",
-            L"Height:",
+            hwnd, L"Text Height", L"Height:",
             format_property_number(text.height));
         if (!entered.has_value()) return false;
         const auto parsed = parse_finite_double(*entered);
-        if (!parsed.has_value() || *parsed <= acp::geo::kEpsilon) {
+        if (!parsed.has_value()) {
             show_invalid_property(hwnd, L"Text height must be greater than 0.");
             return false;
         }
-        text.height = *parsed;
-    } else if (property == DirectProperty::TextRotation) {
-        if (!std::holds_alternative<acp::TextEntity>(replacement)) {
+
+        replacement = acp::property_edit::text_height(*entity, *parsed);
+        if (!replacement.has_value()) {
+            show_invalid_property(hwnd, L"Text height must be greater than 0.");
             return false;
         }
-        auto& text = std::get<acp::TextEntity>(replacement);
+    } else if (property == DirectProperty::TextRotation) {
+        if (!std::holds_alternative<acp::TextEntity>(*entity)) {
+            return false;
+        }
+        const auto& text = std::get<acp::TextEntity>(*entity);
         const auto entered = prompt_property_value(
-            hwnd,
-            L"Text Rotation",
-            L"Rotation in degrees:",
+            hwnd, L"Text Rotation", L"Rotation in degrees:",
             format_property_number(
                 text.rotation * 180.0 / std::numbers::pi));
         if (!entered.has_value()) return false;
@@ -1343,13 +1343,19 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
             show_invalid_property(hwnd, L"Rotation must be a finite number.");
             return false;
         }
-        text.rotation = *parsed * std::numbers::pi / 180.0;
-    } else if (property == DirectProperty::DimensionOverride) {
-        if (!std::holds_alternative<acp::LinearDimensionEntity>(replacement)) {
+
+        replacement = acp::property_edit::text_rotation(
+            *entity, *parsed * std::numbers::pi / 180.0);
+        if (!replacement.has_value()) {
+            show_invalid_property(hwnd, L"Rotation must be a finite number.");
             return false;
         }
-        auto& dimension =
-            std::get<acp::LinearDimensionEntity>(replacement);
+    } else if (property == DirectProperty::DimensionOverride) {
+        if (!std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
+            return false;
+        }
+        const auto& dimension =
+            std::get<acp::LinearDimensionEntity>(*entity);
         const auto entered = prompt_property_value(
             hwnd,
             L"Dimension Text Override",
@@ -1358,29 +1364,30 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
                 ? wide_from_utf8(*dimension.text_override)
                 : L"");
         if (!entered.has_value()) return false;
-        if (entered->empty()) {
-            dimension.text_override.reset();
-        } else {
-            const std::string utf8 = utf8_from_wide(*entered);
-            if (utf8.empty()) {
-                show_invalid_property(hwnd, L"Dimension override is not valid UTF-8 text.");
+
+        std::optional<std::string> value;
+        if (!entered->empty()) {
+            value = utf8_from_wide(*entered);
+            if (value->empty()) {
+                show_invalid_property(
+                    hwnd, L"Dimension override is not valid UTF-8 text.");
                 return false;
             }
-            dimension.text_override = utf8;
         }
-        if (!acp::annotation::valid_linear_dimension(dimension)) {
+
+        replacement =
+            acp::property_edit::dimension_override(*entity, std::move(value));
+        if (!replacement.has_value()) {
             show_invalid_property(hwnd, L"The edited dimension would be invalid.");
             return false;
         }
     } else if (property == DirectProperty::HatchAngle) {
-        if (!std::holds_alternative<acp::HatchEntity>(replacement)) {
+        if (!std::holds_alternative<acp::HatchEntity>(*entity)) {
             return false;
         }
-        auto& hatch = std::get<acp::HatchEntity>(replacement);
+        const auto& hatch = std::get<acp::HatchEntity>(*entity);
         const auto entered = prompt_property_value(
-            hwnd,
-            L"Hatch Angle",
-            L"Angle in degrees:",
+            hwnd, L"Hatch Angle", L"Angle in degrees:",
             format_property_number(
                 hatch.angle * 180.0 / std::numbers::pi));
         if (!entered.has_value()) return false;
@@ -1389,54 +1396,64 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
             show_invalid_property(hwnd, L"Hatch angle must be a finite number.");
             return false;
         }
-        hatch.angle = *parsed * std::numbers::pi / 180.0;
-    } else if (property == DirectProperty::HatchSpacing) {
-        if (!std::holds_alternative<acp::HatchEntity>(replacement)) {
-            return false;
-        }
-        auto& hatch = std::get<acp::HatchEntity>(replacement);
-        const auto entered = prompt_property_value(
-            hwnd,
-            L"Hatch Spacing",
-            L"Spacing:",
-            format_property_number(hatch.spacing));
-        if (!entered.has_value()) return false;
-        const auto parsed = parse_finite_double(*entered);
-        if (!parsed.has_value() || *parsed <= acp::geo::kEpsilon) {
-            show_invalid_property(hwnd, L"Hatch spacing must be greater than 0.");
-            return false;
-        }
-        hatch.spacing = *parsed;
-        if (!acp::hatch::valid(hatch)) {
+
+        replacement = acp::property_edit::hatch_angle(
+            *entity, *parsed * std::numbers::pi / 180.0);
+        if (!replacement.has_value()) {
             show_invalid_property(hwnd, L"The edited hatch would be invalid.");
             return false;
         }
-    } else if (property == DirectProperty::BlockScale) {
-        if (!std::holds_alternative<acp::BlockReferenceEntity>(replacement)) {
+    } else if (property == DirectProperty::HatchSpacing) {
+        if (!std::holds_alternative<acp::HatchEntity>(*entity)) {
             return false;
         }
-        auto& block = std::get<acp::BlockReferenceEntity>(replacement);
+        const auto& hatch = std::get<acp::HatchEntity>(*entity);
         const auto entered = prompt_property_value(
-            hwnd,
-            L"Block Scale",
-            L"Uniform scale:",
+            hwnd, L"Hatch Spacing", L"Spacing:",
+            format_property_number(hatch.spacing));
+        if (!entered.has_value()) return false;
+        const auto parsed = parse_finite_double(*entered);
+        if (!parsed.has_value()) {
+            show_invalid_property(hwnd, L"Hatch spacing must be greater than 0.");
+            return false;
+        }
+
+        replacement =
+            acp::property_edit::hatch_spacing(*entity, *parsed);
+        if (!replacement.has_value()) {
+            show_invalid_property(hwnd, L"Hatch spacing must be greater than 0.");
+            return false;
+        }
+    } else if (property == DirectProperty::BlockScale) {
+        if (!std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
+            return false;
+        }
+        const auto& block =
+            std::get<acp::BlockReferenceEntity>(*entity);
+        const auto entered = prompt_property_value(
+            hwnd, L"Block Scale", L"Uniform scale:",
             format_property_number(block.scale));
         if (!entered.has_value()) return false;
         const auto parsed = parse_finite_double(*entered);
-        if (!parsed.has_value() || *parsed <= acp::geo::kEpsilon) {
+        if (!parsed.has_value()) {
             show_invalid_property(hwnd, L"Block scale must be greater than 0.");
             return false;
         }
-        block.scale = *parsed;
-    } else if (property == DirectProperty::BlockRotation) {
-        if (!std::holds_alternative<acp::BlockReferenceEntity>(replacement)) {
+
+        replacement =
+            acp::property_edit::block_scale(*entity, *parsed);
+        if (!replacement.has_value()) {
+            show_invalid_property(hwnd, L"Block scale must be greater than 0.");
             return false;
         }
-        auto& block = std::get<acp::BlockReferenceEntity>(replacement);
+    } else if (property == DirectProperty::BlockRotation) {
+        if (!std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
+            return false;
+        }
+        const auto& block =
+            std::get<acp::BlockReferenceEntity>(*entity);
         const auto entered = prompt_property_value(
-            hwnd,
-            L"Block Rotation",
-            L"Rotation in degrees:",
+            hwnd, L"Block Rotation", L"Rotation in degrees:",
             format_property_number(
                 block.rotation * 180.0 / std::numbers::pi));
         if (!entered.has_value()) return false;
@@ -1445,14 +1462,20 @@ bool edit_selected_property(HWND hwnd, DirectProperty property) {
             show_invalid_property(hwnd, L"Block rotation must be a finite number.");
             return false;
         }
-        block.rotation = *parsed * std::numbers::pi / 180.0;
+
+        replacement = acp::property_edit::block_rotation(
+            *entity, *parsed * std::numbers::pi / 180.0);
+        if (!replacement.has_value()) {
+            show_invalid_property(hwnd, L"Block rotation must be a finite number.");
+            return false;
+        }
     } else {
         return false;
     }
 
     if (apply_history(
             std::make_unique<acp::UpdateEntityCommand>(
-                id, replacement))) {
+                id, *replacement))) {
         InvalidateRect(hwnd, nullptr, FALSE);
         return true;
     }

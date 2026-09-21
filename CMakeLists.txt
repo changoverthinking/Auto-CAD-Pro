@@ -51,6 +51,7 @@ add_library(acp_core
     src/core/snap.cpp
     src/core/document.cpp
     src/core/history.cpp
+    src/core/property_edit.cpp
     src/core/transform.cpp
     src/core/selection.cpp
     src/core/edit2d.cpp
@@ -115,6 +116,10 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_annotation_properties_workflow_tests tests/annotation_properties_workflow_tests.cpp)
     target_link_libraries(acp_annotation_properties_workflow_tests PRIVATE acp_core)
     add_test(NAME acp_annotation_properties_workflow_tests COMMAND acp_annotation_properties_workflow_tests)
+
+    add_executable(acp_property_edit_tests tests/property_edit_tests.cpp)
+    target_link_libraries(acp_property_edit_tests PRIVATE acp_core)
+    add_test(NAME acp_property_edit_tests COMMAND acp_property_edit_tests)
 
     add_executable(acp_recovery_tests tests/recovery_tests.cpp)
     target_link_libraries(acp_recovery_tests PRIVATE acp_core)
