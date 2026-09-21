@@ -2697,6 +2697,8 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
         case kGuiTestSnapshotMessage:
             return write_gui_test_snapshot(w_param) ? 1 : 0;
+        case kGuiTestPropertyStageMessage:
+            return static_cast<LRESULT>(g_property_test_stage);
 #endif
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
