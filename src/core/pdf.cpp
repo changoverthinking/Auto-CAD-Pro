@@ -372,7 +372,6 @@ bool entity(
             }
             return true;
         }
-        return false;
     }, value);
 }
 
