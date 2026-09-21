@@ -16,8 +16,8 @@ Current Windows 2D release foundation:
 - layers/properties panel, visibility/lock controls and effective line weights;
 - Dimension and Hatch creation;
 - Undo/Redo through the command history model;
-- project New/Open/Save/Save As with unsaved-change protection;
-- DXF import/export;
+- project New/Open/Save/Save As with unsaved-change protection and validated atomic replacement;
+- DXF import/export subset with degenerate-input rejection and lossy-export warning;
 - SVG export and vector PDF export;
 - Windows CI build/test and downloadable x64 executable artifact;
 - History-backed Text/Dimension/Hatch property editing;
@@ -93,7 +93,7 @@ FreeCAD source is LGPL2+ and may be reused under its license obligations. Auto C
 ## Windows release outputs
 
 Every green Windows CI run produces:
-- `AutoCADPro.exe`;
+- a runnable `AutoCADPro.exe` bundle with its Unicode font/license assets;
 - a versioned portable ZIP;
 - SHA-256 checksum for the portable package;
 - a validated NSIS installer;
@@ -104,4 +104,4 @@ Tagged builds (`v*`) use `.github/workflows/release.yml` to build release artifa
 
 ## Current 2D release status
 
-The main branch is protected by repeated core/workflow tests, real GUI launch/lifecycle tests, creation/annotation/edit-tool interaction matrices, large-document regression and installer validation. The full 2D function audit has resolved the previously identified Unicode PDF blocker, page-setup persistence gap, layer-history gap, recovery-discard gap and hatch rendering/export inconsistency.
+The main branch is protected by repeated core/workflow tests, real GUI launch/lifecycle tests, creation/annotation/edit-tool interaction matrices, large-document regression, atomic project-save regression, portable-package content validation and silent installer install/launch/uninstall validation. The full 2D audit has resolved the previously identified Unicode PDF blocker, page-setup persistence gap, layer-history gap, recovery-discard gap, hatch rendering/export inconsistency, silent DXF omission risk and missing installer runtime assets.
