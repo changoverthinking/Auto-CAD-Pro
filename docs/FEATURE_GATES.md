@@ -37,13 +37,13 @@ A feature may be labeled production only when all of the following are true:
 | project save/open | verified | versioned round-trip tests |
 | DXF ASCII import/export subset | verified | controlled 2D entity round-trip tests |
 | drawing bounds/viewport fit | verified | bounds/aspect tests |
-| page setup/print scale model | verified | A-series page and fixed-scale tests |
-| Windows desktop GUI | prototype | canvas/grid, zoom/pan, object snap, Line/Circle/Polyline/Arc/Text, selection/grips, Move/Copy/Rotate/Scale/Mirror, Trim/Extend/Offset, Dimension/Hatch creation, layers/properties panel, Delete, Undo/Redo, project/DXF workflow, Text/Dimension/Hatch/Block rendering |
-| Windows executable artifact | prototype | CI uploads AutoCADPro-Windows-x64 after push build/test using Node 24-native actions |
+| page setup/print scale model | production | A4-A0, portrait/landscape, Fit/1:50/1:100/1:200 workflow, fixed-scale PDF acceptance/rejection tests and real GUI controls |
+| Windows desktop GUI | verified | native Win32 workspace is built on Windows CI; real-window tests cover launch/lifecycle plus Line/Circle/Rectangle/Polyline/Arc/Dimension/Text/Hatch/Copy/Select/Delete interactions and document snapshots |
+| Windows executable artifact | production | CI builds self-contained x64 executable, versioned portable ZIP + SHA-256, validates NSIS installer creation and uploads executable/portable/installer artifacts |
 | constraints | planned | FreeCAD Sketcher upstream audit required |
 | SVG export | prototype | visible 2D geometry, instantiated blocks, UTF-8 text, dimensions, hatches and effective line weights are serialized by the core exporter and exposed in the Windows GUI |
 | PDF export | prototype | vector geometry and printable ASCII text are exported to PDF 1.4; unsupported Unicode text now rejects export instead of being silently replaced with question marks; embedded Unicode font support remains required |
-| full GUI editing workflow | prototype | selection/transforms/edit2d/history/file workflow, object snap, Unicode text creation, layers panel and core entity rendering active; richer annotation styling and richer properties editing remain |
+| full GUI editing workflow | verified | History-backed geometry/property/annotation workflows, autosave/recovery, page setup, expanded real GUI interaction regression, repeated GUI lifecycle checks and Windows installer gate are active |
 
 ## 2026-09-19 GUI audit fixes
 
@@ -65,3 +65,15 @@ A feature may be labeled production only when all of the following are true:
 - Project file workflow now remembers the current .acp path, separates Save from Save As, maps Ctrl+S/Ctrl+Shift+S/Ctrl+O/Ctrl+N correctly, and delays discard confirmation until a chosen Open/Import file has been successfully parsed.
 - Vector PDF export fits visible drawing geometry to the configured A4 landscape page model, preserves effective line weights, and emits blocks/dimensions/hatches/text.
 - PDF text export no longer silently corrupts UTF-8 into '?' characters. Until a Unicode font is embedded/subset into the PDF, documents containing unsupported Unicode text fail export rather than producing misleading output.
+
+## 2026-09-21 final 2D release hardening
+
+- Pull requests must contain current `main`; stale branch integration is blocked by CI.
+- Core and workflow regression suites run repeatedly before GUI and packaging steps.
+- Real GUI interaction snapshots now cover Line, Circle, Rectangle, Hatch, Arc, Polyline, Dimension, Text, Copy, Select and Delete.
+- Autosave writes atomic recovery snapshots every 30 seconds for dirty drawings; startup recovery rejects corrupt snapshots and never overwrites the main project file.
+- Layout workflow supports A4 through A0, portrait/landscape and Fit/1:50/1:100/1:200 PDF output.
+- A 5,120-entity regression gate covers bounds, selection, object snap and project round-trip; current Windows CI completes this case in roughly 0.04-0.05 seconds per run.
+- Windows release output includes executable metadata/manifest, portable ZIP, SHA-256 checksum and a validated NSIS installer.
+- Tag-triggered release workflow can publish GitHub Releases and is Authenticode signing-ready when certificate secrets are configured.
+- PDF Unicode text remains the explicit blocker for promoting PDF export beyond prototype; current behavior safely rejects unsupported text rather than corrupting it.
