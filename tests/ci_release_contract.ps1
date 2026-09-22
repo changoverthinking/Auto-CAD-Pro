@@ -30,6 +30,7 @@ foreach ($target in $requiredCTestTargets) {
 $requiredWorkflowSteps = @(
     "Source sanity preflight",
     "GUI command reachability preflight",
+    "SuicaCad icon asset preflight",
     "Configure",
     "Build",
     "Test",
@@ -52,6 +53,9 @@ foreach ($step in $requiredWorkflowSteps) {
 }
 
 $requiredFiles = @(
+    "tests\ci_icon_assets.ps1",
+    "assets\icons\suicacad\manifest.tsv",
+    "assets\icons\suicacad\suicacad-icons-extended.svg",
     "tests\gui_interaction_smoke.ps1",
     "tests\gui_edit_tools_smoke.ps1",
     "tests\gui_layout_dirty_smoke.ps1",
