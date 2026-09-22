@@ -1846,7 +1846,7 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
         y += 26;
     }
 
-    const int properties_top = std::max<LONG>(y + 10, panel.top + (panel.bottom - panel.top) / 2);
+    const int properties_top = y + 10;
     RECT prop_header{panel.left, properties_top, panel.right, properties_top + 28};
     HBRUSH prop_brush = CreateSolidBrush(RGB(32, 49, 63));
     FillRect(dc, &prop_header, prop_brush);
@@ -1946,16 +1946,13 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
             const std::wstring color_text =
                 props->color_override.has_value()
                     ? format_rgb(*props->color_override)
-                    : L"ByLayer " +
-                      format_rgb(g_app.document.effective_color(*g_app.selected));
+                    : L"ByLayer";
             draw_property(L"Color*", color_text.c_str());
 
             const std::wstring type_text =
                 props->line_type_override.has_value()
                     ? std::wstring{line_type_name(*props->line_type_override)}
-                    : L"ByLayer " + std::wstring{
-                        line_type_name(
-                            g_app.document.effective_line_type(*g_app.selected))};
+                    : L"ByLayer";
             draw_property(L"Linetype*", type_text.c_str());
         }
     } else {
@@ -2018,10 +2015,7 @@ bool handle_property_panel_double_click(HWND hwnd, POINT point) {
             layer_y += 26;
         }
     }
-    const int properties_top =
-        std::max<LONG>(
-            layer_y + 10,
-            top + (panel_bottom - top) / 2);
+    const int properties_top = layer_y + 10;
     const int values_top = properties_top + 34;
     if (point.y < values_top) {
         return false;
