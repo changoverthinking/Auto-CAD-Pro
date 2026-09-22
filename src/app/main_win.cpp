@@ -3828,7 +3828,14 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
         case WM_MOUSEWHEEL: {
             POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
             ScreenToClient(hwnd, &p);
-            zoom_at(hwnd, p, GET_WHEEL_DELTA_WPARAM(w_param));
+            const int wheel_delta = GET_WHEEL_DELTA_WPARAM(w_param);
+            if (handle_right_panel_wheel(hwnd, p, wheel_delta)) {
+                return 0;
+            }
+            const RECT canvas = canvas_rect(hwnd);
+            if (PtInRect(&canvas, p)) {
+                zoom_at(hwnd, p, wheel_delta);
+            }
             return 0;
         }
 
