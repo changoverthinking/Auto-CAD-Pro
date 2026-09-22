@@ -372,6 +372,15 @@ bool selected_editable() {
            g_app.document.entity_editable(*g_app.selected);
 }
 
+bool selected_visibility_mutable() {
+    if (!g_app.selected.has_value()) {
+        return false;
+    }
+    const acp::EntityId id = *g_app.selected;
+    return g_app.document.find(id) != nullptr &&
+           !g_app.document.entity_locked(id);
+}
+
 int property_row_count() {
     int rows = 0;
 
@@ -3402,7 +3411,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     }
                     return 0;
                 case kMenuToggleEntityVisible:
-                    if (selected_editable()) {
+                    if (selected_visibility_mutable()) {
                         if (const acp::EntityProperties* props =
                                 g_app.document.properties(*g_app.selected)) {
                             acp::EntityProperties replacement = *props;
