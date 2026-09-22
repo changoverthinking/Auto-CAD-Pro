@@ -52,6 +52,7 @@ add_library(acp_core
     src/core/model3d.cpp
     src/core/obj.cpp
     src/core/blender_bridge.cpp
+    src/core/viewport3d.cpp
     src/core/snap.cpp
     src/core/document.cpp
     src/core/history.cpp
