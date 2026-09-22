@@ -248,6 +248,30 @@ struct ToolbarButton {
     Tool tool;
 };
 
+enum class QuickToolbarIcon {
+    New,
+    Open,
+    Save,
+    Undo,
+    Redo,
+    Fit
+};
+
+struct QuickToolbarButton {
+    const wchar_t* text;
+    int command_id;
+    QuickToolbarIcon icon;
+};
+
+constexpr std::array<QuickToolbarButton, 6> kQuickToolbarButtons{{
+    {L"New", kMenuNew, QuickToolbarIcon::New},
+    {L"Open", kMenuOpen, QuickToolbarIcon::Open},
+    {L"Save", kMenuSave, QuickToolbarIcon::Save},
+    {L"Undo", kMenuUndo, QuickToolbarIcon::Undo},
+    {L"Redo", kMenuRedo, QuickToolbarIcon::Redo},
+    {L"Fit", kMenuZoomExtents, QuickToolbarIcon::Fit}
+}};
+
 constexpr std::array<ToolbarButton, 18> kToolbarButtons{{
     {L"Select", Tool::Select},
     {L"Line", Tool::Line},
@@ -269,11 +293,29 @@ constexpr std::array<ToolbarButton, 18> kToolbarButtons{{
     {L"Block", Tool::BlockInsert}
 }};
 
-RECT toolbar_button_rect(std::size_t index, const RECT& client) {
+int toolbar_button_size(const RECT& client) {
+    return std::clamp(toolbar_height(client) - 6, 22, 28);
+}
+
+RECT quick_toolbar_button_rect(std::size_t index, const RECT& client) {
     const int height = toolbar_height(client);
-    const int size = std::clamp(height - 6, 22, 28);
+    const int size = toolbar_button_size(client);
     const int gap = 1;
     const int left = 3 + static_cast<int>(index) * (size + gap);
+    const int top = std::max(1, (height - size) / 2);
+    return RECT{left, top, left + size, top + size};
+}
+
+RECT toolbar_button_rect(std::size_t index, const RECT& client) {
+    const int height = toolbar_height(client);
+    const int size = toolbar_button_size(client);
+    const int gap = 1;
+    const int quick_width =
+        static_cast<int>(kQuickToolbarButtons.size()) * (size + gap);
+    const int separator_gap = 6;
+    const int left =
+        3 + quick_width + separator_gap +
+        static_cast<int>(index) * (size + gap);
     const int top = std::max(1, (height - size) / 2);
     return RECT{left, top, left + size, top + size};
 }
