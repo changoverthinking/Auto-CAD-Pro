@@ -36,6 +36,15 @@ int main() {
     verify(2560, 1440);
     verify(3840, 2160);
 
+    expect(acp::ui_layout::compact_right_panel(128),
+           "128px right panel uses compact layout");
+    expect(!acp::ui_layout::compact_right_panel(204),
+           "204px right panel uses full layout");
+    expect(acp::ui_layout::property_key_width(128) == 57,
+           "compact property key width remains readable");
+    expect(acp::ui_layout::property_key_width(384) == 100,
+           "wide property key width is capped");
+
     const auto full_hd = acp::ui_layout::metrics_for_client(1920, 1080);
     expect(full_hd.toolbar_height == 54, "1080p toolbar exact 1/20");
     expect(full_hd.right_panel_width == 384, "1080p right panel exact 2/10");
