@@ -215,6 +215,8 @@ constexpr int kToolRectangle = 2017;
 constexpr int kToolBlockInsert = 2018;
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
 constexpr UINT kGuiTestSnapshotMessage = WM_APP + 42;
+constexpr UINT kGuiTestRightPanelWidthMessage = WM_APP + 43;
+constexpr UINT kGuiTestRightPanelStateMessage = WM_APP + 44;
 #endif
 
 const wchar_t* paper_size_name(acp::layout::PaperSize paper) {
@@ -3946,6 +3948,20 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
         case kGuiTestSnapshotMessage:
             return write_gui_test_snapshot(w_param) ? 1 : 0;
+        case kGuiTestRightPanelWidthMessage: {
+            RECT client{};
+            GetClientRect(hwnd, &client);
+            return static_cast<LRESULT>(layer_panel_width(client));
+        }
+        case kGuiTestRightPanelStateMessage: {
+            unsigned state = 0;
+            if (g_app.right_panel_visible) state |= 1u;
+            if (g_app.right_panel_pinned) state |= 2u;
+            if (g_app.right_panel_collapsed) state |= 4u;
+            if (g_app.right_panel_auto_hide_expanded) state |= 8u;
+            if (g_app.right_panel_resizing) state |= 16u;
+            return static_cast<LRESULT>(state);
+        }
 #endif
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
