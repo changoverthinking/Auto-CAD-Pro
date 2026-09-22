@@ -2978,6 +2978,92 @@ std::filesystem::path recovery_snapshot_path() {
     return root / L"AutoCADPro" / L"recovery.acp";
 }
 
+std::filesystem::path ui_preferences_path() {
+    std::array<wchar_t, 4096> local_app_data{};
+    const DWORD length = GetEnvironmentVariableW(
+        L"LOCALAPPDATA",
+        local_app_data.data(),
+        static_cast<DWORD>(local_app_data.size()));
+
+    std::filesystem::path root;
+    if (length > 0 && length < local_app_data.size()) {
+        root = std::filesystem::path(local_app_data.data());
+    } else {
+        std::error_code ec;
+        root = std::filesystem::temp_directory_path(ec);
+        if (ec) {
+            root = std::filesystem::current_path(ec);
+        }
+    }
+    return root / L"AutoCADPro" / L"ui.ini";
+}
+
+void save_ui_preferences() {
+    const auto path = ui_preferences_path();
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    if (ec) {
+        return;
+    }
+
+    std::string data;
+    data += "right_panel_visible=" +
+        std::string(g_app.right_panel_visible ? "1" : "0") + "\n";
+    data += "right_panel_pinned=" +
+        std::string(g_app.right_panel_pinned ? "1" : "0") + "\n";
+    data += "right_panel_collapsed=" +
+        std::string(g_app.right_panel_collapsed ? "1" : "0") + "\n";
+    data += "right_panel_width=" +
+        std::to_string(g_app.right_panel_custom_width) + "\n";
+    (void)write_text_file(path, data);
+}
+
+void load_ui_preferences() {
+    const auto data = read_text_file(ui_preferences_path());
+    if (!data.has_value()) {
+        return;
+    }
+
+    auto read_int = [&](const char* key) -> std::optional<int> {
+        const std::string prefix = std::string(key) + "=";
+        const std::size_t pos = data->find(prefix);
+        if (pos == std::string::npos) {
+            return std::nullopt;
+        }
+        const std::size_t begin = pos + prefix.size();
+        const std::size_t end = data->find('\n', begin);
+        const std::string value = data->substr(
+            begin,
+            end == std::string::npos
+                ? std::string::npos
+                : end - begin);
+        try {
+            return std::stoi(value);
+        } catch (...) {
+            return std::nullopt;
+        }
+    };
+
+    if (const auto value = read_int("right_panel_visible")) {
+        g_app.right_panel_visible = *value != 0;
+    }
+    if (const auto value = read_int("right_panel_pinned")) {
+        g_app.right_panel_pinned = *value != 0;
+    }
+    if (const auto value = read_int("right_panel_collapsed")) {
+        g_app.right_panel_collapsed = *value != 0;
+    }
+    if (const auto value = read_int("right_panel_width")) {
+        g_app.right_panel_custom_width =
+            std::clamp(*value, 0, 480);
+    }
+
+    if (!g_app.right_panel_pinned) {
+        g_app.right_panel_collapsed = true;
+        g_app.right_panel_auto_hide_expanded = false;
+    }
+}
+
 acp::persistence::ProjectSettings current_project_settings() {
     return acp::persistence::ProjectSettings{
         g_app.page_setup,
