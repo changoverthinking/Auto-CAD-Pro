@@ -345,7 +345,7 @@ try {
         $hwnd,
         0x8000 + 44,
         [IntPtr]::Zero,
-        [IntPtr]$packedPanelPoint)
+        [IntPtr]::new([int64]$packedPanelPoint))
 
     Write-Host (
         "PROPERTY_STAGE: panel-content-doubleclick client=" +
