@@ -2,6 +2,7 @@
 #include "acp/document.hpp"
 #include "acp/model3d.hpp"
 #include "acp/obj.hpp"
+#include "acp/viewport3d.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -73,6 +74,21 @@ int main() {
     const auto scene =
         acp::model3d::extrude_closed_polylines(document, 2.5);
     expect(scene.size() == 1, "closed 2D polyline becomes one 3D object");
+
+    acp::viewport3d::Camera camera{};
+    camera = acp::viewport3d::fit_camera(scene, camera, 1000.0, 700.0);
+    expect(camera.zoom > 0.0, "3D camera fit returns positive zoom");
+    const auto projected =
+        acp::viewport3d::project_scene(scene, camera, 1000.0, 700.0);
+    expect(projected.size() == 12, "viewport projects every triangle");
+    if (!projected.empty()) {
+        expect(std::isfinite(projected.front().a.x), "projected X is finite");
+        expect(std::isfinite(projected.front().a.y), "projected Y is finite");
+        expect(
+            projected.front().light >= 0.28 &&
+            projected.front().light <= 1.0,
+            "viewport light factor is clamped");
+    }
 
     const std::string obj = acp::obj::serialize(scene);
     expect(count_lines_with_prefix(obj, "v ") == 8, "OBJ has 8 vertices");
