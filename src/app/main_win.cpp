@@ -2082,19 +2082,22 @@ bool handle_property_panel_double_click(HWND hwnd, POINT point) {
         return false;
     }
 
-    int layer_y = top + 32;
-    for (const acp::LayerId id : g_app.document.layer_ids()) {
-        if (g_app.document.layer(id) != nullptr) {
-            layer_y += 26;
-        }
-    }
-    const int properties_top = layer_y + 10;
+    const auto panel_metrics =
+        right_panel_metrics_for_client(client);
+    const int properties_top =
+        top + panel_metrics.properties_top_offset;
     const int values_top = properties_top + 34;
-    if (point.y < values_top) {
+    const int property_rows = property_row_count();
+    const int values_bottom =
+        values_top +
+        property_rows * panel_metrics.property_row_height;
+    if (point.y < values_top || point.y >= values_bottom) {
         return false;
     }
 
-    const int row = (point.y - values_top) / 22;
+    const int row =
+        (point.y - values_top) /
+        panel_metrics.property_row_height;
     if (row == 2) {
         return edit_selected_property(
             hwnd, DirectProperty::LineWeight);
@@ -2152,8 +2155,28 @@ bool handle_layer_panel_double_click(HWND hwnd, POINT point) {
         return false;
     }
 
+    const auto panel_metrics =
+        right_panel_metrics_for_client(client);
+    const auto layer_ids = g_app.document.layer_ids();
+    const std::size_t visible_rows =
+        static_cast<std::size_t>(
+            std::max(panel_metrics.visible_layer_rows, 1));
+    const std::size_t max_scroll =
+        layer_ids.size() > visible_rows
+            ? layer_ids.size() - visible_rows
+            : 0;
+    g_app.layer_scroll_index =
+        std::min(g_app.layer_scroll_index, max_scroll);
+    const std::size_t layer_end =
+        std::min(
+            layer_ids.size(),
+            g_app.layer_scroll_index + visible_rows);
+
     int y = top + 32;
-    for (const acp::LayerId id : g_app.document.layer_ids()) {
+    for (std::size_t layer_index = g_app.layer_scroll_index;
+         layer_index < layer_end;
+         ++layer_index) {
+        const acp::LayerId id = layer_ids[layer_index];
         const acp::Layer* layer = g_app.document.layer(id);
         if (layer == nullptr) {
             continue;
@@ -2199,8 +2222,28 @@ bool handle_layer_panel_click(HWND hwnd, POINT point) {
         return false;
     }
 
+    const auto panel_metrics =
+        right_panel_metrics_for_client(client);
+    const auto layer_ids = g_app.document.layer_ids();
+    const std::size_t visible_rows =
+        static_cast<std::size_t>(
+            std::max(panel_metrics.visible_layer_rows, 1));
+    const std::size_t max_scroll =
+        layer_ids.size() > visible_rows
+            ? layer_ids.size() - visible_rows
+            : 0;
+    g_app.layer_scroll_index =
+        std::min(g_app.layer_scroll_index, max_scroll);
+    const std::size_t layer_end =
+        std::min(
+            layer_ids.size(),
+            g_app.layer_scroll_index + visible_rows);
+
     int y = top + 32;
-    for (const acp::LayerId id : g_app.document.layer_ids()) {
+    for (std::size_t layer_index = g_app.layer_scroll_index;
+         layer_index < layer_end;
+         ++layer_index) {
+        const acp::LayerId id = layer_ids[layer_index];
         const acp::Layer* layer = g_app.document.layer(id);
         if (layer == nullptr) {
             continue;
@@ -2237,6 +2280,67 @@ bool handle_layer_panel_click(HWND hwnd, POINT point) {
         }
         y += 26;
     }
+    return true;
+}
+
+bool handle_right_panel_wheel(
+    HWND hwnd,
+    POINT point,
+    int wheel_delta) {
+
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    const int top = toolbar_height(client);
+    const int panel_left =
+        client.right - layer_panel_width(client);
+    const int panel_bottom =
+        client.bottom - kStatusHeight;
+
+    if (point.x < panel_left ||
+        point.x >= client.right ||
+        point.y < top ||
+        point.y >= panel_bottom) {
+        return false;
+    }
+
+    const auto panel_metrics =
+        right_panel_metrics_for_client(client);
+    const int properties_top =
+        top + panel_metrics.properties_top_offset;
+
+    if (point.y >= properties_top) {
+        return true;
+    }
+
+    const auto layer_ids = g_app.document.layer_ids();
+    const std::size_t visible_rows =
+        static_cast<std::size_t>(
+            std::max(panel_metrics.visible_layer_rows, 1));
+    if (layer_ids.size() <= visible_rows) {
+        g_app.layer_scroll_index = 0;
+        return true;
+    }
+
+    const std::size_t max_scroll =
+        layer_ids.size() - visible_rows;
+    const int notches =
+        std::max(1, std::abs(wheel_delta) / WHEEL_DELTA);
+    const std::size_t step =
+        static_cast<std::size_t>(notches * 3);
+
+    if (wheel_delta > 0) {
+        g_app.layer_scroll_index =
+            step >= g_app.layer_scroll_index
+                ? 0
+                : g_app.layer_scroll_index - step;
+    } else if (wheel_delta < 0) {
+        g_app.layer_scroll_index =
+            std::min(
+                max_scroll,
+                g_app.layer_scroll_index + step);
+    }
+
+    InvalidateRect(hwnd, nullptr, FALSE);
     return true;
 }
 
