@@ -282,17 +282,44 @@ try {
     # second time through the value cell.
     $clientWidth = $rect.Right - $rect.Left
     $clientHeight = $rect.Bottom - $rect.Top
-    $toolbarHeight = [Math]::Max(
-        1, [int]($clientHeight / 20))
-    $panelWidth = [Math]::Max(
-        1, [int](($clientWidth * 2) / 10))
+
+    $toolbarHeight = [Math]::Min(
+        32,
+        [Math]::Max(26, [Math]::Floor($clientHeight / 32)))
+
+    $panelWidth = [Math]::Min(
+        300,
+        [Math]::Max(160, [Math]::Floor(($clientWidth * 17) / 100)))
+    $panelWidth = [Math]::Min(
+        $panelWidth,
+        [Math]::Max(1, [Math]::Floor($clientWidth / 3)))
+
     $panelLeft = $clientWidth - $panelWidth
-    $panelBottom = $clientHeight - 26
-    $layerY = $toolbarHeight + 32 + 26
-    $propertiesTop = $layerY + 10
-    $valueX = $panelLeft + 120
+    $navigatorWidth = [Math]::Min(
+        132,
+        [Math]::Max(86, [Math]::Floor(($panelWidth * 42) / 100)))
+    $navigatorWidth = [Math]::Min(
+        $navigatorWidth,
+        [Math]::Max(1, $panelWidth - 84))
+
+    $propertiesLeft = $panelLeft + $navigatorWidth + 1
+    $propertiesWidth = $clientWidth - $propertiesLeft
+    $keyWidth = [Math]::Min(
+        78,
+        [Math]::Max(42, [Math]::Floor(($propertiesWidth * 42) / 100)))
+
+    $panelHeight = $clientHeight - 20 - $toolbarHeight
+    $propertyRows = 16
+    $rowHeight = [Math]::Floor(
+        ($panelHeight - 24 - 4) / $propertyRows)
+    $rowHeight = [Math]::Min(
+        20,
+        [Math]::Max(14, $rowHeight))
+
+    $valuesTop = $toolbarHeight + 26
+    $valueX = $propertiesLeft + 5 + $keyWidth + 10
     $contentY =
-        $propertiesTop + 34 + (8 * 22) + 11
+        $valuesTop + (8 * $rowHeight) + [Math]::Floor($rowHeight / 2)
 
     DoubleClick-Client $hwnd $valueX $contentY
     Set-PropertyDialog $proc "PANEL-CAD"
