@@ -1781,8 +1781,11 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     SetTextColor(dc, RGB(231, 237, 242));
 
     RECT heading{panel.left + 10, panel.top + 4, panel.right - 8, panel.top + 28};
-    DrawTextW(dc, L"Layers  (double-click name)", -1, &heading,
+    DrawTextW(dc, L"Layers", -1, &heading,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    const bool compact_panel =
+        acp::ui_layout::compact_right_panel(width);
 
     int y = panel.top + 32;
     for (const acp::LayerId id : g_app.document.layer_ids()) {
@@ -1795,37 +1798,52 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
         FillRect(dc, &row, row_brush);
         DeleteObject(row_brush);
 
-        wchar_t name[160]{};
-        MultiByteToWideChar(CP_UTF8, 0, layer->name.c_str(), -1,
-                            name, static_cast<int>(std::size(name)));
+        const std::wstring name = wide_from_utf8(layer->name);
 
-        RECT vis_rect{row.left + 2, row.top, row.left + 28, row.bottom};
-        RECT lock_rect{row.left + 30, row.top, row.left + 56, row.bottom};
-        RECT name_rect{row.left + 60, row.top, row.right - 44, row.bottom};
+        const int vis_width = compact_panel ? 22 : 28;
+        const int lock_width = compact_panel ? 22 : 28;
+        RECT vis_rect{
+            row.left + 2, row.top,
+            row.left + 2 + vis_width, row.bottom};
+        RECT lock_rect{
+            vis_rect.right + 2, row.top,
+            vis_rect.right + 2 + lock_width, row.bottom};
+
+        const LONG name_right =
+            compact_panel ? row.right - 4 : row.right - 44;
+        RECT name_rect{
+            lock_rect.right + 4, row.top,
+            std::max<LONG>(lock_rect.right + 5, name_right), row.bottom};
+
         DrawTextW(dc, layer->visible ? L"V" : L"-", -1, &vis_rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         DrawTextW(dc, layer->locked ? L"L" : L"-", -1, &lock_rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        DrawTextW(dc, name, -1, &name_rect,
+        DrawTextW(dc, name.c_str(), -1, &name_rect,
                   DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
-        RECT swatch{row.right - 38, row.top + 5,
-                    row.right - 24, row.bottom - 5};
-        HBRUSH swatch_brush = CreateSolidBrush(
-            RGB(layer->color.r, layer->color.g, layer->color.b));
-        FillRect(dc, &swatch, swatch_brush);
-        DeleteObject(swatch_brush);
-        FrameRect(dc, &swatch,
-                  static_cast<HBRUSH>(GetStockObject(GRAY_BRUSH)));
+        if (!compact_panel) {
+            RECT swatch{row.right - 38, row.top + 5,
+                        row.right - 24, row.bottom - 5};
+            HBRUSH swatch_brush = CreateSolidBrush(
+                RGB(layer->color.r, layer->color.g, layer->color.b));
+            FillRect(dc, &swatch, swatch_brush);
+            DeleteObject(swatch_brush);
+            FrameRect(dc, &swatch,
+                      static_cast<HBRUSH>(GetStockObject(GRAY_BRUSH)));
 
-        RECT type_rect{row.right - 22, row.top, row.right - 2, row.bottom};
-        const wchar_t* type_mark =
-            layer->line_type == acp::LineType::Continuous
-                ? L"—"
-                : layer->line_type == acp::LineType::Dashed
-                    ? L"- -" : L"-·-";
-        DrawTextW(dc, type_mark, -1, &type_rect,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            RECT type_rect{
+                row.right - 21, row.top + 2,
+                row.right - 2, row.bottom - 2};
+            HPEN type_pen = create_entity_pen(
+                1, RGB(220, 230, 238), layer->line_type);
+            HGDIOBJ previous_pen = SelectObject(dc, type_pen);
+            const int type_y = (type_rect.top + type_rect.bottom) / 2;
+            MoveToEx(dc, type_rect.left + 1, type_y, nullptr);
+            LineTo(dc, type_rect.right - 1, type_y);
+            SelectObject(dc, previous_pen);
+            DeleteObject(type_pen);
+        }
         y += 26;
     }
 
@@ -1835,14 +1853,20 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     FillRect(dc, &prop_header, prop_brush);
     DeleteObject(prop_brush);
     RECT prop_title{panel.left + 10, properties_top, panel.right - 8, properties_top + 28};
-    DrawTextW(dc, L"Properties  (double-click value)", -1, &prop_title,
+    DrawTextW(dc, L"Properties", -1, &prop_title,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
     int py = properties_top + 34;
+    const int key_width =
+        acp::ui_layout::property_key_width(width);
     SetTextColor(dc, RGB(185, 198, 209));
     auto draw_property = [&](const wchar_t* key, const wchar_t* value) {
-        RECT key_rect{panel.left + 10, py, panel.left + 100, py + 22};
-        RECT value_rect{panel.left + 104, py, panel.right - 8, py + 22};
+        RECT key_rect{
+            panel.left + 10, py,
+            panel.left + 10 + key_width, py + 22};
+        RECT value_rect{
+            key_rect.right + 6, py,
+            panel.right - 8, py + 22};
         DrawTextW(dc, key, -1, &key_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         SetTextColor(dc, RGB(232, 237, 241));
         DrawTextW(dc, value, -1, &value_rect,
@@ -1978,7 +2002,10 @@ bool handle_property_panel_double_click(HWND hwnd, POINT point) {
     const int panel_width = layer_panel_width(client);
     const int panel_left = client.right - panel_width;
     const int panel_bottom = client.bottom - kStatusHeight;
-    if (point.x < panel_left + 104 ||
+    const int key_width =
+        acp::ui_layout::property_key_width(panel_width);
+    const int value_left = panel_left + 10 + key_width + 6;
+    if (point.x < value_left ||
         point.x >= client.right - 8 ||
         point.y < top ||
         point.y >= panel_bottom ||
@@ -2070,14 +2097,19 @@ bool handle_layer_panel_double_click(HWND hwnd, POINT point) {
             panel_left + 6, y,
             client.right - 6, y + 24};
         if (PtInRect(&row, point)) {
-            if (point.x < row.left + 58) {
+            const bool compact_panel =
+                acp::ui_layout::compact_right_panel(
+                    layer_panel_width(client));
+            const int control_edge =
+                row.left + (compact_panel ? 48 : 58);
+            if (point.x < control_edge) {
                 return true;
             }
             g_app.active_layer = id;
-            if (point.x >= row.right - 22) {
+            if (!compact_panel && point.x >= row.right - 22) {
                 (void)edit_active_layer_property(
                     hwnd, DirectLayerProperty::LineType);
-            } else if (point.x >= row.right - 40) {
+            } else if (!compact_panel && point.x >= row.right - 40) {
                 (void)edit_active_layer_property(
                     hwnd, DirectLayerProperty::Color);
             } else {
@@ -2109,12 +2141,19 @@ bool handle_layer_panel_click(HWND hwnd, POINT point) {
         }
         RECT row{panel_left + 6, y, client.right - 6, y + 24};
         if (PtInRect(&row, point)) {
-            if (point.x < row.left + 30) {
+            const bool compact_panel =
+                acp::ui_layout::compact_right_panel(
+                    layer_panel_width(client));
+            const int visibility_edge =
+                row.left + (compact_panel ? 24 : 30);
+            const int lock_edge =
+                row.left + (compact_panel ? 48 : 58);
+            if (point.x < visibility_edge) {
                 acp::Layer replacement = *layer;
                 replacement.visible = !replacement.visible;
                 (void)apply_history(std::make_unique<acp::UpdateLayerCommand>(
                         id, replacement));
-            } else if (point.x < row.left + 58) {
+            } else if (point.x < lock_edge) {
                 acp::Layer replacement = *layer;
                 replacement.locked = !replacement.locked;
                 (void)apply_history(std::make_unique<acp::UpdateLayerCommand>(
