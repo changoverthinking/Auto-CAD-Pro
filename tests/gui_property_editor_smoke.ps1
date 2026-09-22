@@ -12,8 +12,27 @@ public static class GuiPropertyNative {
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X, Y; }
+
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool ClientToScreen(
+        IntPtr hWnd,
+        ref POINT point);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(
+        uint dwFlags,
+        uint dx,
+        uint dy,
+        uint dwData,
+        UIntPtr dwExtraInfo);
 
     [DllImport("user32.dll")]
     public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
@@ -106,9 +125,29 @@ function Click-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
 }
 
 function DoubleClick-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
-    $packed = (($y -band 0xFFFF) -shl 16) -bor ($x -band 0xFFFF)
-    [GuiPropertyNative]::PostMessage(
-        $hwnd, 0x0203, [IntPtr]1, [IntPtr]$packed) | Out-Null
+    $screen = New-Object GuiPropertyNative+POINT
+    $screen.X = $x
+    $screen.Y = $y
+    if (![GuiPropertyNative]::ClientToScreen($hwnd, [ref]$screen)) {
+        throw "ClientToScreen failed for property double-click"
+    }
+
+    [GuiPropertyNative]::SetForegroundWindow($hwnd) | Out-Null
+    if (![GuiPropertyNative]::SetCursorPos($screen.X, $screen.Y)) {
+        throw "SetCursorPos failed for property double-click"
+    }
+
+    # Generate the same mouse sequence Windows uses to recognize a real
+    # double-click. The main window class has CS_DBLCLKS enabled.
+    [GuiPropertyNative]::mouse_event(
+        0x0002, 0, 0, 0, [UIntPtr]::Zero)
+    [GuiPropertyNative]::mouse_event(
+        0x0004, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 70
+    [GuiPropertyNative]::mouse_event(
+        0x0002, 0, 0, 0, [UIntPtr]::Zero)
+    [GuiPropertyNative]::mouse_event(
+        0x0004, 0, 0, 0, [UIntPtr]::Zero)
 }
 
 function Set-PropertyDialog(
@@ -134,6 +173,16 @@ function Set-PropertyDialog(
 
     if ($dialog -eq [IntPtr]::Zero -or
         $edit -eq [IntPtr]::Zero) {
+        if ($script:MainHwnd -ne [IntPtr]::Zero) {
+            $dblState = [GuiPropertyNative]::SendMessage(
+                $script:MainHwnd,
+                0x8000 + 45,
+                [IntPtr]::Zero,
+                [IntPtr]::Zero)
+            Write-Host (
+                "PROPERTY_DIAGNOSTIC: lastDoubleClickRow=" +
+                ($dblState.ToInt64() - 2))
+        }
         throw "Property editor dialog/edit control did not become ready"
     }
 
@@ -229,6 +278,7 @@ try {
     }
 
     $hwnd = $proc.MainWindowHandle
+    $script:MainHwnd = $hwnd
     [GuiPropertyNative]::SetForegroundWindow($hwnd) | Out-Null
 
     $rect = New-Object GuiPropertyNative+RECT
@@ -246,6 +296,7 @@ try {
 
     # First prove the direct menu -> native dialog -> History path one
     # property at a time, with a serialized snapshot after each step.
+    Write-Host "PROPERTY_STAGE: text-content-menu"
     Command-Property $hwnd $proc 1030 "EDITED-CAD"
     $contentState = Snapshot $hwnd 44
     if ($contentState -notmatch '"EDITED-CAD"') {
@@ -254,6 +305,7 @@ try {
         throw "Property editor regression: Text Content menu edit did not apply"
     }
 
+    Write-Host "PROPERTY_STAGE: text-height-menu"
     Command-Property $hwnd $proc 1031 "7.25"
     $heightState = Snapshot $hwnd 45
     if ($heightState -notmatch 'TEXT\s+[^\r\n]*\s+7\.25\s+') {
@@ -262,6 +314,7 @@ try {
         throw "Property editor regression: Text Height menu edit did not apply"
     }
 
+    Write-Host "PROPERTY_STAGE: text-rotation-menu"
     Command-Property $hwnd $proc 1032 "30"
     $rotationState = Snapshot $hwnd 46
     if ($rotationState -notmatch 'TEXT\s+[^\r\n]*\s+0\.523598') {
@@ -270,6 +323,7 @@ try {
         throw "Property editor regression: Text Rotation menu edit did not apply"
     }
 
+    Write-Host "PROPERTY_STAGE: lineweight-menu"
     Command-Property $hwnd $proc 1029 "0.70"
     $weightState = Snapshot $hwnd 47
     if ($weightState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+') {
@@ -282,17 +336,86 @@ try {
     # second time through the value cell.
     $clientWidth = $rect.Right - $rect.Left
     $clientHeight = $rect.Bottom - $rect.Top
-    $toolbarHeight = [Math]::Max(
-        1, [int]($clientHeight / 20))
-    $panelWidth = [Math]::Max(
-        1, [int](($clientWidth * 2) / 10))
+
+    $toolbarHeight = [Math]::Min(
+        32,
+        [Math]::Max(26, [Math]::Floor($clientHeight / 32)))
+
+    $panelWidth = [Math]::Min(
+        300,
+        [Math]::Max(160, [Math]::Floor(($clientWidth * 17) / 100)))
+    $panelWidth = [Math]::Min(
+        $panelWidth,
+        [Math]::Max(1, [Math]::Floor($clientWidth / 3)))
+
     $panelLeft = $clientWidth - $panelWidth
-    $panelBottom = $clientHeight - 26
-    $layerY = $toolbarHeight + 32 + 26
-    $propertiesTop = $layerY + 10
-    $valueX = $panelLeft + 120
+    $navigatorWidth = [Math]::Min(
+        132,
+        [Math]::Max(86, [Math]::Floor(($panelWidth * 42) / 100)))
+    $navigatorWidth = [Math]::Min(
+        $navigatorWidth,
+        [Math]::Max(1, $panelWidth - 84))
+
+    $propertiesLeft = $panelLeft + $navigatorWidth + 1
+    $propertiesWidth = $clientWidth - $propertiesLeft
+    $keyWidth = [Math]::Min(
+        78,
+        [Math]::Max(42, [Math]::Floor(($propertiesWidth * 42) / 100)))
+
+    $panelHeight = $clientHeight - 20 - $toolbarHeight
+    $propertyRows = 16
+    $rowHeight = [Math]::Floor(
+        ($panelHeight - 24 - 4) / $propertyRows)
+    $rowHeight = [Math]::Min(
+        20,
+        [Math]::Max(14, $rowHeight))
+
+    $valuesTop = $toolbarHeight + 26
+    # Use the right side of Properties rather than deriving an offset from
+    # the key column. This guarantees the click is inside the value cell even
+    # when the dock is at its minimum width.
+    $valueX = $clientWidth - 12
     $contentY =
-        $propertiesTop + 34 + (8 * 22) + 11
+        $valuesTop + (8 * $rowHeight) + [Math]::Floor($rowHeight / 2)
+
+    $beforePanelState = Snapshot $hwnd 49
+    if ($beforePanelState -notmatch '"EDITED-CAD"') {
+        throw "Property editor regression: Text selection/state was lost before panel double-click"
+    }
+
+    $packedPanelPoint =
+        (($contentY -band 0xFFFF) -shl 16) -bor
+        ($valueX -band 0xFFFF)
+    $selectedId = [GuiPropertyNative]::SendMessage(
+        $hwnd,
+        0x8000 + 43,
+        [IntPtr]::Zero,
+        [IntPtr]::Zero)
+    $hitRow = [GuiPropertyNative]::SendMessage(
+        $hwnd,
+        0x8000 + 44,
+        [IntPtr]::Zero,
+        [IntPtr]::new([int64]$packedPanelPoint))
+
+    Write-Host (
+        "PROPERTY_STAGE: panel-content-doubleclick client=" +
+        $clientWidth + "x" + $clientHeight +
+        " panel=" + $panelWidth +
+        " nav=" + $navigatorWidth +
+        " props=" + $propertiesWidth +
+        " rowHeight=" + $rowHeight +
+        " x=" + $valueX + " y=" + $contentY +
+        " selected=" + $selectedId.ToInt64() +
+        " hitRow=" + $hitRow.ToInt64())
+
+    if ($selectedId.ToInt64() -le 0) {
+        throw "Property editor regression: no selected entity before panel double-click"
+    }
+    if ($hitRow.ToInt64() -ne 9) {
+        throw (
+            "Property editor regression: expected Content row 8 but app hit-test returned " +
+            ($hitRow.ToInt64() - 1))
+    }
 
     DoubleClick-Client $hwnd $valueX $contentY
     Set-PropertyDialog $proc "PANEL-CAD"

@@ -100,7 +100,7 @@ struct AppState {
 
 AppState g_app;
 
-constexpr int kStatusHeight = 26;
+constexpr int kStatusHeight = 20;
 constexpr UINT_PTR kAutosaveTimerId = 1;
 constexpr UINT kAutosaveIntervalMs = 30000;
 
@@ -184,6 +184,10 @@ constexpr int kToolRectangle = 2017;
 constexpr int kToolBlockInsert = 2018;
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
 constexpr UINT kGuiTestSnapshotMessage = WM_APP + 42;
+constexpr UINT kGuiTestSelectedMessage = WM_APP + 43;
+constexpr UINT kGuiTestPropertyHitMessage = WM_APP + 44;
+constexpr UINT kGuiTestLastDoubleClickMessage = WM_APP + 45;
+int g_gui_test_last_double_click_row = -2;
 #endif
 
 const wchar_t* paper_size_name(acp::layout::PaperSize paper) {
@@ -271,10 +275,11 @@ constexpr std::array<ToolbarButton, 18> kToolbarButtons{{
 
 RECT toolbar_button_rect(std::size_t index, const RECT& client) {
     const int height = toolbar_height(client);
-    const int size = std::clamp(height - 4, 28, 34);
-    const int gap = 2;
-    const int left = 4 + static_cast<int>(index) * (size + gap);
-    return RECT{left, 2, left + size, std::max(3, height - 2)};
+    const int size = std::clamp(height - 4, 22, 28);
+    const int gap = 1;
+    const int left = 3 + static_cast<int>(index) * (size + gap);
+    const int top = std::max(1, (height - size) / 2);
+    return RECT{left, top, left + size, top + size};
 }
 
 
@@ -427,6 +432,7 @@ acp::ui_layout::RightPanelMetrics right_panel_metrics_for_client(
         static_cast<int>(
             client.bottom - kStatusHeight - toolbar_height(client)));
     return acp::ui_layout::right_panel_metrics(
+        layer_panel_width(client),
         panel_height,
         property_row_count(),
         static_cast<int>(g_app.document.layer_ids().size()));
@@ -1388,11 +1394,11 @@ void draw_layer_lock_icon(
 void draw_toolbar(HDC dc, const RECT& client) {
     const int height = toolbar_height(client);
     RECT bar{client.left, client.top, client.right, client.top + height};
-    HBRUSH background = CreateSolidBrush(RGB(27, 43, 57));
+    HBRUSH background = CreateSolidBrush(RGB(236, 238, 240));
     FillRect(dc, &bar, background);
     DeleteObject(background);
 
-    HPEN divider = CreatePen(PS_SOLID, 1, RGB(57, 76, 94));
+    HPEN divider = CreatePen(PS_SOLID, 1, RGB(165, 169, 173));
     HGDIOBJ old_pen = SelectObject(dc, divider);
     MoveToEx(dc, 0, height - 1, nullptr);
     LineTo(dc, client.right, height - 1);
@@ -1407,12 +1413,12 @@ void draw_toolbar(HDC dc, const RECT& client) {
         const bool active = g_app.tool == button.tool;
 
         HBRUSH button_brush = CreateSolidBrush(
-            active ? RGB(28, 103, 163) : RGB(34, 52, 67));
+            active ? RGB(205, 225, 242) : RGB(246, 247, 248));
         FillRect(dc, &rect, button_brush);
         DeleteObject(button_brush);
 
         if (active) {
-            HPEN edge = CreatePen(PS_SOLID, 1, RGB(58, 169, 239));
+            HPEN edge = CreatePen(PS_SOLID, 1, RGB(79, 128, 166));
             HGDIOBJ previous = SelectObject(dc, edge);
             HGDIOBJ previous_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
             Rectangle(dc, rect.left, rect.top, rect.right, rect.bottom);
@@ -1421,8 +1427,11 @@ void draw_toolbar(HDC dc, const RECT& client) {
             DeleteObject(edge);
         }
 
-        draw_tool_icon(dc, button.tool, rect,
-                       active ? RGB(240, 250, 255) : RGB(111, 205, 255));
+        draw_tool_icon(
+            dc,
+            button.tool,
+            rect,
+            active ? RGB(0, 88, 150) : RGB(43, 48, 53));
     }
 }
 
@@ -1453,6 +1462,9 @@ constexpr std::array<Tool, 12> kLeftRailTools{
 void draw_left_tool_rail(HDC dc, const RECT& client) {
     const int top = toolbar_height(client);
     const int width = left_tool_rail_width(client);
+    if (width <= 0) {
+        return;
+    }
     RECT rail{
         client.left,
         top,
@@ -1484,6 +1496,9 @@ bool handle_left_tool_rail_click(HWND hwnd, POINT point) {
     GetClientRect(hwnd, &client);
     const int top = toolbar_height(client);
     const int width = left_tool_rail_width(client);
+    if (width <= 0) {
+        return false;
+    }
     if (point.x < client.left || point.x >= client.left + width ||
         point.y < top || point.y >= client.bottom - kStatusHeight) {
         return false;
@@ -2006,28 +2021,67 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
         client.bottom - kStatusHeight
     };
 
-    HBRUSH background = CreateSolidBrush(RGB(28, 42, 54));
+    const auto panel_metrics =
+        right_panel_metrics_for_client(client);
+    const int navigator_width =
+        std::min(
+            panel_metrics.navigator_width,
+            std::max(1, static_cast<int>(panel.right - panel.left - 84)));
+
+    RECT navigator{
+        panel.left,
+        panel.top,
+        panel.left + navigator_width,
+        panel.bottom
+    };
+    RECT properties{
+        navigator.right + 1,
+        panel.top,
+        panel.right,
+        panel.bottom
+    };
+
+    HBRUSH background = CreateSolidBrush(RGB(239, 241, 243));
     FillRect(dc, &panel, background);
     DeleteObject(background);
 
-    HPEN separator = CreatePen(PS_SOLID, 1, RGB(58, 76, 92));
-    HGDIOBJ old_pen = SelectObject(dc, separator);
+    HPEN divider = CreatePen(PS_SOLID, 1, RGB(174, 180, 185));
+    HGDIOBJ old_pen = SelectObject(dc, divider);
     MoveToEx(dc, panel.left, panel.top, nullptr);
     LineTo(dc, panel.left, panel.bottom);
+    MoveToEx(dc, navigator.right, panel.top, nullptr);
+    LineTo(dc, navigator.right, panel.bottom);
     SelectObject(dc, old_pen);
-    DeleteObject(separator);
+    DeleteObject(divider);
+
+    HBRUSH header_brush = CreateSolidBrush(RGB(220, 223, 226));
+    RECT nav_header{
+        navigator.left, navigator.top,
+        navigator.right, navigator.top + 24};
+    RECT prop_header{
+        properties.left, properties.top,
+        properties.right, properties.top + 24};
+    FillRect(dc, &nav_header, header_brush);
+    FillRect(dc, &prop_header, header_brush);
+    DeleteObject(header_brush);
 
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(231, 237, 242));
+    SetTextColor(dc, RGB(35, 39, 42));
 
-    RECT heading{panel.left + 10, panel.top + 4, panel.right - 8, panel.top + 28};
-    DrawTextW(dc, L"Layers", -1, &heading,
-              DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    RECT nav_title{
+        navigator.left + 5, navigator.top,
+        navigator.right - 3, navigator.top + 24};
+    DrawTextW(
+        dc, L"Navigator", -1, &nav_title,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
-    const bool compact_panel =
-        acp::ui_layout::compact_right_panel(width);
-    const auto panel_metrics =
-        right_panel_metrics_for_client(client);
+    RECT prop_title{
+        properties.left + 5, properties.top,
+        properties.right - 3, properties.top + 24};
+    DrawTextW(
+        dc, L"Properties", -1, &prop_title,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
     const auto layer_ids = g_app.document.layer_ids();
     const std::size_t visible_layer_rows =
         static_cast<std::size_t>(
@@ -2043,136 +2097,178 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
             layer_ids.size(),
             g_app.layer_scroll_index + visible_layer_rows);
 
-    int y = panel.top + 32;
+    int y = navigator.top + 24;
     for (std::size_t layer_index = g_app.layer_scroll_index;
          layer_index < layer_end;
          ++layer_index) {
         const acp::LayerId id = layer_ids[layer_index];
         const acp::Layer* layer = g_app.document.layer(id);
-        if (layer == nullptr) continue;
+        if (layer == nullptr) {
+            continue;
+        }
 
-        RECT row{panel.left + 6, y, panel.right - 6, y + 24};
+        RECT row{
+            navigator.left + 2, y + 1,
+            navigator.right - 2, y + 23};
+
         HBRUSH row_brush = CreateSolidBrush(
-            id == g_app.active_layer ? RGB(34, 90, 137) : RGB(35, 51, 64));
+            id == g_app.active_layer
+                ? RGB(205, 226, 244)
+                : RGB(248, 249, 250));
         FillRect(dc, &row, row_brush);
         DeleteObject(row_brush);
 
-        const std::wstring name = wide_from_utf8(layer->name);
+        if (id == g_app.active_layer) {
+            HPEN active_edge = CreatePen(PS_SOLID, 1, RGB(75, 135, 183));
+            HGDIOBJ previous = SelectObject(dc, active_edge);
+            HGDIOBJ previous_brush =
+                SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+            Rectangle(dc, row.left, row.top, row.right, row.bottom);
+            SelectObject(dc, previous_brush);
+            SelectObject(dc, previous);
+            DeleteObject(active_edge);
+        }
 
-        const int vis_width = compact_panel ? 22 : 28;
-        const int lock_width = compact_panel ? 22 : 28;
         RECT vis_rect{
-            row.left + 2, row.top,
-            row.left + 2 + vis_width, row.bottom};
+            row.left + 1, row.top,
+            row.left + 18, row.bottom};
         RECT lock_rect{
-            vis_rect.right + 2, row.top,
-            vis_rect.right + 2 + lock_width, row.bottom};
-
-        const LONG name_right =
-            compact_panel ? row.right - 4 : row.right - 44;
-        RECT name_rect{
-            lock_rect.right + 4, row.top,
-            std::max<LONG>(lock_rect.right + 5, name_right), row.bottom};
+            row.left + 18, row.top,
+            row.left + 36, row.bottom};
 
         draw_layer_visibility_icon(
             dc,
             vis_rect,
             layer->visible,
-            layer->visible ? RGB(111, 205, 255) : RGB(116, 128, 138));
+            layer->visible ? RGB(44, 89, 119) : RGB(145, 150, 155));
         draw_layer_lock_icon(
             dc,
             lock_rect,
             layer->locked,
-            layer->locked ? RGB(255, 188, 92) : RGB(156, 170, 180));
-        DrawTextW(dc, name.c_str(), -1, &name_rect,
-                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            layer->locked ? RGB(172, 98, 24) : RGB(109, 116, 122));
 
-        if (!compact_panel) {
-            RECT swatch{row.right - 38, row.top + 5,
-                        row.right - 24, row.bottom - 5};
-            HBRUSH swatch_brush = CreateSolidBrush(
-                RGB(layer->color.r, layer->color.g, layer->color.b));
-            FillRect(dc, &swatch, swatch_brush);
-            DeleteObject(swatch_brush);
-            FrameRect(dc, &swatch,
-                      static_cast<HBRUSH>(GetStockObject(GRAY_BRUSH)));
+        RECT swatch{
+            row.right - 27, row.top + 6,
+            row.right - 18, row.bottom - 6};
+        HBRUSH swatch_brush = CreateSolidBrush(
+            RGB(layer->color.r, layer->color.g, layer->color.b));
+        FillRect(dc, &swatch, swatch_brush);
+        DeleteObject(swatch_brush);
+        FrameRect(
+            dc, &swatch,
+            static_cast<HBRUSH>(GetStockObject(GRAY_BRUSH)));
 
-            RECT type_rect{
-                row.right - 21, row.top + 2,
-                row.right - 2, row.bottom - 2};
-            HPEN type_pen = create_entity_pen(
-                1, RGB(220, 230, 238), layer->line_type);
-            HGDIOBJ previous_pen = SelectObject(dc, type_pen);
-            const int type_y = (type_rect.top + type_rect.bottom) / 2;
-            MoveToEx(dc, type_rect.left + 1, type_y, nullptr);
-            LineTo(dc, type_rect.right - 1, type_y);
-            SelectObject(dc, previous_pen);
-            DeleteObject(type_pen);
-        }
-        y += 26;
+        RECT type_rect{
+            row.right - 15, row.top + 2,
+            row.right - 2, row.bottom - 2};
+        HPEN type_pen = create_entity_pen(
+            1, RGB(52, 58, 63), layer->line_type);
+        HGDIOBJ previous_pen = SelectObject(dc, type_pen);
+        const int type_y = (type_rect.top + type_rect.bottom) / 2;
+        MoveToEx(dc, type_rect.left + 1, type_y, nullptr);
+        LineTo(dc, type_rect.right - 1, type_y);
+        SelectObject(dc, previous_pen);
+        DeleteObject(type_pen);
+
+        const std::wstring name = wide_from_utf8(layer->name);
+        RECT name_rect{
+            row.left + 38, row.top,
+            std::max<LONG>(row.left + 39, row.right - 30),
+            row.bottom};
+        SetTextColor(dc, RGB(35, 39, 42));
+        DrawTextW(
+            dc, name.c_str(), -1, &name_rect,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+        y += 24;
     }
 
-    const int properties_top =
-        panel.top + panel_metrics.properties_top_offset;
-    RECT prop_header{panel.left, properties_top, panel.right, properties_top + 28};
-    HBRUSH prop_brush = CreateSolidBrush(RGB(32, 49, 63));
-    FillRect(dc, &prop_header, prop_brush);
-    DeleteObject(prop_brush);
-    RECT prop_title{panel.left + 10, properties_top, panel.right - 8, properties_top + 28};
-    DrawTextW(dc, L"Properties", -1, &prop_title,
-              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-
-    int py = properties_top + 34;
+    int py = properties.top + 26;
+    const int property_width =
+        std::max(1, static_cast<int>(properties.right - properties.left));
     const int key_width =
-        acp::ui_layout::property_key_width(width);
-    SetTextColor(dc, RGB(185, 198, 209));
+        acp::ui_layout::property_key_width(property_width);
+
+    SetTextColor(dc, RGB(79, 85, 90));
     auto draw_property = [&](const wchar_t* key, const wchar_t* value) {
         const int row_height = panel_metrics.property_row_height;
+        RECT row_rect{
+            properties.left + 2, py,
+            properties.right - 2, py + row_height};
+
+        if (((py - (properties.top + 26)) / std::max(1, row_height)) % 2 != 0) {
+            HBRUSH alternate = CreateSolidBrush(RGB(246, 247, 248));
+            FillRect(dc, &row_rect, alternate);
+            DeleteObject(alternate);
+        }
+
         RECT key_rect{
-            panel.left + 10, py,
-            panel.left + 10 + key_width, py + row_height};
+            properties.left + 5, py,
+            properties.left + 5 + key_width, py + row_height};
         RECT value_rect{
-            key_rect.right + 6, py,
-            panel.right - 8, py + row_height};
-        DrawTextW(dc, key, -1, &key_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        SetTextColor(dc, RGB(232, 237, 241));
-        DrawTextW(dc, value, -1, &value_rect,
-                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-        SetTextColor(dc, RGB(185, 198, 209));
-        py += panel_metrics.property_row_height;
+            key_rect.right + 4, py,
+            properties.right - 5, py + row_height};
+
+        SetTextColor(dc, RGB(82, 87, 92));
+        DrawTextW(
+            dc, key, -1, &key_rect,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        SetTextColor(dc, RGB(25, 29, 32));
+        DrawTextW(
+            dc, value, -1, &value_rect,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+        py += row_height;
     };
 
     wchar_t value[128]{};
     if (g_app.selected.has_value()) {
-        swprintf_s(value, L"%llu",
-                   static_cast<unsigned long long>(*g_app.selected));
+        swprintf_s(
+            value, L"%llu",
+            static_cast<unsigned long long>(*g_app.selected));
         draw_property(L"Selected", value);
+
         if (const acp::EntityProperties* props =
                 g_app.document.properties(*g_app.selected)) {
-            swprintf_s(value, L"%u", static_cast<unsigned>(props->layer_id));
+            swprintf_s(
+                value, L"%u",
+                static_cast<unsigned>(props->layer_id));
             draw_property(L"Layer", value);
-            swprintf_s(value, L"%.2f mm",
-                       g_app.document.effective_line_weight(*g_app.selected));
+            swprintf_s(
+                value, L"%.2f mm",
+                g_app.document.effective_line_weight(*g_app.selected));
             draw_property(L"Lineweight*", value);
             draw_property(L"Visible", props->visible ? L"Yes" : L"No");
-            draw_property(L"Locked",
-                          g_app.document.entity_locked(*g_app.selected) ? L"Yes" : L"No");
+            draw_property(
+                L"Locked",
+                g_app.document.entity_locked(*g_app.selected)
+                    ? L"Yes"
+                    : L"No");
         }
-        if (const acp::Entity* entity = g_app.document.find(*g_app.selected)) {
+
+        if (const acp::Entity* entity =
+                g_app.document.find(*g_app.selected)) {
             if (std::holds_alternative<acp::TextEntity>(*entity)) {
-                const auto& text = std::get<acp::TextEntity>(*entity);
+                const auto& text =
+                    std::get<acp::TextEntity>(*entity);
                 draw_property(L"Type", L"Text");
                 swprintf_s(value, L"%.2f", text.height);
                 draw_property(L"Height*", value);
-                swprintf_s(value, L"%.1f deg",
-                           text.rotation * 180.0 / std::numbers::pi);
+                swprintf_s(
+                    value, L"%.1f deg",
+                    text.rotation * 180.0 / std::numbers::pi);
                 draw_property(L"Rotation*", value);
-                const std::wstring content = wide_from_utf8(text.text);
+                const std::wstring content =
+                    wide_from_utf8(text.text);
                 draw_property(L"Content*", content.c_str());
-            } else if (std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
-                const auto& dimension = std::get<acp::LinearDimensionEntity>(*entity);
+            } else if (
+                std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
+                const auto& dimension =
+                    std::get<acp::LinearDimensionEntity>(*entity);
                 draw_property(L"Type", L"Dimension");
-                swprintf_s(value, L"%.2f", acp::annotation::measurement(dimension));
+                swprintf_s(
+                    value, L"%.2f",
+                    acp::annotation::measurement(dimension));
                 draw_property(L"Measurement", value);
                 if (dimension.text_override.has_value()) {
                     const std::wstring override_text =
@@ -2181,16 +2277,22 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
                 } else {
                     draw_property(L"Override*", L"(measured)");
                 }
-            } else if (std::holds_alternative<acp::HatchEntity>(*entity)) {
-                const auto& hatch = std::get<acp::HatchEntity>(*entity);
+            } else if (
+                std::holds_alternative<acp::HatchEntity>(*entity)) {
+                const auto& hatch =
+                    std::get<acp::HatchEntity>(*entity);
                 draw_property(L"Type", L"Hatch");
-                draw_property(L"Fill", hatch.solid ? L"Solid" : L"Pattern");
-                swprintf_s(value, L"%.1f deg",
-                           hatch.angle * 180.0 / std::numbers::pi);
+                draw_property(
+                    L"Fill",
+                    hatch.solid ? L"Solid" : L"Pattern");
+                swprintf_s(
+                    value, L"%.1f deg",
+                    hatch.angle * 180.0 / std::numbers::pi);
                 draw_property(L"Angle*", value);
                 swprintf_s(value, L"%.2f", hatch.spacing);
                 draw_property(L"Spacing*", value);
-            } else if (std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
+            } else if (
+                std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
                 const auto& block =
                     std::get<acp::BlockReferenceEntity>(*entity);
                 draw_property(L"Type", L"BlockRef");
@@ -2203,8 +2305,9 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
                 draw_property(L"Block", block_name.c_str());
                 swprintf_s(value, L"%.3f", block.scale);
                 draw_property(L"Scale*", value);
-                swprintf_s(value, L"%.1f deg",
-                           block.rotation * 180.0 / std::numbers::pi);
+                swprintf_s(
+                    value, L"%.1f deg",
+                    block.rotation * 180.0 / std::numbers::pi);
                 draw_property(L"Rotation*", value);
             }
         }
@@ -2219,37 +2322,52 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
 
             const std::wstring type_text =
                 props->line_type_override.has_value()
-                    ? std::wstring{line_type_name(*props->line_type_override)}
+                    ? std::wstring{
+                        line_type_name(*props->line_type_override)}
                     : L"ByLayer";
             draw_property(L"Linetype*", type_text.c_str());
         }
     } else {
         draw_property(L"Selected", L"None");
-        swprintf_s(value, L"%u", static_cast<unsigned>(g_app.active_layer));
+        swprintf_s(
+            value, L"%u",
+            static_cast<unsigned>(g_app.active_layer));
         draw_property(L"Layer", value);
+
         if (const acp::Layer* layer =
                 g_app.document.layer(g_app.active_layer)) {
-            const std::wstring layer_name = wide_from_utf8(layer->name);
+            const std::wstring layer_name =
+                wide_from_utf8(layer->name);
             draw_property(L"Layer name", layer_name.c_str());
             swprintf_s(value, L"%.2f mm", layer->line_weight);
             draw_property(L"Layer weight", value);
-            const std::wstring layer_color = format_rgb(layer->color);
+            const std::wstring layer_color =
+                format_rgb(layer->color);
             draw_property(L"Layer color", layer_color.c_str());
-            draw_property(L"Layer type", line_type_name(layer->line_type));
+            draw_property(
+                L"Layer type",
+                line_type_name(layer->line_type));
         }
     }
 
     swprintf_s(value, L"%.0f%%", g_app.zoom * 100.0);
     draw_property(L"Zoom", value);
-    draw_property(L"Object snap", g_app.snap_enabled ? L"On (F3)" : L"Off (F3)");
-    draw_property(L"Paper", paper_size_name(g_app.page_setup.paper));
+    draw_property(
+        L"Object snap",
+        g_app.snap_enabled ? L"On (F3)" : L"Off (F3)");
+    draw_property(
+        L"Paper",
+        paper_size_name(g_app.page_setup.paper));
     draw_property(
         L"Orientation",
-        g_app.page_setup.orientation == acp::layout::Orientation::Landscape
+        g_app.page_setup.orientation ==
+                acp::layout::Orientation::Landscape
             ? L"Landscape"
             : L"Portrait");
     if (g_app.print_scale_denominator.has_value()) {
-        swprintf_s(value, L"1:%.0f", *g_app.print_scale_denominator);
+        swprintf_s(
+            value, L"1:%.0f",
+            *g_app.print_scale_denominator);
         draw_property(L"Print scale", value);
     } else {
         draw_property(L"Print scale", L"Fit");
@@ -2258,41 +2376,59 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     (void)hwnd;
 }
 
+std::optional<int> property_value_row_at_point(
+    const RECT& client,
+    POINT point) {
 
-bool handle_property_panel_double_click(HWND hwnd, POINT point) {
-    RECT client{};
-    GetClientRect(hwnd, &client);
     const int top = toolbar_height(client);
     const int panel_width = layer_panel_width(client);
     const int panel_left = client.right - panel_width;
     const int panel_bottom = client.bottom - kStatusHeight;
-    const int key_width =
-        acp::ui_layout::property_key_width(panel_width);
-    const int value_left = panel_left + 10 + key_width + 6;
-    if (point.x < value_left ||
-        point.x >= client.right - 8 ||
-        point.y < top ||
-        point.y >= panel_bottom ||
-        !g_app.selected.has_value()) {
-        return false;
-    }
-
     const auto panel_metrics =
         right_panel_metrics_for_client(client);
-    const int properties_top =
-        top + panel_metrics.properties_top_offset;
-    const int values_top = properties_top + 34;
+
+    const int properties_left =
+        panel_left + panel_metrics.navigator_width + 1;
+    const int properties_width =
+        client.right - properties_left;
+    const int key_width =
+        acp::ui_layout::property_key_width(properties_width);
+    const int value_left =
+        properties_left + 5 + key_width + 4;
+
+    if (point.x < value_left ||
+        point.x >= client.right - 5 ||
+        point.y < top + 26 ||
+        point.y >= panel_bottom) {
+        return std::nullopt;
+    }
+
+    const int values_top = top + 26;
     const int property_rows = property_row_count();
     const int values_bottom =
         values_top +
         property_rows * panel_metrics.property_row_height;
-    if (point.y < values_top || point.y >= values_bottom) {
+    if (point.y >= values_bottom) {
+        return std::nullopt;
+    }
+
+    return (point.y - values_top) /
+        panel_metrics.property_row_height;
+}
+
+bool handle_property_panel_double_click(HWND hwnd, POINT point) {
+    RECT client{};
+    GetClientRect(hwnd, &client);
+
+    const auto row_at_point =
+        property_value_row_at_point(client, point);
+    if (!row_at_point.has_value() ||
+        !g_app.selected.has_value()) {
         return false;
     }
 
-    const int row =
-        (point.y - values_top) /
-        panel_metrics.property_row_height;
+    const int row = *row_at_point;
+
     if (row == 2) {
         return edit_selected_property(
             hwnd, DirectProperty::LineWeight);
@@ -2305,34 +2441,56 @@ bool handle_property_panel_double_click(HWND hwnd, POINT point) {
     }
 
     if (std::holds_alternative<acp::TextEntity>(*entity)) {
-        if (row == 6) return edit_selected_property(hwnd, DirectProperty::TextHeight);
-        if (row == 7) return edit_selected_property(hwnd, DirectProperty::TextRotation);
-        if (row == 8) return edit_selected_property(hwnd, DirectProperty::TextContent);
-    } else if (std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
-        if (row == 7) return edit_selected_property(hwnd, DirectProperty::DimensionOverride);
+        if (row == 6)
+            return edit_selected_property(
+                hwnd, DirectProperty::TextHeight);
+        if (row == 7)
+            return edit_selected_property(
+                hwnd, DirectProperty::TextRotation);
+        if (row == 8)
+            return edit_selected_property(
+                hwnd, DirectProperty::TextContent);
+    } else if (
+        std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
+        if (row == 7)
+            return edit_selected_property(
+                hwnd, DirectProperty::DimensionOverride);
     } else if (std::holds_alternative<acp::HatchEntity>(*entity)) {
-        if (row == 7) return edit_selected_property(hwnd, DirectProperty::HatchAngle);
-        if (row == 8) return edit_selected_property(hwnd, DirectProperty::HatchSpacing);
-    } else if (std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
-        if (row == 7) return edit_selected_property(hwnd, DirectProperty::BlockScale);
-        if (row == 8) return edit_selected_property(hwnd, DirectProperty::BlockRotation);
+        if (row == 7)
+            return edit_selected_property(
+                hwnd, DirectProperty::HatchAngle);
+        if (row == 8)
+            return edit_selected_property(
+                hwnd, DirectProperty::HatchSpacing);
+    } else if (
+        std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
+        if (row == 7)
+            return edit_selected_property(
+                hwnd, DirectProperty::BlockScale);
+        if (row == 8)
+            return edit_selected_property(
+                hwnd, DirectProperty::BlockRotation);
     }
 
     int color_row = 5;
     if (std::holds_alternative<acp::TextEntity>(*entity)) {
         color_row = 9;
-    } else if (std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
+    } else if (
+        std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
         color_row = 8;
-    } else if (std::holds_alternative<acp::HatchEntity>(*entity) ||
-               std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
+    } else if (
+        std::holds_alternative<acp::HatchEntity>(*entity) ||
+        std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
         color_row = 9;
     }
 
     if (row == color_row) {
-        return edit_selected_property(hwnd, DirectProperty::Color);
+        return edit_selected_property(
+            hwnd, DirectProperty::Color);
     }
     if (row == color_row + 1) {
-        return edit_selected_property(hwnd, DirectProperty::LineType);
+        return edit_selected_property(
+            hwnd, DirectProperty::LineType);
     }
 
     return true;
@@ -2341,17 +2499,22 @@ bool handle_property_panel_double_click(HWND hwnd, POINT point) {
 bool handle_layer_panel_double_click(HWND hwnd, POINT point) {
     RECT client{};
     GetClientRect(hwnd, &client);
+
     const int top = toolbar_height(client);
     const int panel_left =
         client.right - layer_panel_width(client);
+    const auto panel_metrics =
+        right_panel_metrics_for_client(client);
+    const int navigator_right =
+        panel_left + panel_metrics.navigator_width;
+
     if (point.x < panel_left ||
-        point.y < top ||
+        point.x >= navigator_right ||
+        point.y < top + 24 ||
         point.y >= client.bottom - kStatusHeight) {
         return false;
     }
 
-    const auto panel_metrics =
-        right_panel_metrics_for_client(client);
     const auto layer_ids = g_app.document.layer_ids();
     const std::size_t visible_rows =
         static_cast<std::size_t>(
@@ -2367,7 +2530,7 @@ bool handle_layer_panel_double_click(HWND hwnd, POINT point) {
             layer_ids.size(),
             g_app.layer_scroll_index + visible_rows);
 
-    int y = top + 32;
+    int y = top + 24;
     for (std::size_t layer_index = g_app.layer_scroll_index;
          layer_index < layer_end;
          ++layer_index) {
@@ -2378,22 +2541,18 @@ bool handle_layer_panel_double_click(HWND hwnd, POINT point) {
         }
 
         RECT row{
-            panel_left + 6, y,
-            client.right - 6, y + 24};
+            panel_left + 2, y + 1,
+            navigator_right - 2, y + 23};
         if (PtInRect(&row, point)) {
-            const bool compact_panel =
-                acp::ui_layout::compact_right_panel(
-                    layer_panel_width(client));
-            const int control_edge =
-                row.left + (compact_panel ? 48 : 58);
-            if (point.x < control_edge) {
+            if (point.x < row.left + 36) {
                 return true;
             }
+
             g_app.active_layer = id;
-            if (!compact_panel && point.x >= row.right - 22) {
+            if (point.x >= row.right - 15) {
                 (void)edit_active_layer_property(
                     hwnd, DirectLayerProperty::LineType);
-            } else if (!compact_panel && point.x >= row.right - 40) {
+            } else if (point.x >= row.right - 28) {
                 (void)edit_active_layer_property(
                     hwnd, DirectLayerProperty::Color);
             } else {
@@ -2402,7 +2561,7 @@ bool handle_layer_panel_double_click(HWND hwnd, POINT point) {
             }
             return true;
         }
-        y += 26;
+        y += 24;
     }
     return false;
 }
@@ -2410,15 +2569,22 @@ bool handle_layer_panel_double_click(HWND hwnd, POINT point) {
 bool handle_layer_panel_click(HWND hwnd, POINT point) {
     RECT client{};
     GetClientRect(hwnd, &client);
+
     const int top = toolbar_height(client);
-    const int panel_left = client.right - layer_panel_width(client);
-    if (point.x < panel_left || point.y < top ||
+    const int panel_left =
+        client.right - layer_panel_width(client);
+    const auto panel_metrics =
+        right_panel_metrics_for_client(client);
+    const int navigator_right =
+        panel_left + panel_metrics.navigator_width;
+
+    if (point.x < panel_left ||
+        point.x >= navigator_right ||
+        point.y < top + 24 ||
         point.y >= client.bottom - kStatusHeight) {
         return false;
     }
 
-    const auto panel_metrics =
-        right_panel_metrics_for_client(client);
     const auto layer_ids = g_app.document.layer_ids();
     const std::size_t visible_rows =
         static_cast<std::size_t>(
@@ -2434,7 +2600,7 @@ bool handle_layer_panel_click(HWND hwnd, POINT point) {
             layer_ids.size(),
             g_app.layer_scroll_index + visible_rows);
 
-    int y = top + 32;
+    int y = top + 24;
     for (std::size_t layer_index = g_app.layer_scroll_index;
          layer_index < layer_end;
          ++layer_index) {
@@ -2443,29 +2609,27 @@ bool handle_layer_panel_click(HWND hwnd, POINT point) {
         if (layer == nullptr) {
             continue;
         }
-        RECT row{panel_left + 6, y, client.right - 6, y + 24};
+
+        RECT row{
+            panel_left + 2, y + 1,
+            navigator_right - 2, y + 23};
         if (PtInRect(&row, point)) {
-            const bool compact_panel =
-                acp::ui_layout::compact_right_panel(
-                    layer_panel_width(client));
-            const int visibility_edge =
-                row.left + (compact_panel ? 24 : 30);
-            const int lock_edge =
-                row.left + (compact_panel ? 48 : 58);
-            if (point.x < visibility_edge) {
+            if (point.x < row.left + 18) {
                 acp::Layer replacement = *layer;
                 replacement.visible = !replacement.visible;
-                if (apply_history(std::make_unique<acp::UpdateLayerCommand>(
-                        id, replacement)) &&
+                if (apply_history(
+                        std::make_unique<acp::UpdateLayerCommand>(
+                            id, replacement)) &&
                     !replacement.visible &&
                     g_app.selected.has_value() &&
                     !g_app.document.entity_visible(*g_app.selected)) {
                     g_app.selected.reset();
                 }
-            } else if (point.x < lock_edge) {
+            } else if (point.x < row.left + 36) {
                 acp::Layer replacement = *layer;
                 replacement.locked = !replacement.locked;
-                (void)apply_history(std::make_unique<acp::UpdateLayerCommand>(
+                (void)apply_history(
+                    std::make_unique<acp::UpdateLayerCommand>(
                         id, replacement));
             } else {
                 g_app.active_layer = id;
@@ -2473,7 +2637,7 @@ bool handle_layer_panel_click(HWND hwnd, POINT point) {
             InvalidateRect(hwnd, nullptr, FALSE);
             return true;
         }
-        y += 26;
+        y += 24;
     }
     return true;
 }
@@ -2485,11 +2649,16 @@ bool handle_right_panel_wheel(
 
     RECT client{};
     GetClientRect(hwnd, &client);
+
     const int top = toolbar_height(client);
     const int panel_left =
         client.right - layer_panel_width(client);
     const int panel_bottom =
         client.bottom - kStatusHeight;
+    const auto panel_metrics =
+        right_panel_metrics_for_client(client);
+    const int navigator_right =
+        panel_left + panel_metrics.navigator_width;
 
     if (point.x < panel_left ||
         point.x >= client.right ||
@@ -2498,12 +2667,9 @@ bool handle_right_panel_wheel(
         return false;
     }
 
-    const auto panel_metrics =
-        right_panel_metrics_for_client(client);
-    const int properties_top =
-        top + panel_metrics.properties_top_offset;
-
-    if (point.y >= properties_top) {
+    // The whole dock owns mouse-wheel input so it never leaks to canvas zoom.
+    // Only the Navigator column scrolls layers.
+    if (point.x >= navigator_right) {
         return true;
     }
 
@@ -2643,7 +2809,7 @@ void assign_selected_to_active_layer(HWND hwnd) {
 
 void draw_status(HWND hwnd, HDC dc, const RECT& client) {
     RECT bar{client.left, client.bottom - kStatusHeight, client.right, client.bottom};
-    HBRUSH brush = CreateSolidBrush(RGB(32, 35, 41));
+    HBRUSH brush = CreateSolidBrush(RGB(236, 238, 240));
     FillRect(dc, &bar, brush);
     DeleteObject(brush);
 
@@ -2656,16 +2822,23 @@ void draw_status(HWND hwnd, HDC dc, const RECT& client) {
         active_layer->locked ? L"LOCKED" :
         !active_layer->visible ? L"HIDDEN" :
         L"ACTIVE";
-    swprintf_s(buffer, L"%s  Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu    Selected: %llu    Layer: %u (%s)    SNAP: %s    Undo: %zu",
-               g_app.dirty ? L"*" : L" ",
-               tool_name(g_app.tool), cursor_world.x, cursor_world.y,
-               g_app.zoom * 100.0, g_app.document.size(),
-               static_cast<unsigned long long>(g_app.selected.value_or(0)),
-               static_cast<unsigned>(g_app.active_layer), layer_state,
-               snap_state, g_app.history.undo_size());
+    swprintf_s(
+        buffer,
+        L"%s  %s   X %.2f  Y %.2f   Z %.0f%%   L%u %s   SNAP %s   Ent %zu   Sel %llu   Undo %zu",
+        g_app.dirty ? L"*" : L" ",
+        tool_name(g_app.tool),
+        cursor_world.x,
+        cursor_world.y,
+        g_app.zoom * 100.0,
+        static_cast<unsigned>(g_app.active_layer),
+        layer_state,
+        snap_state,
+        g_app.document.size(),
+        static_cast<unsigned long long>(g_app.selected.value_or(0)),
+        g_app.history.undo_size());
 
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(190, 195, 205));
+    SetTextColor(dc, RGB(58, 62, 66));
     RECT text_rect{10, bar.top, bar.right - 10, bar.bottom};
     DrawTextW(dc, buffer, -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 }
@@ -3498,6 +3671,27 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
         case kGuiTestSnapshotMessage:
             return write_gui_test_snapshot(w_param) ? 1 : 0;
+
+        case kGuiTestSelectedMessage:
+            return static_cast<LRESULT>(
+                g_app.selected.value_or(0));
+
+        case kGuiTestPropertyHitMessage: {
+            RECT client{};
+            GetClientRect(hwnd, &client);
+            const POINT point{
+                GET_X_LPARAM(l_param),
+                GET_Y_LPARAM(l_param)};
+            const auto row =
+                property_value_row_at_point(client, point);
+            return row.has_value()
+                ? static_cast<LRESULT>(*row + 1)
+                : 0;
+        }
+
+        case kGuiTestLastDoubleClickMessage:
+            return static_cast<LRESULT>(
+                g_gui_test_last_double_click_row + 2);
 #endif
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
@@ -3974,6 +4168,16 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 
         case WM_LBUTTONDBLCLK: {
             const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
+#ifdef ACP_ENABLE_GUI_TEST_HOOKS
+            RECT double_click_client{};
+            GetClientRect(hwnd, &double_click_client);
+            const auto double_click_row =
+                property_value_row_at_point(double_click_client, p);
+            g_gui_test_last_double_click_row =
+                double_click_row.has_value()
+                    ? *double_click_row
+                    : -1;
+#endif
             if (handle_property_panel_double_click(hwnd, p) ||
                 handle_layer_panel_double_click(hwnd, p)) {
                 return 0;
@@ -4047,7 +4251,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             HBITMAP bitmap = CreateCompatibleBitmap(dc, client.right, client.bottom);
             HGDIOBJ old_bitmap = SelectObject(memory, bitmap);
 
-            HBRUSH background = CreateSolidBrush(RGB(27, 30, 36));
+            HBRUSH background = CreateSolidBrush(RGB(0, 0, 0));
             FillRect(memory, &client, background);
             DeleteObject(background);
 

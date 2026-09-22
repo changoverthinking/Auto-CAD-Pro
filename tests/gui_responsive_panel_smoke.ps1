@@ -154,18 +154,36 @@ try {
             $clientWidth + "x" + $clientHeight)
     }
 
-    $toolbarHeight = [Math]::Max(1, [Math]::Floor($clientHeight / 20))
-    $panelWidth = [Math]::Max(1, [Math]::Floor(($clientWidth * 2) / 10))
-    $panelLeft = $clientWidth - $panelWidth
-    $panelHeight = $clientHeight - 26 - $toolbarHeight
+    $toolbarHeight = [Math]::Min(
+        32,
+        [Math]::Max(26, [Math]::Floor($clientHeight / 32)))
 
-    1..10 | ForEach-Object {
+    $panelWidth = [Math]::Min(
+        300,
+        [Math]::Max(160, [Math]::Floor(($clientWidth * 17) / 100)))
+    $panelWidth = [Math]::Min(
+        $panelWidth,
+        [Math]::Max(1, [Math]::Floor($clientWidth / 3)))
+    $panelLeft = $clientWidth - $panelWidth
+
+    $navigatorWidth = [Math]::Min(
+        132,
+        [Math]::Max(86, [Math]::Floor(($panelWidth * 42) / 100)))
+    $navigatorWidth = [Math]::Min(
+        $navigatorWidth,
+        [Math]::Max(1, $panelWidth - 84))
+
+    $propertiesLeft = $panelLeft + $navigatorWidth + 1
+    $propertiesWidth = $clientWidth - $propertiesLeft
+    $panelHeight = $clientHeight - 20 - $toolbarHeight
+
+    1..30 | ForEach-Object {
         [GuiResponsiveNative]::SendMessage(
             $hwnd, 0x0111, [IntPtr]1008, [IntPtr]::Zero) | Out-Null
     }
 
-    Send-Wheel $hwnd ($panelLeft + 60) ($toolbarHeight + 44) -120
-    Click-Client $hwnd ($panelLeft + 70) ($toolbarHeight + 44)
+    Send-Wheel $hwnd ($panelLeft + 50) ($toolbarHeight + 36) -120
+    Click-Client $hwnd ($panelLeft + 50) ($toolbarHeight + 36)
 
     Send-Key $hwnd 0x4C
     Click-Client $hwnd 180 180
@@ -189,23 +207,21 @@ try {
     Send-Key $hwnd 0x0D
 
     $propertyRows = 16
-    $fixedHeight = 76
-    $layerStride = 26
     $rowHeight = [Math]::Floor(
-        ($panelHeight - $fixedHeight - $layerStride) / $propertyRows)
-    $rowHeight = [Math]::Min(22, [Math]::Max(14, $rowHeight))
-    $remaining = $panelHeight - $fixedHeight - ($rowHeight * $propertyRows)
-    $visibleLayerRows = [Math]::Max(1, [Math]::Floor($remaining / $layerStride))
-    $propertiesTop = $toolbarHeight + 32 + ($visibleLayerRows * 26) + 10
-    $valuesTop = $propertiesTop + 34
+        ($panelHeight - 24 - 4) / $propertyRows)
+    $rowHeight = [Math]::Min(
+        20,
+        [Math]::Max(14, $rowHeight))
 
+    $valuesTop = $toolbarHeight + 26
     $keyWidth = [Math]::Min(
-        100,
-        [Math]::Max(48, [Math]::Floor(($panelWidth * 45) / 100)))
-    $valueX = $panelLeft + 10 + $keyWidth + 12
-    $linetypeY = $valuesTop + (10 * $rowHeight) + [Math]::Floor($rowHeight / 2)
-    if ($linetypeY -ge ($clientHeight - 26)) {
-        throw "Responsive panel regression: Linetype row still overflows the panel"
+        78,
+        [Math]::Max(42, [Math]::Floor(($propertiesWidth * 42) / 100)))
+    $valueX = $propertiesLeft + 5 + $keyWidth + 10
+    $linetypeY =
+        $valuesTop + (10 * $rowHeight) + [Math]::Floor($rowHeight / 2)
+    if ($linetypeY -ge ($clientHeight - 20)) {
+        throw "Responsive panel regression: Linetype row still overflows the split dock"
     }
 
     DoubleClick-Client $hwnd $valueX $linetypeY
