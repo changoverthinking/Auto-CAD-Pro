@@ -333,6 +333,20 @@ try {
         throw "Property editor regression: Text selection/state was lost before panel double-click"
     }
 
+    $packedPanelPoint =
+        (($contentY -band 0xFFFF) -shl 16) -bor
+        ($valueX -band 0xFFFF)
+    $selectedId = [GuiPropertyNative]::SendMessage(
+        $hwnd,
+        0x8000 + 43,
+        [IntPtr]::Zero,
+        [IntPtr]::Zero)
+    $hitRow = [GuiPropertyNative]::SendMessage(
+        $hwnd,
+        0x8000 + 44,
+        [IntPtr]::Zero,
+        [IntPtr]$packedPanelPoint)
+
     Write-Host (
         "PROPERTY_STAGE: panel-content-doubleclick client=" +
         $clientWidth + "x" + $clientHeight +
@@ -340,7 +354,19 @@ try {
         " nav=" + $navigatorWidth +
         " props=" + $propertiesWidth +
         " rowHeight=" + $rowHeight +
-        " x=" + $valueX + " y=" + $contentY)
+        " x=" + $valueX + " y=" + $contentY +
+        " selected=" + $selectedId.ToInt64() +
+        " hitRow=" + $hitRow.ToInt64())
+
+    if ($selectedId.ToInt64() -le 0) {
+        throw "Property editor regression: no selected entity before panel double-click"
+    }
+    if ($hitRow.ToInt64() -ne 9) {
+        throw (
+            "Property editor regression: expected Content row 8 but app hit-test returned " +
+            ($hitRow.ToInt64() - 1))
+    }
+
     DoubleClick-Client $hwnd $valueX $contentY
     Set-PropertyDialog $proc "PANEL-CAD"
     $panelState = Snapshot $hwnd 48
