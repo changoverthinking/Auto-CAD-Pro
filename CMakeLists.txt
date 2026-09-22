@@ -71,7 +71,7 @@ target_include_directories(acp_core PUBLIC include PRIVATE third_party/stb)
 target_compile_features(acp_core PUBLIC cxx_std_20)
 
 if(MSVC)
-    target_compile_options(acp_core PRIVATE /W4 /permissive- /EHsc)
+    target_compile_options(acp_core PRIVATE /W4 /permissive- /EHsc /utf-8)
 else()
     target_compile_options(acp_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
@@ -85,7 +85,7 @@ if(ACP_BUILD_APP AND WIN32)
     endif()
     target_compile_features(AutoCADPro PRIVATE cxx_std_20)
     if(MSVC)
-        target_compile_options(AutoCADPro PRIVATE /W4 /permissive- /EHsc)
+        target_compile_options(AutoCADPro PRIVATE /W4 /permissive- /EHsc /utf-8)
         target_link_options(AutoCADPro PRIVATE
             "/MANIFEST:EMBED"
             "/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/src/app/app.manifest")
