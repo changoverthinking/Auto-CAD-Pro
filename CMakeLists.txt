@@ -48,6 +48,10 @@ endif()
 
 add_library(acp_core
     src/core/geometry2d.cpp
+    src/core/geometry3d.cpp
+    src/core/model3d.cpp
+    src/core/obj.cpp
+    src/core/blender_bridge.cpp
     src/core/snap.cpp
     src/core/document.cpp
     src/core/history.cpp
@@ -143,6 +147,10 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_ui_layout_tests tests/ui_layout_tests.cpp)
     target_link_libraries(acp_ui_layout_tests PRIVATE acp_core)
     add_test(NAME acp_ui_layout_tests COMMAND acp_ui_layout_tests)
+
+    add_executable(acp_model3d_blender_tests tests/model3d_blender_tests.cpp)
+    target_link_libraries(acp_model3d_blender_tests PRIVATE acp_core)
+    add_test(NAME acp_model3d_blender_tests COMMAND acp_model3d_blender_tests)
 endif()
 
 if(WIN32 AND ACP_BUILD_APP)
