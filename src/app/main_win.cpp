@@ -96,6 +96,12 @@ struct AppState {
     std::optional<double> print_scale_denominator;
     std::optional<acp::BlockId> active_block;
     std::size_t layer_scroll_index{0};
+    bool right_panel_visible{true};
+    bool right_panel_pinned{true};
+    bool right_panel_collapsed{false};
+    bool right_panel_auto_hide_expanded{false};
+    bool right_panel_resizing{false};
+    int right_panel_custom_width{0};
 };
 
 AppState g_app;
@@ -114,8 +120,29 @@ int toolbar_height(const RECT& client) {
     return client_layout_metrics(client).toolbar_height;
 }
 
+int expanded_layer_panel_width(const RECT& client) {
+    const int fallback =
+        client_layout_metrics(client).right_panel_width;
+    const int client_width = std::max(
+        1, static_cast<int>(client.right - client.left));
+    const int max_width = std::max(
+        160, std::min(480, (client_width * 45) / 100));
+    const int preferred =
+        g_app.right_panel_custom_width > 0
+            ? g_app.right_panel_custom_width
+            : fallback;
+    return std::clamp(preferred, 160, max_width);
+}
+
 int layer_panel_width(const RECT& client) {
-    return client_layout_metrics(client).right_panel_width;
+    if (!g_app.right_panel_visible) {
+        return 0;
+    }
+    if (g_app.right_panel_collapsed &&
+        !g_app.right_panel_auto_hide_expanded) {
+        return 28;
+    }
+    return expanded_layer_panel_width(client);
 }
 
 int left_tool_rail_width(const RECT& client) {
@@ -164,6 +191,10 @@ constexpr int kMenuEditEntityColor = 1040;
 constexpr int kMenuEditEntityLineType = 1041;
 constexpr int kMenuEditLayerColor = 1042;
 constexpr int kMenuEditLayerLineType = 1043;
+constexpr int kMenuToggleRightPanel = 1044;
+constexpr int kMenuToggleRightPanelPin = 1045;
+constexpr int kMenuToggleRightPanelCollapse = 1046;
+constexpr int kMenuResetRightPanelWidth = 1047;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
