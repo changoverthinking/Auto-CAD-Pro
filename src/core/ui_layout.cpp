@@ -26,10 +26,12 @@ int property_key_width(int panel_width) noexcept {
 
 RightPanelMetrics right_panel_metrics(
     int panel_height,
-    int property_rows) noexcept {
+    int property_rows,
+    int total_layer_rows) noexcept {
 
     panel_height = std::max(panel_height, 1);
     property_rows = std::max(property_rows, 1);
+    total_layer_rows = std::max(total_layer_rows, 1);
 
     constexpr int kLayersHeaderHeight = 32;
     constexpr int kLayerRowStride = 26;
@@ -58,8 +60,10 @@ RightPanelMetrics right_panel_metrics(
 
     const int remaining_for_layers =
         panel_height - fixed_height - row_height * property_rows;
-    const int visible_layers =
+    const int layer_capacity =
         std::max(1, remaining_for_layers / kLayerRowStride);
+    const int visible_layers =
+        std::min(total_layer_rows, layer_capacity);
 
     return RightPanelMetrics{
         row_height,
