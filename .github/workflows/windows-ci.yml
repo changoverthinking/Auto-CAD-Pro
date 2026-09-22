@@ -28,6 +28,10 @@ jobs:
         shell: powershell
         run: .\tests\ci_gui_reachability.ps1
 
+      - name: SuicaCad icon asset preflight
+        shell: powershell
+        run: .\tests\ci_icon_assets.ps1
+
       - name: 2D release contract preflight
         shell: powershell
         run: .\tests\ci_release_contract.ps1
