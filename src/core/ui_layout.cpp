@@ -9,9 +9,9 @@ Metrics metrics_for_client(int width, int height) noexcept {
     height = std::max(height, 1);
 
     return Metrics{
-        std::max(1, height / 20),
-        std::max(1, (width * 2) / 10),
-        std::max(1, width / 25)
+        std::clamp(height / 32, 28, 34),
+        std::clamp((width * 16) / 100, 160, 360),
+        0
     };
 }
 
