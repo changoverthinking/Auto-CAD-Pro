@@ -46,7 +46,7 @@ int main() {
            "wide property key width is capped");
 
     const auto compact_text =
-        acp::ui_layout::right_panel_metrics(430, 16);
+        acp::ui_layout::right_panel_metrics(430, 16, 11);
     expect(compact_text.property_row_height == 20,
            "480p text property rows compact to fit");
     expect(compact_text.visible_layer_rows == 1,
@@ -58,14 +58,21 @@ int main() {
         "480p text properties stay inside panel");
 
     const auto tall_text =
-        acp::ui_layout::right_panel_metrics(680, 16);
+        acp::ui_layout::right_panel_metrics(680, 16, 20);
     expect(tall_text.property_row_height == 22,
            "tall panel uses full property row height");
     expect(tall_text.visible_layer_rows >= 8,
            "tall panel exposes multiple layer rows");
 
+    const auto tall_single_layer =
+        acp::ui_layout::right_panel_metrics(680, 16, 1);
+    expect(tall_single_layer.visible_layer_rows == 1,
+           "single layer does not reserve empty layer rows");
+    expect(tall_single_layer.properties_top_offset == 68,
+           "single layer keeps properties directly below the row");
+
     const auto compact_empty =
-        acp::ui_layout::right_panel_metrics(430, 11);
+        acp::ui_layout::right_panel_metrics(430, 11, 10);
     expect(compact_empty.property_row_height == 22,
            "480p empty selection keeps full row height");
     expect(compact_empty.visible_layer_rows >= 4,
