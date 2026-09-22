@@ -282,17 +282,35 @@ try {
     # second time through the value cell.
     $clientWidth = $rect.Right - $rect.Left
     $clientHeight = $rect.Bottom - $rect.Top
-    $toolbarHeight = [Math]::Max(
-        1, [int]($clientHeight / 20))
-    $panelWidth = [Math]::Max(
-        1, [int](($clientWidth * 2) / 10))
+    $toolbarHeight = [Math]::Min(
+        34, [Math]::Max(28, [int]($clientHeight / 32)))
+    $panelWidth = [Math]::Min(
+        360, [Math]::Max(160, [int](($clientWidth * 16) / 100)))
     $panelLeft = $clientWidth - $panelWidth
-    $panelBottom = $clientHeight - 26
-    $layerY = $toolbarHeight + 32 + 26
-    $propertiesTop = $layerY + 10
-    $valueX = $panelLeft + 120
+    $panelHeight = $clientHeight - 22 - $toolbarHeight
+
+    # Text selection uses 16 property rows. Production reserves property
+    # space first, then exposes only the number of layer rows that fit.
+    $propertyRows = 16
+    $fixedHeight = 76
+    $layerStride = 26
+    $rowHeight = [Math]::Floor(
+        ($panelHeight - $fixedHeight - $layerStride) / $propertyRows)
+    $rowHeight = [Math]::Min(22, [Math]::Max(14, $rowHeight))
+    $remainingForLayers =
+        $panelHeight - $fixedHeight - ($rowHeight * $propertyRows)
+    $layerCapacity = [Math]::Max(
+        1, [Math]::Floor($remainingForLayers / $layerStride))
+    $visibleLayerRows = [Math]::Min(1, $layerCapacity)
+
+    $propertiesTop =
+        $toolbarHeight + 32 + ($visibleLayerRows * $layerStride) + 10
+    $keyWidth = [Math]::Min(
+        100, [Math]::Max(48, [int](($panelWidth * 45) / 100)))
+    $valueX = $panelLeft + 10 + $keyWidth + 12
     $contentY =
-        $propertiesTop + 34 + (8 * 22) + 11
+        $propertiesTop + 34 + (8 * $rowHeight) +
+        [Math]::Floor($rowHeight / 2)
 
     DoubleClick-Client $hwnd $valueX $contentY
     Set-PropertyDialog $proc "PANEL-CAD"
@@ -434,10 +452,12 @@ try {
     }
 
     # Prove the right-panel layer-row double-click route.
-    $layerToolbarHeight = [Math]::Max(
-        1, [int](($rect.Bottom - $rect.Top) / 20))
-    $layerPanelWidth = [Math]::Max(
-        1, [int]((($rect.Right - $rect.Left) * 2) / 10))
+    $layerToolbarHeight = [Math]::Min(
+        34, [Math]::Max(
+            28, [int](($rect.Bottom - $rect.Top) / 32)))
+    $layerPanelWidth = [Math]::Min(
+        360, [Math]::Max(
+            160, [int]((($rect.Right - $rect.Left) * 16) / 100)))
     $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
     $secondLayerNameX = $layerPanelLeft + 90
     $secondLayerY = $layerToolbarHeight + 32 + 26 + 12

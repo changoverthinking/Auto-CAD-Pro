@@ -1,5 +1,6 @@
 #include "acp/ui_layout.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 
@@ -15,16 +16,15 @@ void expect(bool condition, const char* name) {
 void verify(int width, int height) {
     const auto m = acp::ui_layout::metrics_for_client(width, height);
 
-    expect(m.toolbar_height >= 1, "toolbar positive");
-    expect(m.right_panel_width >= 1, "right panel positive");
-    expect(m.left_rail_width >= 1, "left rail positive");
+    expect(m.toolbar_height >= 28 && m.toolbar_height <= 34,
+           "toolbar stays in compact 28-34px range");
+    expect(m.right_panel_width >= 160 && m.right_panel_width <= 360,
+           "right panel stays within compact bounds");
+    expect(m.left_rail_width == 0,
+           "classic workspace has no permanent left rail");
 
-    expect(m.toolbar_height * 20 <= height,
-           "toolbar does not exceed 1/20 height");
-    expect(m.right_panel_width * 10 <= width * 2,
-           "right panel does not exceed 2/10 width");
-    expect(m.left_rail_width * 25 <= width,
-           "left rail does not exceed 1/25 width");
+    expect(m.right_panel_width <= std::max(160, (width * 17) / 100 + 1),
+           "right panel remains approximately 16 percent where unclamped");
 }
 }
 
@@ -79,9 +79,12 @@ int main() {
            "480p empty selection leaves room for layers");
 
     const auto full_hd = acp::ui_layout::metrics_for_client(1920, 1080);
-    expect(full_hd.toolbar_height == 54, "1080p toolbar exact 1/20");
-    expect(full_hd.right_panel_width == 384, "1080p right panel exact 2/10");
-    expect(full_hd.left_rail_width == 76, "1080p left rail floor 1/25");
+    expect(full_hd.toolbar_height == 33,
+           "1080p toolbar remains compact");
+    expect(full_hd.right_panel_width == 307,
+           "1080p right panel uses approximately 16 percent");
+    expect(full_hd.left_rail_width == 0,
+           "1080p canvas starts at the client left edge");
 
     if (failures != 0) {
         std::cerr << failures << " UI layout metric test(s) failed\n";

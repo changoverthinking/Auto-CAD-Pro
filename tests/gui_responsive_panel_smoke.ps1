@@ -154,10 +154,13 @@ try {
             $clientWidth + "x" + $clientHeight)
     }
 
-    $toolbarHeight = [Math]::Max(1, [Math]::Floor($clientHeight / 20))
-    $panelWidth = [Math]::Max(1, [Math]::Floor(($clientWidth * 2) / 10))
+    $toolbarHeight = [Math]::Min(
+        34, [Math]::Max(28, [Math]::Floor($clientHeight / 32)))
+    $panelWidth = [Math]::Min(
+        360, [Math]::Max(
+            160, [Math]::Floor(($clientWidth * 16) / 100)))
     $panelLeft = $clientWidth - $panelWidth
-    $panelHeight = $clientHeight - 26 - $toolbarHeight
+    $panelHeight = $clientHeight - 22 - $toolbarHeight
 
     1..10 | ForEach-Object {
         [GuiResponsiveNative]::SendMessage(
@@ -204,7 +207,7 @@ try {
         [Math]::Max(48, [Math]::Floor(($panelWidth * 45) / 100)))
     $valueX = $panelLeft + 10 + $keyWidth + 12
     $linetypeY = $valuesTop + (10 * $rowHeight) + [Math]::Floor($rowHeight / 2)
-    if ($linetypeY -ge ($clientHeight - 26)) {
+    if ($linetypeY -ge ($clientHeight - 22)) {
         throw "Responsive panel regression: Linetype row still overflows the panel"
     }
 
