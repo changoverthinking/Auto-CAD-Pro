@@ -19,6 +19,7 @@ struct RightPanelMetrics {
 [[nodiscard]] int property_key_width(int panel_width) noexcept;
 [[nodiscard]] RightPanelMetrics right_panel_metrics(
     int panel_height,
-    int property_rows) noexcept;
+    int property_rows,
+    int total_layer_rows) noexcept;
 
 } // namespace acp::ui_layout
