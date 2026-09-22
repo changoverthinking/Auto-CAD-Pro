@@ -142,11 +142,12 @@ try {
         throw "Dock panel regression: hover did not expand unpinned panel"
     }
 
-    [GuiDockPanelNative]::SendMessage(
-        $hwnd, 0x02A3, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+    # Move from the expanded panel into the canvas. Auto-hide is scoped to
+    # the panel region, not merely to leaving the whole application window.
+    Send-PointMessage $hwnd 0x0200 100 ($toolbarHeight + 80)
     Start-Sleep -Milliseconds 50
     if ((Get-PanelWidth $hwnd) -ne 28) {
-        throw "Dock panel regression: mouse leave did not auto-hide panel"
+        throw "Dock panel regression: leaving the panel did not auto-hide it"
     }
 
     # Restore pinned expanded default width and verify preferences were written.
