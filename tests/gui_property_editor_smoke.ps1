@@ -12,8 +12,27 @@ public static class GuiPropertyNative {
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X, Y; }
+
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool ClientToScreen(
+        IntPtr hWnd,
+        ref POINT point);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(
+        uint dwFlags,
+        uint dx,
+        uint dy,
+        uint dwData,
+        UIntPtr dwExtraInfo);
 
     [DllImport("user32.dll")]
     public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
@@ -106,9 +125,29 @@ function Click-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
 }
 
 function DoubleClick-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
-    $packed = (($y -band 0xFFFF) -shl 16) -bor ($x -band 0xFFFF)
-    [GuiPropertyNative]::PostMessage(
-        $hwnd, 0x0203, [IntPtr]1, [IntPtr]$packed) | Out-Null
+    $screen = New-Object GuiPropertyNative+POINT
+    $screen.X = $x
+    $screen.Y = $y
+    if (![GuiPropertyNative]::ClientToScreen($hwnd, [ref]$screen)) {
+        throw "ClientToScreen failed for property double-click"
+    }
+
+    [GuiPropertyNative]::SetForegroundWindow($hwnd) | Out-Null
+    if (![GuiPropertyNative]::SetCursorPos($screen.X, $screen.Y)) {
+        throw "SetCursorPos failed for property double-click"
+    }
+
+    # Generate the same mouse sequence Windows uses to recognize a real
+    # double-click. The main window class has CS_DBLCLKS enabled.
+    [GuiPropertyNative]::mouse_event(
+        0x0002, 0, 0, 0, [UIntPtr]::Zero)
+    [GuiPropertyNative]::mouse_event(
+        0x0004, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 70
+    [GuiPropertyNative]::mouse_event(
+        0x0002, 0, 0, 0, [UIntPtr]::Zero)
+    [GuiPropertyNative]::mouse_event(
+        0x0004, 0, 0, 0, [UIntPtr]::Zero)
 }
 
 function Set-PropertyDialog(
