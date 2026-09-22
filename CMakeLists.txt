@@ -62,6 +62,7 @@ add_library(acp_core
     src/core/dxf.cpp
     src/core/bounds.cpp
     src/core/layout.cpp
+    src/core/ui_layout.cpp
     src/core/svg.cpp
     src/core/pdf.cpp
     src/core/recovery.cpp
@@ -138,6 +139,10 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_large_document_tests tests/large_document_tests.cpp)
     target_link_libraries(acp_large_document_tests PRIVATE acp_core)
     add_test(NAME acp_large_document_tests COMMAND acp_large_document_tests)
+
+    add_executable(acp_ui_layout_tests tests/ui_layout_tests.cpp)
+    target_link_libraries(acp_ui_layout_tests PRIVATE acp_core)
+    add_test(NAME acp_ui_layout_tests COMMAND acp_ui_layout_tests)
 endif()
 
 if(WIN32 AND ACP_BUILD_APP)
