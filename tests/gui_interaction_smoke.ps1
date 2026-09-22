@@ -18,6 +18,9 @@ public static class GuiTestNative {
     public static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
     public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
 
     [DllImport("user32.dll")]
@@ -160,7 +163,9 @@ try {
     }
 
     $hwnd = $proc.MainWindowHandle
+    [GuiTestNative]::ShowWindow($hwnd, 3) | Out-Null
     [GuiTestNative]::SetForegroundWindow($hwnd) | Out-Null
+    Start-Sleep -Milliseconds 300
 
     $rect = New-Object GuiTestNative+RECT
     if (![GuiTestNative]::GetClientRect($hwnd, [ref]$rect)) {
