@@ -2215,6 +2215,8 @@ bool edit_active_layer_property(HWND hwnd, DirectLayerProperty property) {
     return false;
 }
 
+void save_ui_preferences();
+
 RECT right_panel_pin_rect(const RECT& client) {
     const int top = toolbar_height(client);
     return RECT{client.right - 48, top + 4, client.right - 28, top + 26};
