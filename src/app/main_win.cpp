@@ -4527,11 +4527,15 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             if (g_app.right_panel_visible &&
                 !g_app.right_panel_pinned &&
                 g_app.right_panel_collapsed) {
+                const int panel_top = toolbar_height(client);
+                const int panel_bottom =
+                    client.bottom - kStatusHeight;
                 const int collapsed_left = client.right - 28;
+
                 if (!g_app.right_panel_auto_hide_expanded &&
                     p.x >= collapsed_left &&
-                    p.y >= toolbar_height(client) &&
-                    p.y < client.bottom - kStatusHeight) {
+                    p.y >= panel_top &&
+                    p.y < panel_bottom) {
                     g_app.right_panel_auto_hide_expanded = true;
                     TRACKMOUSEEVENT tracking{
                         sizeof(TRACKMOUSEEVENT),
@@ -4541,12 +4545,22 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     TrackMouseEvent(&tracking);
                     InvalidateRect(hwnd, nullptr, FALSE);
                 } else if (g_app.right_panel_auto_hide_expanded) {
-                    TRACKMOUSEEVENT tracking{
-                        sizeof(TRACKMOUSEEVENT),
-                        TME_LEAVE,
-                        hwnd,
-                        0};
-                    TrackMouseEvent(&tracking);
+                    const int expanded_left =
+                        client.right -
+                        expanded_layer_panel_width(client);
+                    if (p.x < expanded_left ||
+                        p.y < panel_top ||
+                        p.y >= panel_bottom) {
+                        g_app.right_panel_auto_hide_expanded = false;
+                        InvalidateRect(hwnd, nullptr, FALSE);
+                    } else {
+                        TRACKMOUSEEVENT tracking{
+                            sizeof(TRACKMOUSEEVENT),
+                            TME_LEAVE,
+                            hwnd,
+                            0};
+                        TrackMouseEvent(&tracking);
+                    }
                 }
             }
 
