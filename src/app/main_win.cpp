@@ -1390,11 +1390,11 @@ void draw_layer_lock_icon(
 void draw_toolbar(HDC dc, const RECT& client) {
     const int height = toolbar_height(client);
     RECT bar{client.left, client.top, client.right, client.top + height};
-    HBRUSH background = CreateSolidBrush(RGB(27, 43, 57));
+    HBRUSH background = CreateSolidBrush(RGB(236, 238, 240));
     FillRect(dc, &bar, background);
     DeleteObject(background);
 
-    HPEN divider = CreatePen(PS_SOLID, 1, RGB(57, 76, 94));
+    HPEN divider = CreatePen(PS_SOLID, 1, RGB(165, 169, 173));
     HGDIOBJ old_pen = SelectObject(dc, divider);
     MoveToEx(dc, 0, height - 1, nullptr);
     LineTo(dc, client.right, height - 1);
@@ -1409,12 +1409,12 @@ void draw_toolbar(HDC dc, const RECT& client) {
         const bool active = g_app.tool == button.tool;
 
         HBRUSH button_brush = CreateSolidBrush(
-            active ? RGB(28, 103, 163) : RGB(34, 52, 67));
+            active ? RGB(205, 225, 242) : RGB(246, 247, 248));
         FillRect(dc, &rect, button_brush);
         DeleteObject(button_brush);
 
         if (active) {
-            HPEN edge = CreatePen(PS_SOLID, 1, RGB(58, 169, 239));
+            HPEN edge = CreatePen(PS_SOLID, 1, RGB(79, 128, 166));
             HGDIOBJ previous = SelectObject(dc, edge);
             HGDIOBJ previous_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
             Rectangle(dc, rect.left, rect.top, rect.right, rect.bottom);
@@ -1423,8 +1423,11 @@ void draw_toolbar(HDC dc, const RECT& client) {
             DeleteObject(edge);
         }
 
-        draw_tool_icon(dc, button.tool, rect,
-                       active ? RGB(240, 250, 255) : RGB(111, 205, 255));
+        draw_tool_icon(
+            dc,
+            button.tool,
+            rect,
+            active ? RGB(0, 88, 150) : RGB(43, 48, 53));
     }
 }
 
@@ -2790,7 +2793,7 @@ void assign_selected_to_active_layer(HWND hwnd) {
 
 void draw_status(HWND hwnd, HDC dc, const RECT& client) {
     RECT bar{client.left, client.bottom - kStatusHeight, client.right, client.bottom};
-    HBRUSH brush = CreateSolidBrush(RGB(32, 35, 41));
+    HBRUSH brush = CreateSolidBrush(RGB(236, 238, 240));
     FillRect(dc, &bar, brush);
     DeleteObject(brush);
 
@@ -2803,16 +2806,23 @@ void draw_status(HWND hwnd, HDC dc, const RECT& client) {
         active_layer->locked ? L"LOCKED" :
         !active_layer->visible ? L"HIDDEN" :
         L"ACTIVE";
-    swprintf_s(buffer, L"%s  Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu    Selected: %llu    Layer: %u (%s)    SNAP: %s    Undo: %zu",
-               g_app.dirty ? L"*" : L" ",
-               tool_name(g_app.tool), cursor_world.x, cursor_world.y,
-               g_app.zoom * 100.0, g_app.document.size(),
-               static_cast<unsigned long long>(g_app.selected.value_or(0)),
-               static_cast<unsigned>(g_app.active_layer), layer_state,
-               snap_state, g_app.history.undo_size());
+    swprintf_s(
+        buffer,
+        L"%s  %s   X %.2f  Y %.2f   Z %.0f%%   L%u %s   SNAP %s   Ent %zu   Sel %llu   Undo %zu",
+        g_app.dirty ? L"*" : L" ",
+        tool_name(g_app.tool),
+        cursor_world.x,
+        cursor_world.y,
+        g_app.zoom * 100.0,
+        static_cast<unsigned>(g_app.active_layer),
+        layer_state,
+        snap_state,
+        g_app.document.size(),
+        static_cast<unsigned long long>(g_app.selected.value_or(0)),
+        g_app.history.undo_size());
 
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(190, 195, 205));
+    SetTextColor(dc, RGB(58, 62, 66));
     RECT text_rect{10, bar.top, bar.right - 10, bar.bottom};
     DrawTextW(dc, buffer, -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 }
@@ -4194,7 +4204,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             HBITMAP bitmap = CreateCompatibleBitmap(dc, client.right, client.bottom);
             HGDIOBJ old_bitmap = SelectObject(memory, bitmap);
 
-            HBRUSH background = CreateSolidBrush(RGB(27, 30, 36));
+            HBRUSH background = CreateSolidBrush(RGB(0, 0, 0));
             FillRect(memory, &client, background);
             DeleteObject(background);
 
