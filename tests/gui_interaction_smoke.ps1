@@ -5,6 +5,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+Add-Type -AssemblyName System.Drawing
+
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -17,6 +19,9 @@ public static class GuiTestNative {
 
     [DllImport("user32.dll")]
     public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
+
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
 
     [DllImport("user32.dll")]
     public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
@@ -80,6 +85,38 @@ function Click-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
     [GuiTestNative]::SendMessage($hwnd, 0x0201, [IntPtr]1, [IntPtr]$packed) | Out-Null
 }
 
+function Capture-Window([IntPtr]$hwnd, [string]$path) {
+    $windowRect = New-Object GuiTestNative+RECT
+    if (![GuiTestNative]::GetWindowRect($hwnd, [ref]$windowRect)) {
+        throw "GetWindowRect failed while capturing used UI"
+    }
+
+    $width = $windowRect.Right - $windowRect.Left
+    $height = $windowRect.Bottom - $windowRect.Top
+    if ($width -lt 640 -or $height -lt 480) {
+        throw ("Unexpected window size while capturing used UI: " + $width + "x" + $height)
+    }
+
+    $bitmap = New-Object System.Drawing.Bitmap $width, $height
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    try {
+        $graphics.CopyFromScreen(
+            $windowRect.Left, $windowRect.Top,
+            0, 0, $bitmap.Size)
+        $bitmap.Save(
+            $path,
+            [System.Drawing.Imaging.ImageFormat]::Png)
+    }
+    finally {
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
+
+    if (!(Test-Path $path)) {
+        throw "Used UI screenshot was not created: $path"
+    }
+}
+
 function Write-Snapshot([IntPtr]$hwnd, [int]$id, [string]$path) {
     $result = [GuiTestNative]::SendMessage($hwnd, 0x8000 + 42, [IntPtr]$id, [IntPtr]::Zero)
     if ($result.ToInt64() -ne 1) {
@@ -101,7 +138,8 @@ $blockInserted = Join-Path $PWD "artifacts\gui-interaction-7.acp2d"
 $blockInsertUndone = Join-Path $PWD "artifacts\gui-interaction-8.acp2d"
 $blockCreateUndone = Join-Path $PWD "artifacts\gui-interaction-9.acp2d"
 $blockRedone = Join-Path $PWD "artifacts\gui-interaction-10.acp2d"
-Remove-Item $beforeDelete, $afterDelete, $layerCreated, $layerUndone, $afterUndoDraw, $blockCreated, $blockInserted, $blockInsertUndone, $blockCreateUndone, $blockRedone -ErrorAction SilentlyContinue
+$usedUi = Join-Path $PWD "artifacts\AutoCADPro-used-ui.png"
+Remove-Item $beforeDelete, $afterDelete, $layerCreated, $layerUndone, $afterUndoDraw, $blockCreated, $blockInserted, $blockInsertUndone, $blockCreateUndone, $blockRedone, $usedUi -ErrorAction SilentlyContinue
 $env:ACP_GUI_TEST_SNAPSHOT_DIR = (Join-Path $PWD "artifacts")
 $recoveryPath = Join-Path $env:LOCALAPPDATA "AutoCADPro\recovery.acp"
 Remove-Item $recoveryPath -ErrorAction SilentlyContinue
@@ -183,6 +221,9 @@ try {
     Send-Key $hwnd 0x59 # Y
     Click-Client $hwnd 740 520
     Click-Client $hwnd 780 500
+
+    Start-Sleep -Milliseconds 300
+    Capture-Window $hwnd $usedUi
 
     Write-Snapshot $hwnd 1 $beforeDelete
     $before = Get-Content -Raw -Path $beforeDelete
