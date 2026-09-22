@@ -17,6 +17,7 @@
 #include "acp/snap.hpp"
 #include "acp/svg.hpp"
 #include "acp/transform.hpp"
+#include "acp/ui_layout.hpp"
 #include "resource.h"
 
 #include <algorithm>
@@ -102,19 +103,22 @@ constexpr int kStatusHeight = 26;
 constexpr UINT_PTR kAutosaveTimerId = 1;
 constexpr UINT kAutosaveIntervalMs = 30000;
 
+acp::ui_layout::Metrics client_layout_metrics(const RECT& client) {
+    return acp::ui_layout::metrics_for_client(
+        static_cast<int>(std::max<LONG>(1, client.right - client.left)),
+        static_cast<int>(std::max<LONG>(1, client.bottom - client.top)));
+}
+
 int toolbar_height(const RECT& client) {
-    const LONG height = std::max<LONG>(1, client.bottom - client.top);
-    return static_cast<int>(std::max<LONG>(34, height / 20));
+    return client_layout_metrics(client).toolbar_height;
 }
 
 int layer_panel_width(const RECT& client) {
-    const LONG width = std::max<LONG>(1, client.right - client.left);
-    return static_cast<int>(std::max<LONG>(180, (width * 2) / 10));
+    return client_layout_metrics(client).right_panel_width;
 }
 
 int left_tool_rail_width(const RECT& client) {
-    const LONG width = std::max<LONG>(1, client.right - client.left);
-    return static_cast<int>(std::max<LONG>(32, width / 25));
+    return client_layout_metrics(client).left_rail_width;
 }
 constexpr int kMenuNew = 1001;
 constexpr int kMenuExit = 1002;
