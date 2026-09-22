@@ -1099,8 +1099,10 @@ void draw_preview(HWND hwnd, HDC dc) {
 void draw_tool_icon(HDC dc, Tool tool, RECT area, COLORREF color) {
     // SuicaCad icon language: 24x24 viewBox, square caps, sharp joins,
     // compact 1.6-ish stroke and no anti-aliased bitmap dependency.
-    const int width = std::max(1, area.right - area.left);
-    const int height = std::max(1, area.bottom - area.top);
+    const int width = std::max(
+        1, static_cast<int>(area.right - area.left));
+    const int height = std::max(
+        1, static_cast<int>(area.bottom - area.top));
     const int icon_size = std::max(16, std::min(22, std::min(width, height) - 6));
     const int origin_x =
         (area.left + area.right - icon_size) / 2;
@@ -1313,7 +1315,8 @@ void draw_layer_visibility_icon(
 
     const int cx = (area.left + area.right) / 2;
     const int cy = (area.top + area.bottom) / 2;
-    const int rx = std::max(5, (area.right - area.left) / 3);
+    const int rx = std::max(
+        5, static_cast<int>((area.right - area.left) / 3));
     const int ry = std::max(3, rx / 2);
 
     HPEN pen = CreatePen(PS_SOLID, 1, color);
