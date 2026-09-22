@@ -186,6 +186,8 @@ constexpr int kToolBlockInsert = 2018;
 constexpr UINT kGuiTestSnapshotMessage = WM_APP + 42;
 constexpr UINT kGuiTestSelectedMessage = WM_APP + 43;
 constexpr UINT kGuiTestPropertyHitMessage = WM_APP + 44;
+constexpr UINT kGuiTestLastDoubleClickMessage = WM_APP + 45;
+int g_gui_test_last_double_click_row = -2;
 #endif
 
 const wchar_t* paper_size_name(acp::layout::PaperSize paper) {
@@ -3686,6 +3688,10 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 ? static_cast<LRESULT>(*row + 1)
                 : 0;
         }
+
+        case kGuiTestLastDoubleClickMessage:
+            return static_cast<LRESULT>(
+                g_gui_test_last_double_click_row + 2);
 #endif
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
@@ -4162,6 +4168,16 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 
         case WM_LBUTTONDBLCLK: {
             const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
+#ifdef ACP_ENABLE_GUI_TEST_HOOKS
+            RECT double_click_client{};
+            GetClientRect(hwnd, &double_click_client);
+            const auto double_click_row =
+                property_value_row_at_point(double_click_client, p);
+            g_gui_test_last_double_click_row =
+                double_click_row.has_value()
+                    ? *double_click_row
+                    : -1;
+#endif
             if (handle_property_panel_double_click(hwnd, p) ||
                 handle_layer_panel_double_click(hwnd, p)) {
                 return 0;
