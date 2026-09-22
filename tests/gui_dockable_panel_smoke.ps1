@@ -15,8 +15,17 @@ public static class GuiDockPanelNative {
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X, Y; }
+
     [DllImport("user32.dll")]
     public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
+
+    [DllImport("user32.dll")]
+    public static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr SendMessage(
@@ -39,6 +48,24 @@ function Send-PointMessage(
         $message,
         [IntPtr]1,
         (Pack-Point $x $y)) | Out-Null
+}
+
+function Move-CursorClient(
+    [IntPtr]$hwnd,
+    [int]$x,
+    [int]$y) {
+
+    $point = New-Object GuiDockPanelNative+POINT
+    $point.X = $x
+    $point.Y = $y
+    if (![GuiDockPanelNative]::ClientToScreen($hwnd, [ref]$point)) {
+        throw "Dock panel regression: ClientToScreen failed"
+    }
+    if (![GuiDockPanelNative]::SetCursorPos($point.X, $point.Y)) {
+        throw "Dock panel regression: SetCursorPos failed"
+    }
+    Start-Sleep -Milliseconds 80
+    Send-PointMessage $hwnd 0x0200 $x $y
 }
 
 function Get-PanelWidth([IntPtr]$hwnd) {
@@ -134,7 +161,7 @@ try {
         throw "Dock panel regression: unpin did not enter auto-hide tab state"
     }
 
-    Send-PointMessage $hwnd 0x0200 ($clientWidth - 10) ($toolbarHeight + 80)
+    Move-CursorClient $hwnd ($clientWidth - 10) ($toolbarHeight + 80)
     Start-Sleep -Milliseconds 100
     $hoverState = Get-PanelState $hwnd
     if (($hoverState -band 8) -eq 0 -or
@@ -144,7 +171,7 @@ try {
 
     # Move from the expanded panel into the canvas. Auto-hide is scoped to
     # the panel region, not merely to leaving the whole application window.
-    Send-PointMessage $hwnd 0x0200 100 ($toolbarHeight + 80)
+    Move-CursorClient $hwnd 100 ($toolbarHeight + 80)
     Start-Sleep -Milliseconds 50
     if ((Get-PanelWidth $hwnd) -ne 28) {
         throw "Dock panel regression: leaving the panel did not auto-hide it"
