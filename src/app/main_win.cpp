@@ -419,7 +419,8 @@ acp::ui_layout::RightPanelMetrics right_panel_metrics_for_client(
             client.bottom - kStatusHeight - toolbar_height(client)));
     return acp::ui_layout::right_panel_metrics(
         panel_height,
-        property_row_count());
+        property_row_count(),
+        static_cast<int>(g_app.document.layer_ids().size()));
 }
 
 void reset_interaction_state() {
