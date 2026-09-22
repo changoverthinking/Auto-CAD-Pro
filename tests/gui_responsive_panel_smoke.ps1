@@ -32,6 +32,10 @@ public static class GuiResponsiveNative {
     public static extern IntPtr SendMessage(
         IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern bool PostMessage(
+        IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
@@ -77,8 +81,10 @@ function Click-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
 }
 
 function DoubleClick-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
-    [GuiResponsiveNative]::SendMessage(
-        $hwnd, 0x0203, [IntPtr]1, (Pack-ClientPoint $x $y)) | Out-Null
+    if (![GuiResponsiveNative]::PostMessage(
+        $hwnd, 0x0203, [IntPtr]1, (Pack-ClientPoint $x $y))) {
+        throw "PostMessage failed for property double-click"
+    }
 }
 
 function Send-Key([IntPtr]$hwnd, [int]$vk) {
