@@ -246,6 +246,7 @@ try {
 
     # First prove the direct menu -> native dialog -> History path one
     # property at a time, with a serialized snapshot after each step.
+    Write-Host "PROPERTY_STAGE: text-content-menu"
     Command-Property $hwnd $proc 1030 "EDITED-CAD"
     $contentState = Snapshot $hwnd 44
     if ($contentState -notmatch '"EDITED-CAD"') {
@@ -254,6 +255,7 @@ try {
         throw "Property editor regression: Text Content menu edit did not apply"
     }
 
+    Write-Host "PROPERTY_STAGE: text-height-menu"
     Command-Property $hwnd $proc 1031 "7.25"
     $heightState = Snapshot $hwnd 45
     if ($heightState -notmatch 'TEXT\s+[^\r\n]*\s+7\.25\s+') {
@@ -262,6 +264,7 @@ try {
         throw "Property editor regression: Text Height menu edit did not apply"
     }
 
+    Write-Host "PROPERTY_STAGE: text-rotation-menu"
     Command-Property $hwnd $proc 1032 "30"
     $rotationState = Snapshot $hwnd 46
     if ($rotationState -notmatch 'TEXT\s+[^\r\n]*\s+0\.523598') {
@@ -270,6 +273,7 @@ try {
         throw "Property editor regression: Text Rotation menu edit did not apply"
     }
 
+    Write-Host "PROPERTY_STAGE: lineweight-menu"
     Command-Property $hwnd $proc 1029 "0.70"
     $weightState = Snapshot $hwnd 47
     if ($weightState -notmatch '(?m)^E\s+\d+\s+\d+\s+1\s+1\s+') {
@@ -321,6 +325,7 @@ try {
     $contentY =
         $valuesTop + (8 * $rowHeight) + [Math]::Floor($rowHeight / 2)
 
+    Write-Host ("PROPERTY_STAGE: panel-content-doubleclick x=" + $valueX + " y=" + $contentY)
     DoubleClick-Client $hwnd $valueX $contentY
     Set-PropertyDialog $proc "PANEL-CAD"
     $panelState = Snapshot $hwnd 48
