@@ -369,6 +369,7 @@ bool active_layer_writable() {
 bool selected_editable() {
     return g_app.selected.has_value() &&
            g_app.document.find(*g_app.selected) != nullptr &&
+           g_app.document.entity_visible(*g_app.selected) &&
            !g_app.document.entity_locked(*g_app.selected);
 }
 
@@ -2151,8 +2152,13 @@ bool handle_layer_panel_click(HWND hwnd, POINT point) {
             if (point.x < visibility_edge) {
                 acp::Layer replacement = *layer;
                 replacement.visible = !replacement.visible;
-                (void)apply_history(std::make_unique<acp::UpdateLayerCommand>(
-                        id, replacement));
+                if (apply_history(std::make_unique<acp::UpdateLayerCommand>(
+                        id, replacement)) &&
+                    !replacement.visible &&
+                    g_app.selected.has_value() &&
+                    !g_app.document.entity_visible(*g_app.selected)) {
+                    g_app.selected.reset();
+                }
             } else if (point.x < lock_edge) {
                 acp::Layer replacement = *layer;
                 replacement.locked = !replacement.locked;
