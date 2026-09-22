@@ -267,8 +267,8 @@ constexpr std::array<QuickToolbarButton, 6> kQuickToolbarButtons{{
     {L"New", kMenuNew, QuickToolbarIcon::New},
     {L"Open", kMenuOpen, QuickToolbarIcon::Open},
     {L"Save", kMenuSave, QuickToolbarIcon::Save},
-    {L"Undo", kMenuUndo, QuickToolbarIcon::Undo},
-    {L"Redo", kMenuRedo, QuickToolbarIcon::Redo},
+    {L"Undo", 0, QuickToolbarIcon::Undo},
+    {L"Redo", 0, QuickToolbarIcon::Redo},
     {L"Fit", kMenuZoomExtents, QuickToolbarIcon::Fit}
 }};
 
