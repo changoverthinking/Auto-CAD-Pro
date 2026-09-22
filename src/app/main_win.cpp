@@ -95,6 +95,7 @@ struct AppState {
     acp::layout::PageSetup page_setup{};
     std::optional<double> print_scale_denominator;
     std::optional<acp::BlockId> active_block;
+    std::size_t layer_scroll_index{0};
 };
 
 AppState g_app;
@@ -371,6 +372,56 @@ bool selected_editable() {
            g_app.document.entity_editable(*g_app.selected);
 }
 
+int property_row_count() {
+    int rows = 0;
+
+    if (g_app.selected.has_value()) {
+        ++rows; // Selected.
+        const acp::EntityProperties* props =
+            g_app.document.properties(*g_app.selected);
+        if (props != nullptr) {
+            rows += 4; // Layer, lineweight, visible, locked.
+        }
+
+        const acp::Entity* entity =
+            g_app.document.find(*g_app.selected);
+        if (entity != nullptr) {
+            if (std::holds_alternative<acp::TextEntity>(*entity)) {
+                rows += 4;
+            } else if (std::holds_alternative<acp::LinearDimensionEntity>(*entity)) {
+                rows += 3;
+            } else if (std::holds_alternative<acp::HatchEntity>(*entity) ||
+                       std::holds_alternative<acp::BlockReferenceEntity>(*entity)) {
+                rows += 4;
+            }
+        }
+
+        if (props != nullptr) {
+            rows += 2; // Color and linetype.
+        }
+    } else {
+        rows += 2; // Selected and active layer ID.
+        if (g_app.document.layer(g_app.active_layer) != nullptr) {
+            rows += 4; // Layer name, weight, color and type.
+        }
+    }
+
+    rows += 5; // Zoom, snap, paper, orientation and print scale.
+    return std::max(rows, 1);
+}
+
+acp::ui_layout::RightPanelMetrics right_panel_metrics_for_client(
+    const RECT& client) {
+
+    const int panel_height = std::max(
+        1,
+        static_cast<int>(
+            client.bottom - kStatusHeight - toolbar_height(client)));
+    return acp::ui_layout::right_panel_metrics(
+        panel_height,
+        property_row_count());
+}
+
 void reset_interaction_state() {
     g_app.tool = Tool::Select;
     g_app.selected.reset();
@@ -380,6 +431,7 @@ void reset_interaction_state() {
     g_app.has_second_point = false;
     g_app.snap_candidate.reset();
     g_app.text_buffer.clear();
+    g_app.layer_scroll_index = 0;
 }
 
 
