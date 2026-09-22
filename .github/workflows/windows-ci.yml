@@ -179,6 +179,10 @@ jobs:
         shell: powershell
         run: .\tests\gui_quick_toolbar_smoke.ps1 -Exe (Join-Path $PWD "build\Release\AutoCADPro.exe")
 
+      - name: GUI dockable panel regression
+        shell: powershell
+        run: .\tests\gui_dockable_panel_smoke.ps1 -Exe (Join-Path $PWD "build\Release\AutoCADPro.exe")
+
       - name: GUI entity visibility regression
         shell: powershell
         run: .\tests\gui_entity_visibility_smoke.ps1 -Exe (Join-Path $PWD "build\Release\AutoCADPro.exe")
