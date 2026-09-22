@@ -4272,7 +4272,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                         return 0;
                     }
                     g_app.document = Document{};
-        g_app.scene3d_dirty = true;
+                    g_app.scene3d_dirty = true;
                     g_app.history = acp::History{};
                     g_app.blocks = acp::BlockLibrary{};
                     reset_project_settings();
