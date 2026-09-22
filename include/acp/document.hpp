@@ -86,6 +86,7 @@ public:
     bool set_entity_layer(EntityId id, LayerId layer_id) noexcept;
     [[nodiscard]] bool entity_visible(EntityId id) const noexcept;
     [[nodiscard]] bool entity_locked(EntityId id) const noexcept;
+    [[nodiscard]] bool entity_editable(EntityId id) const noexcept;
     [[nodiscard]] double effective_line_weight(EntityId id) const noexcept;
     [[nodiscard]] RgbColor effective_color(EntityId id) const noexcept;
     [[nodiscard]] LineType effective_line_type(EntityId id) const noexcept;
