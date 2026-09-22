@@ -61,7 +61,16 @@ foreach ($name in $runtimeToolIcons) {
 }
 
 $source = Get-Content -Raw -Path $mainWinPath
-$toolCases = [regex]::Matches($source, 'case\s+Tool::([A-Za-z0-9_]+)\s*:') |
+$renderer = [regex]::Match(
+    $source,
+    'void\s+draw_tool_icon\s*\(.*?\n\}\s*\n\s*void\s+draw_toolbar',
+    [System.Text.RegularExpressions.RegexOptions]::Singleline)
+if (!$renderer.Success) {
+    Fail "Could not isolate draw_tool_icon renderer."
+}
+$toolCases = [regex]::Matches(
+    $renderer.Value,
+    'case\s+Tool::([A-Za-z0-9_]+)\s*:') |
     ForEach-Object { $_.Groups[1].Value } |
     Select-Object -Unique
 
