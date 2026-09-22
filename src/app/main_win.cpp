@@ -100,7 +100,7 @@ struct AppState {
 
 AppState g_app;
 
-constexpr int kStatusHeight = 26;
+constexpr int kStatusHeight = 22;
 constexpr UINT_PTR kAutosaveTimerId = 1;
 constexpr UINT kAutosaveIntervalMs = 30000;
 
@@ -271,10 +271,11 @@ constexpr std::array<ToolbarButton, 18> kToolbarButtons{{
 
 RECT toolbar_button_rect(std::size_t index, const RECT& client) {
     const int height = toolbar_height(client);
-    const int size = std::clamp(height - 4, 28, 34);
-    const int gap = 2;
-    const int left = 4 + static_cast<int>(index) * (size + gap);
-    return RECT{left, 2, left + size, std::max(3, height - 2)};
+    const int size = std::clamp(height - 6, 22, 28);
+    const int gap = 1;
+    const int left = 3 + static_cast<int>(index) * (size + gap);
+    const int top = std::max(1, (height - size) / 2);
+    return RECT{left, top, left + size, top + size};
 }
 
 
@@ -1453,6 +1454,9 @@ constexpr std::array<Tool, 12> kLeftRailTools{
 void draw_left_tool_rail(HDC dc, const RECT& client) {
     const int top = toolbar_height(client);
     const int width = left_tool_rail_width(client);
+    if (width <= 0) {
+        return;
+    }
     RECT rail{
         client.left,
         top,
@@ -1484,6 +1488,9 @@ bool handle_left_tool_rail_click(HWND hwnd, POINT point) {
     GetClientRect(hwnd, &client);
     const int top = toolbar_height(client);
     const int width = left_tool_rail_width(client);
+    if (width <= 0) {
+        return false;
+    }
     if (point.x < client.left || point.x >= client.left + width ||
         point.y < top || point.y >= client.bottom - kStatusHeight) {
         return false;
