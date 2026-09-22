@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <commdlg.h>
+#include <shellapi.h>
 
 #include "acp/document.hpp"
 #include "acp/bounds.hpp"
@@ -18,6 +19,10 @@
 #include "acp/svg.hpp"
 #include "acp/transform.hpp"
 #include "acp/ui_layout.hpp"
+#include "acp/model3d.hpp"
+#include "acp/obj.hpp"
+#include "acp/blender_bridge.hpp"
+#include "acp/viewport3d.hpp"
 #include "resource.h"
 
 #include <algorithm>
@@ -102,6 +107,12 @@ struct AppState {
     bool right_panel_auto_hide_expanded{false};
     bool right_panel_resizing{false};
     int right_panel_custom_width{0};
+    acp::model3d::Scene scene3d;
+    acp::viewport3d::Camera camera3d{};
+    bool scene3d_dirty{true};
+    bool view_3d{false};
+    bool orbiting_3d{false};
+    double extrusion_height{3000.0};
 };
 
 AppState g_app;
@@ -195,6 +206,12 @@ constexpr int kMenuToggleRightPanel = 1044;
 constexpr int kMenuToggleRightPanelPin = 1045;
 constexpr int kMenuToggleRightPanelCollapse = 1046;
 constexpr int kMenuResetRightPanelWidth = 1047;
+constexpr int kMenuToggle3D = 1048;
+constexpr int kMenuBuild3D = 1049;
+constexpr int kMenuSetExtrusionHeight = 1050;
+constexpr int kMenuFit3D = 1051;
+constexpr int kMenuExportObj3D = 1052;
+constexpr int kMenuSendBlender = 1053;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -403,6 +420,7 @@ bool apply_history(std::unique_ptr<acp::Command> command) {
         return false;
     }
     g_app.dirty = true;
+    g_app.scene3d_dirty = true;
     return true;
 }
 
@@ -3007,6 +3025,120 @@ void assign_selected_to_active_layer(HWND hwnd) {
     }
 }
 
+
+void rebuild_scene3d() {
+    g_app.scene3d =
+        acp::model3d::extrude_closed_polylines(
+            g_app.document,
+            g_app.extrusion_height,
+            0.0);
+    g_app.scene3d_dirty = false;
+}
+
+void ensure_scene3d() {
+    if (g_app.scene3d_dirty) {
+        rebuild_scene3d();
+    }
+}
+
+void fit_scene3d(HWND hwnd) {
+    ensure_scene3d();
+    const RECT canvas = canvas_rect(hwnd);
+    g_app.camera3d = acp::viewport3d::fit_camera(
+        g_app.scene3d,
+        g_app.camera3d,
+        static_cast<double>(std::max<LONG>(1, canvas.right - canvas.left)),
+        static_cast<double>(std::max<LONG>(1, canvas.bottom - canvas.top)),
+        0.10);
+    InvalidateRect(hwnd, nullptr, FALSE);
+}
+
+COLORREF shaded_color(acp::RgbColor color, double light) {
+    light = std::clamp(light, 0.20, 1.0);
+    const auto channel = [light](std::uint8_t value) -> BYTE {
+        return static_cast<BYTE>(
+            std::clamp(
+                static_cast<int>(std::lround(
+                    static_cast<double>(value) * light)),
+                0,
+                255));
+    };
+    return RGB(channel(color.r), channel(color.g), channel(color.b));
+}
+
+void draw_scene3d(HWND hwnd, HDC dc, const RECT& canvas) {
+    ensure_scene3d();
+
+    HBRUSH background = CreateSolidBrush(RGB(24, 28, 34));
+    FillRect(dc, &canvas, background);
+    DeleteObject(background);
+
+    const int width = std::max<LONG>(1, canvas.right - canvas.left);
+    const int height = std::max<LONG>(1, canvas.bottom - canvas.top);
+    const auto triangles = acp::viewport3d::project_scene(
+        g_app.scene3d,
+        g_app.camera3d,
+        static_cast<double>(width),
+        static_cast<double>(height));
+
+    if (triangles.empty()) {
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, RGB(190, 198, 208));
+        RECT label = canvas;
+        DrawTextW(
+            dc,
+            L"3D Workspace - draw a closed polyline/rectangle in 2D, then Build 3D.",
+            -1,
+            &label,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        return;
+    }
+
+    HPEN edge_pen = CreatePen(PS_SOLID, 1, RGB(34, 42, 50));
+    HGDIOBJ old_pen = SelectObject(dc, edge_pen);
+
+    for (const auto& triangle : triangles) {
+        POINT points[3]{
+            {
+                canvas.left + static_cast<LONG>(std::lround(triangle.a.x)),
+                canvas.top + static_cast<LONG>(std::lround(triangle.a.y))
+            },
+            {
+                canvas.left + static_cast<LONG>(std::lround(triangle.b.x)),
+                canvas.top + static_cast<LONG>(std::lround(triangle.b.y))
+            },
+            {
+                canvas.left + static_cast<LONG>(std::lround(triangle.c.x)),
+                canvas.top + static_cast<LONG>(std::lround(triangle.c.y))
+            }
+        };
+
+        HBRUSH face =
+            CreateSolidBrush(shaded_color(triangle.color, triangle.light));
+        HGDIOBJ old_brush = SelectObject(dc, face);
+        Polygon(dc, points, 3);
+        SelectObject(dc, old_brush);
+        DeleteObject(face);
+    }
+
+    SelectObject(dc, old_pen);
+    DeleteObject(edge_pen);
+
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(184, 202, 218));
+    RECT hint{
+        canvas.left + 10,
+        canvas.top + 8,
+        canvas.right - 10,
+        canvas.top + 28};
+    DrawTextW(
+        dc,
+        L"3D  |  RMB orbit  |  MMB pan  |  Wheel zoom",
+        -1,
+        &hint,
+        DT_LEFT | DT_SINGLELINE);
+}
+
 void draw_status(HWND hwnd, HDC dc, const RECT& client) {
     RECT bar{client.left, client.bottom - kStatusHeight, client.right, client.bottom};
     HBRUSH brush = CreateSolidBrush(RGB(32, 35, 41));
@@ -3015,6 +3147,19 @@ void draw_status(HWND hwnd, HDC dc, const RECT& client) {
 
     const Vec2 cursor_world = screen_to_world(hwnd, g_app.cursor);
     wchar_t buffer[256]{};
+    if (g_app.view_3d) {
+        swprintf_s(
+            buffer,
+            L"3D Workspace    Objects: %zu    Extrude: %.2f    Zoom: %.2f px/unit    RMB Orbit    MMB Pan",
+            g_app.scene3d.size(),
+            g_app.extrusion_height,
+            g_app.camera3d.zoom);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, RGB(190, 195, 205));
+        RECT text_rect{10, bar.top, bar.right - 10, bar.bottom};
+        DrawTextW(dc, buffer, -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        return;
+    }
     const acp::Layer* active_layer = g_app.document.layer(g_app.active_layer);
     const wchar_t* snap_state = g_app.snap_enabled ? L"ON" : L"OFF";
     const wchar_t* layer_state =
@@ -3273,6 +3418,7 @@ void restore_recovery_if_available(HWND hwnd) {
 
     if (result == IDYES) {
         g_app.document = std::move(recovered->document);
+        g_app.scene3d_dirty = true;
         g_app.blocks = std::move(recovered->blocks);
         apply_project_settings(recovered->settings);
         g_app.history = acp::History{};
@@ -3359,6 +3505,7 @@ void open_project(HWND hwnd) {
     }
 
     g_app.document = std::move(project->document);
+    g_app.scene3d_dirty = true;
     g_app.blocks = std::move(project->blocks);
     apply_project_settings(project->settings);
     g_app.history = acp::History{};
@@ -3423,6 +3570,7 @@ void import_dxf(HWND hwnd) {
     }
 
     g_app.document = std::move(result->document);
+    g_app.scene3d_dirty = true;
     g_app.blocks = acp::BlockLibrary{};
     reset_project_settings();
     g_app.history = acp::History{};
@@ -3516,7 +3664,159 @@ void export_dxf(HWND hwnd) {
     }
 }
 
+
+void export_obj3d(HWND hwnd) {
+    ensure_scene3d();
+    if (g_app.scene3d.size() == 0) {
+        show_file_error(
+            hwnd,
+            L"No closed 2D polyline is available to build a 3D solid.");
+        return;
+    }
+
+    const auto path = choose_file(
+        hwnd, true,
+        L"Wavefront OBJ (*.obj)\0*.obj\0All Files (*.*)\0*.*\0\0",
+        L"obj");
+    if (!path.has_value()) {
+        return;
+    }
+
+    if (!acp::obj::save(*path, g_app.scene3d)) {
+        show_file_error(hwnd, L"Could not export the 3D OBJ model.");
+    }
+}
+
+std::optional<std::filesystem::path> find_blender_executable() {
+    std::array<wchar_t, 4096> resolved{};
+    const DWORD found = SearchPathW(
+        nullptr,
+        L"blender.exe",
+        nullptr,
+        static_cast<DWORD>(resolved.size()),
+        resolved.data(),
+        nullptr);
+    if (found > 0 && found < resolved.size()) {
+        return std::filesystem::path(resolved.data());
+    }
+
+    std::array<wchar_t, 4096> program_files{};
+    const DWORD length = GetEnvironmentVariableW(
+        L"ProgramFiles",
+        program_files.data(),
+        static_cast<DWORD>(program_files.size()));
+    if (length == 0 || length >= program_files.size()) {
+        return std::nullopt;
+    }
+
+    const auto root =
+        std::filesystem::path(program_files.data()) /
+        L"Blender Foundation";
+    std::error_code ec;
+    if (!std::filesystem::exists(root, ec) || ec) {
+        return std::nullopt;
+    }
+
+    for (std::filesystem::directory_iterator it(root, ec), end;
+         !ec && it != end;
+         it.increment(ec)) {
+        const auto candidate = it->path() / L"blender.exe";
+        std::error_code file_ec;
+        if (std::filesystem::is_regular_file(candidate, file_ec) &&
+            !file_ec) {
+            return candidate;
+        }
+    }
+    return std::nullopt;
+}
+
+void send_to_blender(HWND hwnd) {
+    ensure_scene3d();
+    if (g_app.scene3d.size() == 0) {
+        show_file_error(
+            hwnd,
+            L"No closed 2D polyline is available to build a 3D solid.");
+        return;
+    }
+
+    const auto blend_path = choose_file(
+        hwnd, true,
+        L"Blender Project (*.blend)\0*.blend\0All Files (*.*)\0*.*\0\0",
+        L"blend");
+    if (!blend_path.has_value()) {
+        return;
+    }
+
+    const std::filesystem::path bundle_dir =
+        blend_path->parent_path() /
+        (blend_path->stem().wstring() + L"_acp_blender");
+
+    const auto bundle = acp::blender::write_bundle(
+        bundle_dir,
+        g_app.scene3d,
+        *blend_path);
+    if (!bundle.has_value()) {
+        show_file_error(
+            hwnd,
+            L"Could not create the Blender transfer bundle.");
+        return;
+    }
+
+    const auto blender = find_blender_executable();
+    if (!blender.has_value()) {
+        std::wstring message =
+            L"3D bundle created successfully.\n\nBlender was not found automatically.\nRun this script from Blender:\n";
+        message += bundle->script_path.wstring();
+        MessageBoxW(
+            hwnd,
+            message.c_str(),
+            L"Auto CAD Pro -> Blender",
+            MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    std::wstring parameters =
+        L"--python \"" + bundle->script_path.wstring() + L"\"";
+    const HINSTANCE launched = ShellExecuteW(
+        hwnd,
+        L"open",
+        blender->c_str(),
+        parameters.c_str(),
+        bundle_dir.c_str(),
+        SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(launched) <= 32) {
+        show_file_error(
+            hwnd,
+            L"Blender was found, but Auto CAD Pro could not launch it.");
+    }
+}
+
+void set_extrusion_height(HWND hwnd) {
+    const auto entered = prompt_property_value(
+        hwnd,
+        L"3D Extrusion Height",
+        L"Height in drawing units:",
+        format_property_number(g_app.extrusion_height, 3));
+    if (!entered.has_value()) {
+        return;
+    }
+    const auto value = parse_finite_double(*entered);
+    if (!value.has_value() || std::abs(*value) <= acp::geo::kEpsilon) {
+        show_invalid_property(
+            hwnd,
+            L"Extrusion height must be a finite non-zero number.");
+        return;
+    }
+    g_app.extrusion_height = *value;
+    g_app.scene3d_dirty = true;
+    rebuild_scene3d();
+    fit_scene3d(hwnd);
+}
+
 void handle_left_click(HWND hwnd, POINT point) {
+    if (g_app.view_3d) {
+        return;
+    }
     if (handle_toolbar_click(hwnd, point)) {
         return;
     }
@@ -3972,6 +4272,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                         return 0;
                     }
                     g_app.document = Document{};
+        g_app.scene3d_dirty = true;
                     g_app.history = acp::History{};
                     g_app.blocks = acp::BlockLibrary{};
                     reset_project_settings();
@@ -4004,7 +4305,45 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     export_pdf(hwnd);
                     return 0;
                 case kMenuZoomExtents:
-                    fit_drawing(hwnd);
+                    if (g_app.view_3d) {
+                        fit_scene3d(hwnd);
+                    } else {
+                        fit_drawing(hwnd);
+                    }
+                    return 0;
+                case kMenuToggle3D:
+                    g_app.view_3d = !g_app.view_3d;
+                    if (g_app.view_3d) {
+                        ensure_scene3d();
+                        fit_scene3d(hwnd);
+                        SetWindowTextW(hwnd, L"Auto CAD Pro - 3D Workspace");
+                    } else {
+                        SetWindowTextW(hwnd, L"Auto CAD Pro - 2D Workspace");
+                    }
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                case kMenuBuild3D:
+                    g_app.scene3d_dirty = true;
+                    rebuild_scene3d();
+                    g_app.view_3d = true;
+                    fit_scene3d(hwnd);
+                    SetWindowTextW(hwnd, L"Auto CAD Pro - 3D Workspace");
+                    return 0;
+                case kMenuSetExtrusionHeight:
+                    set_extrusion_height(hwnd);
+                    g_app.view_3d = true;
+                    SetWindowTextW(hwnd, L"Auto CAD Pro - 3D Workspace");
+                    return 0;
+                case kMenuFit3D:
+                    g_app.view_3d = true;
+                    fit_scene3d(hwnd);
+                    SetWindowTextW(hwnd, L"Auto CAD Pro - 3D Workspace");
+                    return 0;
+                case kMenuExportObj3D:
+                    export_obj3d(hwnd);
+                    return 0;
+                case kMenuSendBlender:
+                    send_to_blender(hwnd);
                     return 0;
                 case kMenuToggleRightPanel:
                     g_app.right_panel_visible =
@@ -4502,6 +4841,25 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             }
             break;
 
+        case WM_RBUTTONDOWN:
+            if (g_app.view_3d) {
+                g_app.orbiting_3d = true;
+                g_app.last_mouse = POINT{
+                    GET_X_LPARAM(l_param),
+                    GET_Y_LPARAM(l_param)};
+                SetCapture(hwnd);
+                return 0;
+            }
+            break;
+
+        case WM_RBUTTONUP:
+            if (g_app.orbiting_3d) {
+                g_app.orbiting_3d = false;
+                ReleaseCapture();
+                return 0;
+            }
+            break;
+
         case WM_MBUTTONDOWN:
             g_app.panning = true;
             g_app.last_mouse = POINT{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
@@ -4519,6 +4877,19 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 
             if (g_app.right_panel_resizing) {
                 update_right_panel_resize(hwnd, p);
+                return 0;
+            }
+
+            if (g_app.view_3d && g_app.orbiting_3d) {
+                const LONG dx = p.x - g_app.last_mouse.x;
+                const LONG dy = p.y - g_app.last_mouse.y;
+                g_app.camera3d.yaw += static_cast<double>(dx) * 0.01;
+                g_app.camera3d.pitch = std::clamp(
+                    g_app.camera3d.pitch + static_cast<double>(dy) * 0.01,
+                    -1.45,
+                    1.45);
+                g_app.last_mouse = p;
+                InvalidateRect(hwnd, nullptr, FALSE);
                 return 0;
             }
 
@@ -4575,8 +4946,13 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             if (g_app.panning) {
                 const LONG dx = p.x - g_app.last_mouse.x;
                 const LONG dy = p.y - g_app.last_mouse.y;
-                g_app.view_center.x -= static_cast<double>(dx) / g_app.zoom;
-                g_app.view_center.y += static_cast<double>(dy) / g_app.zoom;
+                if (g_app.view_3d) {
+                    g_app.camera3d.pan_x += static_cast<double>(dx);
+                    g_app.camera3d.pan_y += static_cast<double>(dy);
+                } else {
+                    g_app.view_center.x -= static_cast<double>(dx) / g_app.zoom;
+                    g_app.view_center.y += static_cast<double>(dy) / g_app.zoom;
+                }
                 g_app.last_mouse = p;
             }
             InvalidateRect(hwnd, nullptr, FALSE);
@@ -4600,7 +4976,17 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             }
             const RECT canvas = canvas_rect(hwnd);
             if (PtInRect(&canvas, p)) {
-                zoom_at(hwnd, p, wheel_delta);
+                if (g_app.view_3d) {
+                    const double factor =
+                        wheel_delta > 0 ? 1.12 : 1.0 / 1.12;
+                    g_app.camera3d.zoom = std::clamp(
+                        g_app.camera3d.zoom * factor,
+                        1e-6,
+                        100000.0);
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                } else {
+                    zoom_at(hwnd, p, wheel_delta);
+                }
             }
             return 0;
         }
@@ -4623,11 +5009,15 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             DeleteObject(background);
 
             const RECT canvas = canvas_rect(hwnd);
-            draw_grid(hwnd, memory, canvas);
-            draw_document(hwnd, memory);
-            draw_selection_overlay(hwnd, memory);
-            draw_preview(hwnd, memory);
-            draw_snap_marker(hwnd, memory);
+            if (g_app.view_3d) {
+                draw_scene3d(hwnd, memory, canvas);
+            } else {
+                draw_grid(hwnd, memory, canvas);
+                draw_document(hwnd, memory);
+                draw_selection_overlay(hwnd, memory);
+                draw_preview(hwnd, memory);
+                draw_snap_marker(hwnd, memory);
+            }
             draw_toolbar(memory, client);
             draw_left_tool_rail(memory, client);
             draw_layer_panel(hwnd, memory, client);
@@ -4684,6 +5074,7 @@ HMENU create_app_menu() {
     HMENU entity = CreatePopupMenu();
     HMENU block_menu = CreatePopupMenu();
     HMENU layout_menu = CreatePopupMenu();
+    HMENU model3d_menu = CreatePopupMenu();
 
     AppendMenuW(file, MF_STRING, kMenuNew, L"&New");
     AppendMenuW(file, MF_STRING, kMenuOpen, L"&Open Project...\tCtrl+O");
@@ -4765,7 +5156,15 @@ HMENU create_app_menu() {
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(layer), L"&Layer");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(entity), L"&Entity");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(block_menu), L"&Block");
+    AppendMenuW(model3d_menu, MF_STRING, kMenuToggle3D, L"Toggle &2D / 3D Workspace");
+    AppendMenuW(model3d_menu, MF_STRING, kMenuBuild3D, L"&Build 3D from Closed Polylines");
+    AppendMenuW(model3d_menu, MF_STRING, kMenuSetExtrusionHeight, L"Set &Extrusion Height...");
+    AppendMenuW(model3d_menu, MF_STRING, kMenuFit3D, L"&Fit 3D View");
+    AppendMenuW(model3d_menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(model3d_menu, MF_STRING, kMenuExportObj3D, L"Export &OBJ...");
+    AppendMenuW(model3d_menu, MF_STRING, kMenuSendBlender, L"Send to &Blender...");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(layout_menu), L"&Layout");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(model3d_menu), L"&3D");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"&View");
     return menu;
 }
