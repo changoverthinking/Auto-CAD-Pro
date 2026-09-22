@@ -1097,107 +1097,206 @@ void draw_preview(HWND hwnd, HDC dc) {
 }
 
 void draw_tool_icon(HDC dc, Tool tool, RECT area, COLORREF color) {
-    const int cx = (area.left + area.right) / 2;
-    const int cy = (area.top + area.bottom) / 2;
+    // SuicaCad icon language: 24x24 viewBox, square caps, sharp joins,
+    // compact 1.6-ish stroke and no anti-aliased bitmap dependency.
+    const int width = std::max(1, area.right - area.left);
+    const int height = std::max(1, area.bottom - area.top);
+    const int icon_size = std::max(16, std::min(22, std::min(width, height) - 6));
+    const int origin_x =
+        (area.left + area.right - icon_size) / 2;
+    const int origin_y =
+        (area.top + area.bottom - icon_size) / 2;
+
+    auto px = [&](double x) {
+        return origin_x + static_cast<int>(
+            std::lround(x * static_cast<double>(icon_size) / 24.0));
+    };
+    auto py = [&](double y) {
+        return origin_y + static_cast<int>(
+            std::lround(y * static_cast<double>(icon_size) / 24.0));
+    };
+
     HPEN pen = CreatePen(PS_SOLID, 2, color);
     HGDIOBJ old_pen = SelectObject(dc, pen);
     HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
 
-    auto line = [&](int x1, int y1, int x2, int y2) {
-        MoveToEx(dc, x1, y1, nullptr);
-        LineTo(dc, x2, y2);
+    auto line = [&](double x1, double y1, double x2, double y2) {
+        MoveToEx(dc, px(x1), py(y1), nullptr);
+        LineTo(dc, px(x2), py(y2));
+    };
+    auto rect = [&](double x, double y, double w, double h) {
+        Rectangle(dc, px(x), py(y), px(x + w), py(y + h));
+    };
+    auto ellipse = [&](double cx, double cy, double rx, double ry) {
+        Ellipse(
+            dc,
+            px(cx - rx), py(cy - ry),
+            px(cx + rx), py(cy + ry));
+    };
+    auto filled_square = [&](double x, double y, double size) {
+        HBRUSH brush = CreateSolidBrush(color);
+        HGDIOBJ previous = SelectObject(dc, brush);
+        Rectangle(dc, px(x), py(y), px(x + size), py(y + size));
+        SelectObject(dc, previous);
+        DeleteObject(brush);
+    };
+    auto dashed_line = [&](double x1, double y1, double x2, double y2) {
+        HPEN dotted = CreatePen(PS_DOT, 1, color);
+        HGDIOBJ previous = SelectObject(dc, dotted);
+        line(x1, y1, x2, y2);
+        SelectObject(dc, previous);
+        DeleteObject(dotted);
     };
 
     switch (tool) {
-        case Tool::Select:
-            line(cx - 5, cy - 6, cx - 5, cy + 6);
-            line(cx - 5, cy - 6, cx + 5, cy);
-            line(cx + 5, cy, cx, cy + 1);
-            line(cx, cy + 1, cx + 3, cy + 7);
+        case Tool::Select: {
+            POINT points[] = {
+                {px(5), py(3)},
+                {px(5), py(18)},
+                {px(9), py(14.2)},
+                {px(11.7), py(20)},
+                {px(14), py(19)},
+                {px(11.3), py(13.2)},
+                {px(17), py(13.2)}
+            };
+            Polyline(dc, points, static_cast<int>(std::size(points)));
+            line(17, 13.2, 5, 3);
             break;
+        }
         case Tool::Line:
-            line(cx - 7, cy + 6, cx + 7, cy - 6);
+            line(4, 20, 20, 4);
+            filled_square(2.6, 18.6, 2.8);
+            filled_square(18.6, 2.6, 2.8);
             break;
         case Tool::Polyline:
-            line(cx - 8, cy + 5, cx - 2, cy - 2);
-            line(cx - 2, cy - 2, cx + 4, cy + 1);
-            line(cx + 4, cy + 1, cx + 8, cy - 5);
-            break;
-        case Tool::Circle:
-            Ellipse(dc, cx - 7, cy - 7, cx + 8, cy + 8);
-            break;
-        case Tool::Arc:
-            Arc(dc, cx - 8, cy - 7, cx + 8, cy + 7,
-                cx - 7, cy + 4, cx + 7, cy - 4);
+            line(4, 19, 9, 9);
+            line(9, 9, 14, 15);
+            line(14, 15, 20, 5);
+            filled_square(2.6, 17.6, 2.8);
+            filled_square(7.6, 7.6, 2.8);
+            filled_square(12.6, 13.6, 2.8);
+            filled_square(18.6, 3.6, 2.8);
             break;
         case Tool::Rectangle:
-            Rectangle(dc, cx - 8, cy - 6, cx + 8, cy + 6);
+            rect(4, 6, 16, 12);
+            filled_square(2.6, 4.6, 2.8);
+            filled_square(18.6, 4.6, 2.8);
+            filled_square(2.6, 16.6, 2.8);
+            filled_square(18.6, 16.6, 2.8);
             break;
-        case Tool::Move:
-            line(cx - 8, cy, cx + 8, cy);
-            line(cx, cy - 8, cx, cy + 8);
-            line(cx - 8, cy, cx - 4, cy - 3);
-            line(cx - 8, cy, cx - 4, cy + 3);
-            line(cx + 8, cy, cx + 4, cy - 3);
-            line(cx + 8, cy, cx + 4, cy + 3);
+        case Tool::Circle:
+            ellipse(12, 12, 8, 8);
+            line(12, 2, 12, 5);
+            line(12, 19, 12, 22);
+            line(2, 12, 5, 12);
+            line(19, 12, 22, 12);
             break;
+        case Tool::Arc:
+            Arc(
+                dc,
+                px(4), py(4), px(20), py(20),
+                px(5), py(19), px(19), py(5));
+            dashed_line(5, 19, 19, 19);
+            dashed_line(19, 19, 19, 5);
+            filled_square(17.6, 17.6, 2.8);
+            break;
+        case Tool::Move: {
+            HBRUSH brush = CreateSolidBrush(color);
+            HGDIOBJ previous_brush = SelectObject(dc, brush);
+            POINT points[] = {
+                {px(12), py(2)}, {px(9), py(6)}, {px(11), py(6)},
+                {px(11), py(10)}, {px(7), py(10)}, {px(7), py(8)},
+                {px(3), py(12)}, {px(7), py(16)}, {px(7), py(14)},
+                {px(11), py(14)}, {px(11), py(18)}, {px(9), py(18)},
+                {px(12), py(22)}, {px(15), py(18)}, {px(13), py(18)},
+                {px(13), py(14)}, {px(17), py(14)}, {px(17), py(16)},
+                {px(21), py(12)}, {px(17), py(8)}, {px(17), py(10)},
+                {px(13), py(10)}, {px(13), py(6)}, {px(15), py(6)}
+            };
+            Polygon(dc, points, static_cast<int>(std::size(points)));
+            SelectObject(dc, previous_brush);
+            DeleteObject(brush);
+            break;
+        }
         case Tool::Copy:
-            Rectangle(dc, cx - 7, cy - 6, cx + 4, cy + 5);
-            Rectangle(dc, cx - 3, cy - 2, cx + 8, cy + 9);
+            rect(4, 5, 11, 11);
+            rect(9, 9, 11, 11);
+            line(15, 5, 18, 5);
+            line(18, 5, 18, 8);
             break;
         case Tool::Rotate:
-            Arc(dc, cx - 7, cy - 7, cx + 7, cy + 7,
-                cx + 6, cy + 3, cx + 2, cy - 7);
-            line(cx + 2, cy - 7, cx + 6, cy - 6);
-            line(cx + 2, cy - 7, cx + 3, cy - 3);
+            Arc(
+                dc,
+                px(4), py(4), px(20), py(20),
+                px(20), py(12), px(17.7), py(6.3));
+            line(20, 4, 20, 9);
+            line(20, 9, 15, 9);
             break;
         case Tool::Scale:
-            Rectangle(dc, cx - 7, cy - 7, cx + 4, cy + 4);
-            line(cx + 2, cy + 2, cx + 8, cy + 8);
-            line(cx + 8, cy + 8, cx + 4, cy + 8);
-            line(cx + 8, cy + 8, cx + 8, cy + 4);
+            rect(4, 8, 10, 10);
+            line(10, 14, 20, 4);
+            line(20, 4, 15.5, 4);
+            line(20, 4, 20, 8.5);
+            filled_square(2.8, 16.8, 2.4);
             break;
         case Tool::Mirror:
-            line(cx, cy - 8, cx, cy + 8);
-            line(cx - 8, cy + 5, cx - 2, cy - 5);
-            line(cx + 8, cy + 5, cx + 2, cy - 5);
+            dashed_line(12, 2, 12, 22);
+            line(10, 6, 4, 12);
+            line(4, 12, 10, 18);
+            line(10, 18, 10, 6);
+            line(14, 6, 20, 12);
+            line(20, 12, 14, 18);
+            line(14, 18, 14, 6);
             break;
         case Tool::Trim:
-            line(cx - 8, cy + 5, cx + 8, cy - 5);
-            line(cx - 8, cy - 5, cx - 1, cy);
-            line(cx + 2, cy + 4, cx + 8, cy + 7);
-            break;
-        case Tool::Extend:
-            line(cx - 8, cy + 5, cx + 3, cy - 2);
-            line(cx + 5, cy - 8, cx + 5, cy + 8);
-            line(cx + 3, cy - 2, cx + 5, cy - 3);
+            ellipse(6, 6, 2, 2);
+            ellipse(6, 18, 2, 2);
+            line(7.4, 7.4, 19, 19);
+            line(7.4, 16.6, 19, 5);
             break;
         case Tool::Offset:
-            line(cx - 8, cy + 3, cx + 6, cy - 5);
-            line(cx - 6, cy + 7, cx + 8, cy - 1);
+            rect(4, 4, 11, 11);
+            dashed_line(9, 9, 20, 9);
+            dashed_line(20, 9, 20, 20);
+            dashed_line(20, 20, 9, 20);
+            dashed_line(9, 20, 9, 9);
+            break;
+        case Tool::Extend:
+            line(18, 5, 18, 19);
+            line(4, 13, 14, 13);
+            line(12, 11, 15, 13);
+            line(15, 13, 12, 15);
             break;
         case Tool::Dimension:
-            line(cx - 8, cy, cx + 8, cy);
-            line(cx - 8, cy - 5, cx - 8, cy + 5);
-            line(cx + 8, cy - 5, cx + 8, cy + 5);
-            line(cx - 8, cy, cx - 4, cy - 3);
-            line(cx - 8, cy, cx - 4, cy + 3);
-            line(cx + 8, cy, cx + 4, cy - 3);
-            line(cx + 8, cy, cx + 4, cy + 3);
+            line(4, 7, 4, 17);
+            line(20, 7, 20, 17);
+            line(4, 12, 20, 12);
+            line(4, 12, 7.5, 10);
+            line(4, 12, 7.5, 14);
+            line(20, 12, 16.5, 10);
+            line(20, 12, 16.5, 14);
             break;
         case Tool::Hatch:
-            Rectangle(dc, cx - 7, cy - 7, cx + 7, cy + 7);
-            for (int d = -8; d <= 6; d += 5) {
-                line(cx - 7, cy + d + 5, cx + 2, cy + d - 4);
-            }
+            rect(4, 4, 16, 16);
+            line(4, 16, 8, 20);
+            line(4, 11, 13, 20);
+            line(4, 6, 18, 20);
+            line(6, 4, 20, 18);
+            line(11, 4, 20, 13);
+            line(16, 4, 20, 8);
             break;
         case Tool::Text:
-            line(cx - 7, cy - 7, cx + 7, cy - 7);
-            line(cx, cy - 7, cx, cy + 8);
+            line(8, 19, 12, 6);
+            line(12, 6, 16, 19);
+            line(9.4, 14.5, 14.6, 14.5);
+            line(5, 21, 19, 21);
             break;
         case Tool::BlockInsert:
-            Rectangle(dc, cx - 8, cy - 8, cx + 4, cy + 4);
-            Rectangle(dc, cx - 3, cy - 3, cx + 9, cy + 9);
+            rect(4, 5, 9, 9);
+            rect(11, 11, 9, 9);
+            line(13, 7, 20, 7);
+            line(20, 7, 17, 4);
+            line(20, 7, 17, 10);
             break;
     }
 
