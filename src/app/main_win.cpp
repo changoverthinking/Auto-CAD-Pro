@@ -1204,6 +1204,12 @@ bool handle_toolbar_click(HWND hwnd, POINT point) {
 }
 
 
+constexpr std::array<Tool, 12> kLeftRailTools{
+    Tool::Select, Tool::Line, Tool::Polyline, Tool::Circle, Tool::Arc,
+    Tool::Rectangle, Tool::Move, Tool::Trim, Tool::Dimension,
+    Tool::Hatch, Tool::Text, Tool::BlockInsert
+};
+
 void draw_left_tool_rail(HDC dc, const RECT& client) {
     const int top = toolbar_height(client);
     const int width = left_tool_rail_width(client);
@@ -1217,17 +1223,11 @@ void draw_left_tool_rail(HDC dc, const RECT& client) {
     FillRect(dc, &rail, background);
     DeleteObject(background);
 
-    constexpr Tool items[] = {
-        Tool::Select, Tool::Line, Tool::Polyline, Tool::Circle, Tool::Arc,
-        Tool::Rectangle, Tool::Move, Tool::Trim, Tool::Dimension,
-        Tool::Hatch, Tool::Text, Tool::BlockInsert
-    };
-
     SetBkMode(dc, TRANSPARENT);
     const int cell_height = std::clamp(width - 8, 26, 34);
     const int gap = 3;
     int y = rail.top + 4;
-    for (const Tool item : items) {
+    for (const Tool item : kLeftRailTools) {
         RECT cell{rail.left + 3, y, rail.right - 3, y + cell_height};
         HBRUSH brush = CreateSolidBrush(
             g_app.tool == item ? RGB(28, 103, 163) : RGB(33, 51, 66));
@@ -1249,20 +1249,15 @@ bool handle_left_tool_rail_click(HWND hwnd, POINT point) {
         return false;
     }
 
-    constexpr Tool tools[] = {
-        Tool::Select, Tool::Line, Tool::Polyline, Tool::Circle, Tool::Arc,
-        Tool::Rectangle, Tool::Move, Tool::Trim, Tool::Dimension,
-        Tool::Hatch, Tool::Text
-    };
     const int cell_height = std::clamp(width - 8, 26, 34);
     const int stride = cell_height + 3;
     const int relative = point.y - (top + 4);
     if (relative >= 0) {
         const int index = relative / stride;
         const int local_y = relative % stride;
-        if (index >= 0 && index < static_cast<int>(std::size(tools)) &&
+        if (index >= 0 && index < static_cast<int>(kLeftRailTools.size()) &&
             local_y < cell_height) {
-            set_tool(hwnd, tools[index]);
+            set_tool(hwnd, kLeftRailTools[static_cast<std::size_t>(index)]);
             return true;
         }
     }
