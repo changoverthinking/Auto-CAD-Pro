@@ -321,11 +321,26 @@ try {
         [Math]::Max(14, $rowHeight))
 
     $valuesTop = $toolbarHeight + 26
-    $valueX = $propertiesLeft + 5 + $keyWidth + 10
+    # Use the right side of Properties rather than deriving an offset from
+    # the key column. This guarantees the click is inside the value cell even
+    # when the dock is at its minimum width.
+    $valueX = $clientWidth - 12
     $contentY =
         $valuesTop + (8 * $rowHeight) + [Math]::Floor($rowHeight / 2)
 
-    Write-Host ("PROPERTY_STAGE: panel-content-doubleclick x=" + $valueX + " y=" + $contentY)
+    $beforePanelState = Snapshot $hwnd 49
+    if ($beforePanelState -notmatch '"EDITED-CAD"') {
+        throw "Property editor regression: Text selection/state was lost before panel double-click"
+    }
+
+    Write-Host (
+        "PROPERTY_STAGE: panel-content-doubleclick client=" +
+        $clientWidth + "x" + $clientHeight +
+        " panel=" + $panelWidth +
+        " nav=" + $navigatorWidth +
+        " props=" + $propertiesWidth +
+        " rowHeight=" + $rowHeight +
+        " x=" + $valueX + " y=" + $contentY)
     DoubleClick-Client $hwnd $valueX $contentY
     Set-PropertyDialog $proc "PANEL-CAD"
     $panelState = Snapshot $hwnd 48
