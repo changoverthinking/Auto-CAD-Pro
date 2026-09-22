@@ -368,9 +368,7 @@ bool active_layer_writable() {
 
 bool selected_editable() {
     return g_app.selected.has_value() &&
-           g_app.document.find(*g_app.selected) != nullptr &&
-           g_app.document.entity_visible(*g_app.selected) &&
-           !g_app.document.entity_locked(*g_app.selected);
+           g_app.document.entity_editable(*g_app.selected);
 }
 
 void reset_interaction_state() {
