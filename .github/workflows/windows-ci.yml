@@ -28,6 +28,10 @@ jobs:
         shell: powershell
         run: .\tests\ci_gui_reachability.ps1
 
+      - name: 2D release contract preflight
+        shell: powershell
+        run: .\tests\ci_release_contract.ps1
+
       - name: Require PR branch to include latest main
         if: github.event_name == 'pull_request'
         shell: powershell
