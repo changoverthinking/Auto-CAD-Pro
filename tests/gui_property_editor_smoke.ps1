@@ -173,6 +173,16 @@ function Set-PropertyDialog(
 
     if ($dialog -eq [IntPtr]::Zero -or
         $edit -eq [IntPtr]::Zero) {
+        if ($script:MainHwnd -ne [IntPtr]::Zero) {
+            $dblState = [GuiPropertyNative]::SendMessage(
+                $script:MainHwnd,
+                0x8000 + 45,
+                [IntPtr]::Zero,
+                [IntPtr]::Zero)
+            Write-Host (
+                "PROPERTY_DIAGNOSTIC: lastDoubleClickRow=" +
+                ($dblState.ToInt64() - 2))
+        }
         throw "Property editor dialog/edit control did not become ready"
     }
 
@@ -268,6 +278,7 @@ try {
     }
 
     $hwnd = $proc.MainWindowHandle
+    $script:MainHwnd = $hwnd
     [GuiPropertyNative]::SetForegroundWindow($hwnd) | Out-Null
 
     $rect = New-Object GuiPropertyNative+RECT
