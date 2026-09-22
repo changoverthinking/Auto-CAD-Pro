@@ -191,11 +191,13 @@ jobs:
           path: artifacts/gui-interaction-*.acp2d
           if-no-files-found: error
 
-      - name: Upload real GUI screenshot
+      - name: Upload real GUI screenshots
         uses: actions/upload-artifact@v6
         with:
           name: AutoCADPro-Real-UI
-          path: artifacts/AutoCADPro-real-ui.png
+          path: |
+            artifacts/AutoCADPro-real-ui.png
+            artifacts/AutoCADPro-used-ui.png
           if-no-files-found: error
 
       - name: Build versioned portable package

@@ -329,16 +329,24 @@ int main() {
     expect(!layerDoc.entity_visible(wallEntity), "hidden layer hides entity");
     expect(!selection::hit_test(layerDoc, {5, 0}, 0.5).has_value(),
            "selection skips hidden layer");
+    expect(!layerDoc.entity_editable(wallEntity),
+           "hidden entity is not editable");
 
     expect(layerDoc.set_layer_visible(wallsLayer, true), "show layer");
+    expect(layerDoc.entity_editable(wallEntity),
+           "visible unlocked entity is editable");
     layerDoc.properties(wallEntity)->visible = false;
     expect(!layerDoc.entity_visible(wallEntity), "entity visibility override");
     layerDoc.properties(wallEntity)->visible = true;
 
     expect(layerDoc.set_layer_locked(wallsLayer, true), "lock layer");
     expect(layerDoc.entity_locked(wallEntity), "entity inherits locked layer");
+    expect(!layerDoc.entity_editable(wallEntity),
+           "locked entity is not editable");
     expect(layerDoc.set_layer_locked(wallsLayer, false), "unlock layer");
     expect(!layerDoc.entity_locked(wallEntity), "entity unlocked with layer");
+    expect(layerDoc.entity_editable(wallEntity),
+           "unlocked visible entity becomes editable");
 
     expect(!layerDoc.remove_layer(wallsLayer), "cannot remove layer in use");
     expect(layerDoc.remove_layer(dimsLayer), "remove unused layer");

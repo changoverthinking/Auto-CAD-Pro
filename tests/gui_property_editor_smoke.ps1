@@ -283,16 +283,13 @@ try {
     $clientWidth = $rect.Right - $rect.Left
     $clientHeight = $rect.Bottom - $rect.Top
     $toolbarHeight = [Math]::Max(
-        34, [int]($clientHeight / 20))
+        1, [int]($clientHeight / 20))
     $panelWidth = [Math]::Max(
-        180, [int](($clientWidth * 2) / 10))
+        1, [int](($clientWidth * 2) / 10))
     $panelLeft = $clientWidth - $panelWidth
     $panelBottom = $clientHeight - 26
     $layerY = $toolbarHeight + 32 + 26
-    $propertiesTop = [Math]::Max(
-        $layerY + 10,
-        $toolbarHeight +
-            [int](($panelBottom - $toolbarHeight) / 2))
+    $propertiesTop = $layerY + 10
     $valueX = $panelLeft + 120
     $contentY =
         $propertiesTop + 34 + (8 * 22) + 11
@@ -438,9 +435,9 @@ try {
 
     # Prove the right-panel layer-row double-click route.
     $layerToolbarHeight = [Math]::Max(
-        34, [int](($rect.Bottom - $rect.Top) / 20))
+        1, [int](($rect.Bottom - $rect.Top) / 20))
     $layerPanelWidth = [Math]::Max(
-        180, [int]((($rect.Right - $rect.Left) * 2) / 10))
+        1, [int]((($rect.Right - $rect.Left) * 2) / 10))
     $layerPanelLeft = ($rect.Right - $rect.Left) - $layerPanelWidth
     $secondLayerNameX = $layerPanelLeft + 90
     $secondLayerY = $layerToolbarHeight + 32 + 26 + 12
