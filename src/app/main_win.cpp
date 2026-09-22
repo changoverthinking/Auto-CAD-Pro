@@ -1305,6 +1305,83 @@ void draw_tool_icon(HDC dc, Tool tool, RECT area, COLORREF color) {
     DeleteObject(pen);
 }
 
+void draw_layer_visibility_icon(
+    HDC dc,
+    RECT area,
+    bool visible,
+    COLORREF color) {
+
+    const int cx = (area.left + area.right) / 2;
+    const int cy = (area.top + area.bottom) / 2;
+    const int rx = std::max(5, (area.right - area.left) / 3);
+    const int ry = std::max(3, rx / 2);
+
+    HPEN pen = CreatePen(PS_SOLID, 1, color);
+    HGDIOBJ old_pen = SelectObject(dc, pen);
+    HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+
+    POINT eye[] = {
+        {cx - rx, cy},
+        {cx - rx / 2, cy - ry},
+        {cx, cy - ry - 1},
+        {cx + rx / 2, cy - ry},
+        {cx + rx, cy},
+        {cx + rx / 2, cy + ry},
+        {cx, cy + ry + 1},
+        {cx - rx / 2, cy + ry},
+        {cx - rx, cy}
+    };
+    Polyline(dc, eye, static_cast<int>(std::size(eye)));
+    Ellipse(dc, cx - 2, cy - 2, cx + 3, cy + 3);
+
+    if (!visible) {
+        MoveToEx(dc, cx - rx, cy + ry + 2, nullptr);
+        LineTo(dc, cx + rx, cy - ry - 2);
+    }
+
+    SelectObject(dc, old_brush);
+    SelectObject(dc, old_pen);
+    DeleteObject(pen);
+}
+
+void draw_layer_lock_icon(
+    HDC dc,
+    RECT area,
+    bool locked,
+    COLORREF color) {
+
+    const int cx = (area.left + area.right) / 2;
+    const int cy = (area.top + area.bottom) / 2;
+
+    HPEN pen = CreatePen(PS_SOLID, 1, color);
+    HGDIOBJ old_pen = SelectObject(dc, pen);
+    HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+
+    RECT body{cx - 5, cy - 1, cx + 6, cy + 7};
+    Rectangle(dc, body.left, body.top, body.right, body.bottom);
+
+    if (locked) {
+        Arc(
+            dc,
+            cx - 4, cy - 7, cx + 5, cy + 3,
+            cx + 4, cy - 2, cx - 3, cy - 2);
+    } else {
+        Arc(
+            dc,
+            cx - 4, cy - 7, cx + 5, cy + 3,
+            cx + 4, cy - 2, cx - 1, cy - 6);
+        MoveToEx(dc, cx - 4, cy - 2, nullptr);
+        LineTo(dc, cx - 4, cy - 5);
+    }
+
+    MoveToEx(dc, cx, cy + 2, nullptr);
+    LineTo(dc, cx, cy + 5);
+
+    SelectObject(dc, old_brush);
+    SelectObject(dc, old_pen);
+    DeleteObject(pen);
+}
+
 void draw_toolbar(HDC dc, const RECT& client) {
     const int height = toolbar_height(client);
     RECT bar{client.left, client.top, client.right, client.top + height};
@@ -1994,10 +2071,16 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
             lock_rect.right + 4, row.top,
             std::max<LONG>(lock_rect.right + 5, name_right), row.bottom};
 
-        DrawTextW(dc, layer->visible ? L"V" : L"-", -1, &vis_rect,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        DrawTextW(dc, layer->locked ? L"L" : L"-", -1, &lock_rect,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        draw_layer_visibility_icon(
+            dc,
+            vis_rect,
+            layer->visible,
+            layer->visible ? RGB(111, 205, 255) : RGB(116, 128, 138));
+        draw_layer_lock_icon(
+            dc,
+            lock_rect,
+            layer->locked,
+            layer->locked ? RGB(255, 188, 92) : RGB(156, 170, 180));
         DrawTextW(dc, name.c_str(), -1, &name_rect,
                   DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
