@@ -9,7 +9,7 @@ namespace acp::blender {
 namespace {
 
 std::string python_string(const std::filesystem::path& path) {
-    const std::string raw = path.generic_u8string();
+    const std::string raw = path.generic_string();
     std::string escaped;
     escaped.reserve(raw.size() + 8);
     for (const char ch : raw) {
