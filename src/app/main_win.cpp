@@ -96,6 +96,12 @@ struct AppState {
     std::optional<double> print_scale_denominator;
     std::optional<acp::BlockId> active_block;
     std::size_t layer_scroll_index{0};
+    bool right_panel_visible{true};
+    bool right_panel_pinned{true};
+    bool right_panel_collapsed{false};
+    bool right_panel_auto_hide_expanded{false};
+    bool right_panel_resizing{false};
+    int right_panel_custom_width{0};
 };
 
 AppState g_app;
@@ -114,8 +120,29 @@ int toolbar_height(const RECT& client) {
     return client_layout_metrics(client).toolbar_height;
 }
 
+int expanded_layer_panel_width(const RECT& client) {
+    const int fallback =
+        client_layout_metrics(client).right_panel_width;
+    const int client_width = std::max(
+        1, static_cast<int>(client.right - client.left));
+    const int max_width = std::max(
+        160, std::min(480, (client_width * 45) / 100));
+    const int preferred =
+        g_app.right_panel_custom_width > 0
+            ? g_app.right_panel_custom_width
+            : fallback;
+    return std::clamp(preferred, 160, max_width);
+}
+
 int layer_panel_width(const RECT& client) {
-    return client_layout_metrics(client).right_panel_width;
+    if (!g_app.right_panel_visible) {
+        return 0;
+    }
+    if (g_app.right_panel_collapsed &&
+        !g_app.right_panel_auto_hide_expanded) {
+        return 28;
+    }
+    return expanded_layer_panel_width(client);
 }
 
 int left_tool_rail_width(const RECT& client) {
@@ -164,6 +191,10 @@ constexpr int kMenuEditEntityColor = 1040;
 constexpr int kMenuEditEntityLineType = 1041;
 constexpr int kMenuEditLayerColor = 1042;
 constexpr int kMenuEditLayerLineType = 1043;
+constexpr int kMenuToggleRightPanel = 1044;
+constexpr int kMenuToggleRightPanelPin = 1045;
+constexpr int kMenuToggleRightPanelCollapse = 1046;
+constexpr int kMenuResetRightPanelWidth = 1047;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -184,6 +215,8 @@ constexpr int kToolRectangle = 2017;
 constexpr int kToolBlockInsert = 2018;
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
 constexpr UINT kGuiTestSnapshotMessage = WM_APP + 42;
+constexpr UINT kGuiTestRightPanelWidthMessage = WM_APP + 43;
+constexpr UINT kGuiTestRightPanelStateMessage = WM_APP + 44;
 #endif
 
 const wchar_t* paper_size_name(acp::layout::PaperSize paper) {
@@ -2182,9 +2215,131 @@ bool edit_active_layer_property(HWND hwnd, DirectLayerProperty property) {
     return false;
 }
 
+void save_ui_preferences();
+
+RECT right_panel_pin_rect(const RECT& client) {
+    const int top = toolbar_height(client);
+    return RECT{client.right - 48, top + 4, client.right - 28, top + 26};
+}
+
+RECT right_panel_collapse_rect(const RECT& client) {
+    const int top = toolbar_height(client);
+    return RECT{client.right - 26, top + 4, client.right - 6, top + 26};
+}
+
+RECT right_panel_splitter_rect(const RECT& client) {
+    const int width = layer_panel_width(client);
+    const int left = client.right - width;
+    return RECT{
+        left - 4,
+        toolbar_height(client),
+        left + 4,
+        client.bottom - kStatusHeight};
+}
+
+bool handle_right_panel_chrome_click(HWND hwnd, POINT point) {
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    const int width = layer_panel_width(client);
+    if (width <= 0) {
+        return false;
+    }
+
+    const int top = toolbar_height(client);
+    const int panel_left = client.right - width;
+    if (point.x < panel_left ||
+        point.y < top ||
+        point.y >= client.bottom - kStatusHeight) {
+        return false;
+    }
+
+    if (g_app.right_panel_collapsed &&
+        !g_app.right_panel_auto_hide_expanded) {
+        if (g_app.right_panel_pinned) {
+            g_app.right_panel_collapsed = false;
+            save_ui_preferences();
+        } else {
+            g_app.right_panel_auto_hide_expanded = true;
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return true;
+    }
+
+    RECT pin = right_panel_pin_rect(client);
+    if (PtInRect(&pin, point)) {
+        g_app.right_panel_pinned = !g_app.right_panel_pinned;
+        if (g_app.right_panel_pinned) {
+            g_app.right_panel_collapsed = false;
+            g_app.right_panel_auto_hide_expanded = false;
+        } else {
+            g_app.right_panel_collapsed = true;
+            g_app.right_panel_auto_hide_expanded = false;
+        }
+        save_ui_preferences();
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return true;
+    }
+
+    RECT collapse = right_panel_collapse_rect(client);
+    if (PtInRect(&collapse, point)) {
+        g_app.right_panel_collapsed =
+            !g_app.right_panel_collapsed;
+        g_app.right_panel_auto_hide_expanded = false;
+        save_ui_preferences();
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return true;
+    }
+
+    return false;
+}
+
+bool begin_right_panel_resize(HWND hwnd, POINT point) {
+    if (!g_app.right_panel_visible ||
+        g_app.right_panel_collapsed ||
+        !g_app.right_panel_pinned) {
+        return false;
+    }
+
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    RECT splitter = right_panel_splitter_rect(client);
+    if (!PtInRect(&splitter, point)) {
+        return false;
+    }
+
+    g_app.right_panel_resizing = true;
+    SetCapture(hwnd);
+    SetCursor(LoadCursorW(nullptr, IDC_SIZEWE));
+    return true;
+}
+
+void update_right_panel_resize(HWND hwnd, POINT point) {
+    if (!g_app.right_panel_resizing) {
+        return;
+    }
+
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    const int client_width = std::max(
+        1, static_cast<int>(client.right - client.left));
+    const int max_width = std::max(
+        160, std::min(480, (client_width * 45) / 100));
+    g_app.right_panel_custom_width =
+        std::clamp(
+            static_cast<int>(client.right - point.x),
+            160,
+            max_width);
+    g_app.right_panel_collapsed = false;
+    SetCursor(LoadCursorW(nullptr, IDC_SIZEWE));
+    InvalidateRect(hwnd, nullptr, FALSE);
+}
+
 void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     const int top = toolbar_height(client);
     const int width = layer_panel_width(client);
+    if (width <= 0) {
+        return;
+    }
     RECT panel{
         std::max<LONG>(client.left, client.right - width),
         top,
@@ -2206,9 +2361,34 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, RGB(231, 237, 242));
 
-    RECT heading{panel.left + 10, panel.top + 4, panel.right - 8, panel.top + 28};
+    if (g_app.right_panel_collapsed &&
+        !g_app.right_panel_auto_hide_expanded) {
+        RECT tab{panel.left, panel.top, panel.right, panel.bottom};
+        RECT glyph{tab.left, tab.top + 4, tab.right, tab.top + 30};
+        DrawTextW(
+            dc, L"\x25C0", -1, &glyph,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        RECT label{tab.left, tab.top + 34, tab.right, tab.top + 62};
+        DrawTextW(
+            dc, L"L", -1, &label,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        return;
+    }
+
+    RECT heading{panel.left + 10, panel.top + 4, panel.right - 54, panel.top + 28};
     DrawTextW(dc, L"Layers", -1, &heading,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    RECT pin = right_panel_pin_rect(client);
+    RECT collapse = right_panel_collapse_rect(client);
+    DrawTextW(
+        dc,
+        g_app.right_panel_pinned ? L"\x25CF" : L"\x25CB",
+        -1, &pin,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    DrawTextW(
+        dc, L"\x25B6", -1, &collapse,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
     const bool compact_panel =
         acp::ui_layout::compact_right_panel(width);
@@ -2945,6 +3125,92 @@ std::filesystem::path recovery_snapshot_path() {
     }
 
     return root / L"AutoCADPro" / L"recovery.acp";
+}
+
+std::filesystem::path ui_preferences_path() {
+    std::array<wchar_t, 4096> local_app_data{};
+    const DWORD length = GetEnvironmentVariableW(
+        L"LOCALAPPDATA",
+        local_app_data.data(),
+        static_cast<DWORD>(local_app_data.size()));
+
+    std::filesystem::path root;
+    if (length > 0 && length < local_app_data.size()) {
+        root = std::filesystem::path(local_app_data.data());
+    } else {
+        std::error_code ec;
+        root = std::filesystem::temp_directory_path(ec);
+        if (ec) {
+            root = std::filesystem::current_path(ec);
+        }
+    }
+    return root / L"AutoCADPro" / L"ui.ini";
+}
+
+void save_ui_preferences() {
+    const auto path = ui_preferences_path();
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    if (ec) {
+        return;
+    }
+
+    std::string data;
+    data += "right_panel_visible=" +
+        std::string(g_app.right_panel_visible ? "1" : "0") + "\n";
+    data += "right_panel_pinned=" +
+        std::string(g_app.right_panel_pinned ? "1" : "0") + "\n";
+    data += "right_panel_collapsed=" +
+        std::string(g_app.right_panel_collapsed ? "1" : "0") + "\n";
+    data += "right_panel_width=" +
+        std::to_string(g_app.right_panel_custom_width) + "\n";
+    (void)write_text_file(path, data);
+}
+
+void load_ui_preferences() {
+    const auto data = read_text_file(ui_preferences_path());
+    if (!data.has_value()) {
+        return;
+    }
+
+    auto read_int = [&](const char* key) -> std::optional<int> {
+        const std::string prefix = std::string(key) + "=";
+        const std::size_t pos = data->find(prefix);
+        if (pos == std::string::npos) {
+            return std::nullopt;
+        }
+        const std::size_t begin = pos + prefix.size();
+        const std::size_t end = data->find('\n', begin);
+        const std::string value = data->substr(
+            begin,
+            end == std::string::npos
+                ? std::string::npos
+                : end - begin);
+        try {
+            return std::stoi(value);
+        } catch (...) {
+            return std::nullopt;
+        }
+    };
+
+    if (const auto value = read_int("right_panel_visible")) {
+        g_app.right_panel_visible = *value != 0;
+    }
+    if (const auto value = read_int("right_panel_pinned")) {
+        g_app.right_panel_pinned = *value != 0;
+    }
+    if (const auto value = read_int("right_panel_collapsed")) {
+        g_app.right_panel_collapsed = *value != 0;
+    }
+    if (const auto value = read_int("right_panel_width")) {
+        g_app.right_panel_custom_width =
+            std::clamp(*value, 0, 480);
+    }
+
+    if (!g_app.right_panel_pinned) {
+        g_app.right_panel_collapsed = true;
+        g_app.right_panel_auto_hide_expanded = false;
+    }
 }
 
 acp::persistence::ProjectSettings current_project_settings() {
@@ -3684,6 +3950,20 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
         case kGuiTestSnapshotMessage:
             return write_gui_test_snapshot(w_param) ? 1 : 0;
+        case kGuiTestRightPanelWidthMessage: {
+            RECT client{};
+            GetClientRect(hwnd, &client);
+            return static_cast<LRESULT>(layer_panel_width(client));
+        }
+        case kGuiTestRightPanelStateMessage: {
+            unsigned state = 0;
+            if (g_app.right_panel_visible) state |= 1u;
+            if (g_app.right_panel_pinned) state |= 2u;
+            if (g_app.right_panel_collapsed) state |= 4u;
+            if (g_app.right_panel_auto_hide_expanded) state |= 8u;
+            if (g_app.right_panel_resizing) state |= 16u;
+            return static_cast<LRESULT>(state);
+        }
 #endif
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
@@ -3725,6 +4005,42 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     return 0;
                 case kMenuZoomExtents:
                     fit_drawing(hwnd);
+                    return 0;
+                case kMenuToggleRightPanel:
+                    g_app.right_panel_visible =
+                        !g_app.right_panel_visible;
+                    g_app.right_panel_auto_hide_expanded = false;
+                    save_ui_preferences();
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                case kMenuToggleRightPanelPin:
+                    g_app.right_panel_visible = true;
+                    g_app.right_panel_pinned =
+                        !g_app.right_panel_pinned;
+                    if (g_app.right_panel_pinned) {
+                        g_app.right_panel_collapsed = false;
+                    } else {
+                        g_app.right_panel_collapsed = true;
+                    }
+                    g_app.right_panel_auto_hide_expanded = false;
+                    save_ui_preferences();
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                case kMenuToggleRightPanelCollapse:
+                    g_app.right_panel_visible = true;
+                    g_app.right_panel_collapsed =
+                        !g_app.right_panel_collapsed;
+                    g_app.right_panel_auto_hide_expanded = false;
+                    save_ui_preferences();
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                case kMenuResetRightPanelWidth:
+                    g_app.right_panel_visible = true;
+                    g_app.right_panel_custom_width = 0;
+                    g_app.right_panel_collapsed = false;
+                    g_app.right_panel_auto_hide_expanded = false;
+                    save_ui_preferences();
+                    InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
                 case kMenuCyclePaperSize:
                     cycle_paper_size();
@@ -4169,9 +4485,22 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 
         case WM_LBUTTONDOWN: {
             const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
+            if (begin_right_panel_resize(hwnd, p) ||
+                handle_right_panel_chrome_click(hwnd, p)) {
+                return 0;
+            }
             handle_left_click(hwnd, p);
             return 0;
         }
+
+        case WM_LBUTTONUP:
+            if (g_app.right_panel_resizing) {
+                g_app.right_panel_resizing = false;
+                ReleaseCapture();
+                save_ui_preferences();
+                return 0;
+            }
+            break;
 
         case WM_MBUTTONDOWN:
             g_app.panning = true;
@@ -4187,6 +4516,54 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
         case WM_MOUSEMOVE: {
             const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
             g_app.cursor = p;
+
+            if (g_app.right_panel_resizing) {
+                update_right_panel_resize(hwnd, p);
+                return 0;
+            }
+
+            RECT client{};
+            GetClientRect(hwnd, &client);
+            if (g_app.right_panel_visible &&
+                !g_app.right_panel_pinned &&
+                g_app.right_panel_collapsed) {
+                const int panel_top = toolbar_height(client);
+                const int panel_bottom =
+                    client.bottom - kStatusHeight;
+                const int collapsed_left = client.right - 28;
+
+                if (!g_app.right_panel_auto_hide_expanded &&
+                    p.x >= collapsed_left &&
+                    p.y >= panel_top &&
+                    p.y < panel_bottom) {
+                    g_app.right_panel_auto_hide_expanded = true;
+                    TRACKMOUSEEVENT tracking{
+                        sizeof(TRACKMOUSEEVENT),
+                        TME_LEAVE,
+                        hwnd,
+                        0};
+                    TrackMouseEvent(&tracking);
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                } else if (g_app.right_panel_auto_hide_expanded) {
+                    const int expanded_left =
+                        client.right -
+                        expanded_layer_panel_width(client);
+                    if (p.x < expanded_left ||
+                        p.y < panel_top ||
+                        p.y >= panel_bottom) {
+                        g_app.right_panel_auto_hide_expanded = false;
+                        InvalidateRect(hwnd, nullptr, FALSE);
+                    } else {
+                        TRACKMOUSEEVENT tracking{
+                            sizeof(TRACKMOUSEEVENT),
+                            TME_LEAVE,
+                            hwnd,
+                            0};
+                        TrackMouseEvent(&tracking);
+                    }
+                }
+            }
+
             const RECT canvas = canvas_rect(hwnd);
             if (!g_app.panning && PtInRect(&canvas, p)) {
                 const Vec2 raw = screen_to_world(hwnd, p);
@@ -4205,6 +4582,14 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }
+
+        case WM_MOUSELEAVE:
+            if (!g_app.right_panel_pinned &&
+                g_app.right_panel_auto_hide_expanded) {
+                g_app.right_panel_auto_hide_expanded = false;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            return 0;
 
         case WM_MOUSEWHEEL: {
             POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
@@ -4279,6 +4664,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             return 0;
 
         case WM_DESTROY:
+            save_ui_preferences();
             KillTimer(hwnd, kAutosaveTimerId);
             PostQuitMessage(0);
             return 0;
@@ -4336,6 +4722,11 @@ HMENU create_app_menu() {
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"&File");
     AppendMenuW(view, MF_STRING, kMenuZoomExtents, L"Zoom &Extents");
     AppendMenuW(view, MF_STRING, kMenuToggleSnap, L"Toggle Object &Snap\tF3");
+    AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(view, MF_STRING, kMenuToggleRightPanel, L"Show/Hide Layer &Properties Panel");
+    AppendMenuW(view, MF_STRING, kMenuToggleRightPanelPin, L"&Pin/Auto-hide Layer Panel");
+    AppendMenuW(view, MF_STRING, kMenuToggleRightPanelCollapse, L"&Collapse/Expand Layer Panel");
+    AppendMenuW(view, MF_STRING, kMenuResetRightPanelWidth, L"&Reset Layer Panel Width");
     AppendMenuW(layer, MF_STRING, kMenuNewLayer, L"&New Layer");
     AppendMenuW(layer, MF_STRING, kMenuEditLayerName, L"&Rename Active Layer...");
     AppendMenuW(layer, MF_STRING, kMenuEditLayerWeight, L"Edit Active Layer &Line Weight...");
@@ -4413,6 +4804,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_command) {
         return 2;
     }
 
+    load_ui_preferences();
     restore_recovery_if_available(hwnd);
     if (SetTimer(hwnd, kAutosaveTimerId, kAutosaveIntervalMs, nullptr) == 0) {
         MessageBoxW(
