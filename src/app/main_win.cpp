@@ -2213,9 +2213,126 @@ bool edit_active_layer_property(HWND hwnd, DirectLayerProperty property) {
     return false;
 }
 
+RECT right_panel_pin_rect(const RECT& client) {
+    const int width = layer_panel_width(client);
+    const int left = client.right - width;
+    const int top = toolbar_height(client);
+    return RECT{client.right - 48, top + 4, client.right - 28, top + 26};
+}
+
+RECT right_panel_collapse_rect(const RECT& client) {
+    const int top = toolbar_height(client);
+    return RECT{client.right - 26, top + 4, client.right - 6, top + 26};
+}
+
+RECT right_panel_splitter_rect(const RECT& client) {
+    const int width = layer_panel_width(client);
+    const int left = client.right - width;
+    return RECT{
+        left - 4,
+        toolbar_height(client),
+        left + 4,
+        client.bottom - kStatusHeight};
+}
+
+bool handle_right_panel_chrome_click(HWND hwnd, POINT point) {
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    const int width = layer_panel_width(client);
+    if (width <= 0) {
+        return false;
+    }
+
+    const int top = toolbar_height(client);
+    const int panel_left = client.right - width;
+    if (point.x < panel_left ||
+        point.y < top ||
+        point.y >= client.bottom - kStatusHeight) {
+        return false;
+    }
+
+    if (g_app.right_panel_collapsed &&
+        !g_app.right_panel_auto_hide_expanded) {
+        g_app.right_panel_auto_hide_expanded = true;
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return true;
+    }
+
+    RECT pin = right_panel_pin_rect(client);
+    if (PtInRect(&pin, point)) {
+        g_app.right_panel_pinned = !g_app.right_panel_pinned;
+        if (g_app.right_panel_pinned) {
+            g_app.right_panel_collapsed = false;
+            g_app.right_panel_auto_hide_expanded = false;
+        } else {
+            g_app.right_panel_collapsed = true;
+            g_app.right_panel_auto_hide_expanded = false;
+        }
+        save_ui_preferences();
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return true;
+    }
+
+    RECT collapse = right_panel_collapse_rect(client);
+    if (PtInRect(&collapse, point)) {
+        g_app.right_panel_collapsed =
+            !g_app.right_panel_collapsed;
+        g_app.right_panel_auto_hide_expanded = false;
+        save_ui_preferences();
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return true;
+    }
+
+    return false;
+}
+
+bool begin_right_panel_resize(HWND hwnd, POINT point) {
+    if (!g_app.right_panel_visible ||
+        g_app.right_panel_collapsed ||
+        !g_app.right_panel_pinned) {
+        return false;
+    }
+
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    RECT splitter = right_panel_splitter_rect(client);
+    if (!PtInRect(&splitter, point)) {
+        return false;
+    }
+
+    g_app.right_panel_resizing = true;
+    SetCapture(hwnd);
+    SetCursor(LoadCursorW(nullptr, IDC_SIZEWE));
+    return true;
+}
+
+void update_right_panel_resize(HWND hwnd, POINT point) {
+    if (!g_app.right_panel_resizing) {
+        return;
+    }
+
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    const int client_width = std::max(
+        1, static_cast<int>(client.right - client.left));
+    const int max_width = std::max(
+        160, std::min(480, (client_width * 45) / 100));
+    g_app.right_panel_custom_width =
+        std::clamp(
+            static_cast<int>(client.right - point.x),
+            160,
+            max_width);
+    g_app.right_panel_collapsed = false;
+    SetCursor(LoadCursorW(nullptr, IDC_SIZEWE));
+    InvalidateRect(hwnd, nullptr, FALSE);
+}
+
 void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     const int top = toolbar_height(client);
     const int width = layer_panel_width(client);
+    if (width <= 0) {
+        return;
+    }
     RECT panel{
         std::max<LONG>(client.left, client.right - width),
         top,
@@ -2237,9 +2354,34 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, RGB(231, 237, 242));
 
-    RECT heading{panel.left + 10, panel.top + 4, panel.right - 8, panel.top + 28};
+    if (g_app.right_panel_collapsed &&
+        !g_app.right_panel_auto_hide_expanded) {
+        RECT tab{panel.left, panel.top, panel.right, panel.bottom};
+        RECT glyph{tab.left, tab.top + 4, tab.right, tab.top + 30};
+        DrawTextW(
+            dc, L"\x25C0", -1, &glyph,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        RECT label{tab.left, tab.top + 34, tab.right, tab.top + 62};
+        DrawTextW(
+            dc, L"L", -1, &label,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        return;
+    }
+
+    RECT heading{panel.left + 10, panel.top + 4, panel.right - 54, panel.top + 28};
     DrawTextW(dc, L"Layers", -1, &heading,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    RECT pin = right_panel_pin_rect(client);
+    RECT collapse = right_panel_collapse_rect(client);
+    DrawTextW(
+        dc,
+        g_app.right_panel_pinned ? L"\x25CF" : L"\x25CB",
+        -1, &pin,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    DrawTextW(
+        dc, L"\x25B6", -1, &collapse,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
     const bool compact_panel =
         acp::ui_layout::compact_right_panel(width);
