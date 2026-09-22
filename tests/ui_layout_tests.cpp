@@ -15,16 +15,12 @@ void expect(bool condition, const char* name) {
 void verify(int width, int height) {
     const auto m = acp::ui_layout::metrics_for_client(width, height);
 
-    expect(m.toolbar_height >= 1, "toolbar positive");
-    expect(m.right_panel_width >= 1, "right panel positive");
-    expect(m.left_rail_width >= 1, "left rail positive");
-
-    expect(m.toolbar_height * 20 <= height,
-           "toolbar does not exceed 1/20 height");
-    expect(m.right_panel_width * 10 <= width * 2,
-           "right panel does not exceed 2/10 width");
-    expect(m.left_rail_width * 25 <= width,
-           "left rail does not exceed 1/25 width");
+    expect(m.toolbar_height >= 26 && m.toolbar_height <= 32,
+           "toolbar remains compact");
+    expect(m.right_panel_width >= 1 && m.right_panel_width <= width / 3,
+           "right dock preserves drawing area");
+    expect(m.left_rail_width == 0,
+           "left rail is collapsed by default");
 }
 }
 
@@ -32,56 +28,49 @@ int main() {
     verify(640, 480);
     verify(1024, 768);
     verify(1366, 768);
+    verify(1680, 925);
     verify(1920, 1080);
     verify(2560, 1440);
     verify(3840, 2160);
 
-    expect(acp::ui_layout::compact_right_panel(128),
-           "128px right panel uses compact layout");
-    expect(!acp::ui_layout::compact_right_panel(204),
-           "204px right panel uses full layout");
-    expect(acp::ui_layout::property_key_width(128) == 57,
-           "compact property key width remains readable");
-    expect(acp::ui_layout::property_key_width(384) == 100,
-           "wide property key width is capped");
+    const auto sigma =
+        acp::ui_layout::metrics_for_client(1680, 925);
+    expect(sigma.toolbar_height == 28,
+           "reference-size toolbar is 28px");
+    expect(sigma.right_panel_width == 285,
+           "reference-size right dock is 17 percent");
+    expect(sigma.left_rail_width == 0,
+           "reference-size has no permanent left rail");
 
-    const auto compact_text =
-        acp::ui_layout::right_panel_metrics(430, 16, 11);
-    expect(compact_text.property_row_height == 20,
-           "480p text property rows compact to fit");
-    expect(compact_text.visible_layer_rows == 1,
-           "480p reserves at least one visible layer row");
-    expect(
-        compact_text.properties_top_offset +
-            28 + 6 +
-            compact_text.property_row_height * 16 <= 430,
-        "480p text properties stay inside panel");
+    const auto full_hd =
+        acp::ui_layout::metrics_for_client(1920, 1080);
+    expect(full_hd.toolbar_height == 32,
+           "1080p toolbar capped at 32px");
+    expect(full_hd.right_panel_width == 300,
+           "1080p dock capped at 300px");
 
-    const auto tall_text =
-        acp::ui_layout::right_panel_metrics(680, 16, 20);
-    expect(tall_text.property_row_height == 22,
-           "tall panel uses full property row height");
-    expect(tall_text.visible_layer_rows >= 8,
-           "tall panel exposes multiple layer rows");
+    expect(acp::ui_layout::compact_right_panel(180),
+           "narrow dock uses compact mode");
+    expect(!acp::ui_layout::compact_right_panel(285),
+           "reference dock uses full mode");
 
-    const auto tall_single_layer =
-        acp::ui_layout::right_panel_metrics(680, 16, 1);
-    expect(tall_single_layer.visible_layer_rows == 1,
-           "single layer does not reserve empty layer rows");
-    expect(tall_single_layer.properties_top_offset == 68,
-           "single layer keeps properties directly below the row");
+    const auto panel =
+        acp::ui_layout::right_panel_metrics(285, 850, 16, 20);
+    expect(panel.property_row_height == 20,
+           "properties use compact 20px rows");
+    expect(panel.visible_layer_rows >= 20,
+           "navigator can display many layers vertically");
+    expect(panel.navigator_width >= 110 && panel.navigator_width <= 132,
+           "navigator uses narrow reference-like column");
 
-    const auto compact_empty =
-        acp::ui_layout::right_panel_metrics(430, 11, 10);
-    expect(compact_empty.property_row_height == 22,
-           "480p empty selection keeps full row height");
-    expect(compact_empty.visible_layer_rows >= 4,
-           "480p empty selection leaves room for layers");
-
-    const auto full_hd = acp::ui_layout::metrics_for_client(1920, 1080);
-    expect(full_hd.toolbar_height == 54, "1080p toolbar exact 1/20");
-    expect(full_hd.right_panel_width == 384, "1080p right panel exact 2/10");
-    expect(full_hd.left_rail_width == 76, "1080p left rail floor 1/25");
+    const auto compact =
+        acp::ui_layout::right_panel_metrics(160, 430, 16, 20);
+    expect(compact.property_row_height >= 14,
+           "small-window properties remain readable");
+    expect(compact.visible_layer_rows >= 1,
+           "small-window navigator remains usable");
+    expect(compact.navigator_width < 100,
+           "small-window navigator stays narrow");
 
     if (failures != 0) {
         std::cerr << failures << " UI layout metric test(s) failed\n";
