@@ -1,5 +1,6 @@
 #include "acp/ui_layout.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 
