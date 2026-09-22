@@ -1837,9 +1837,28 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
 
     const bool compact_panel =
         acp::ui_layout::compact_right_panel(width);
+    const auto panel_metrics =
+        right_panel_metrics_for_client(client);
+    const auto layer_ids = g_app.document.layer_ids();
+    const std::size_t visible_layer_rows =
+        static_cast<std::size_t>(
+            std::max(panel_metrics.visible_layer_rows, 1));
+    const std::size_t max_scroll =
+        layer_ids.size() > visible_layer_rows
+            ? layer_ids.size() - visible_layer_rows
+            : 0;
+    g_app.layer_scroll_index =
+        std::min(g_app.layer_scroll_index, max_scroll);
+    const std::size_t layer_end =
+        std::min(
+            layer_ids.size(),
+            g_app.layer_scroll_index + visible_layer_rows);
 
     int y = panel.top + 32;
-    for (const acp::LayerId id : g_app.document.layer_ids()) {
+    for (std::size_t layer_index = g_app.layer_scroll_index;
+         layer_index < layer_end;
+         ++layer_index) {
+        const acp::LayerId id = layer_ids[layer_index];
         const acp::Layer* layer = g_app.document.layer(id);
         if (layer == nullptr) continue;
 
@@ -1898,7 +1917,8 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
         y += 26;
     }
 
-    const int properties_top = y + 10;
+    const int properties_top =
+        panel.top + panel_metrics.properties_top_offset;
     RECT prop_header{panel.left, properties_top, panel.right, properties_top + 28};
     HBRUSH prop_brush = CreateSolidBrush(RGB(32, 49, 63));
     FillRect(dc, &prop_header, prop_brush);
@@ -1912,18 +1932,19 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
         acp::ui_layout::property_key_width(width);
     SetTextColor(dc, RGB(185, 198, 209));
     auto draw_property = [&](const wchar_t* key, const wchar_t* value) {
+        const int row_height = panel_metrics.property_row_height;
         RECT key_rect{
             panel.left + 10, py,
-            panel.left + 10 + key_width, py + 22};
+            panel.left + 10 + key_width, py + row_height};
         RECT value_rect{
             key_rect.right + 6, py,
-            panel.right - 8, py + 22};
+            panel.right - 8, py + row_height};
         DrawTextW(dc, key, -1, &key_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         SetTextColor(dc, RGB(232, 237, 241));
         DrawTextW(dc, value, -1, &value_rect,
                   DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         SetTextColor(dc, RGB(185, 198, 209));
-        py += 22;
+        py += panel_metrics.property_row_height;
     };
 
     wchar_t value[128]{};
