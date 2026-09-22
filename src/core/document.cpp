@@ -104,6 +104,12 @@ bool Document::entity_locked(EntityId id) const noexcept {
     return owner == nullptr || owner->locked;
 }
 
+bool Document::entity_editable(EntityId id) const noexcept {
+    return find(id) != nullptr &&
+           entity_visible(id) &&
+           !entity_locked(id);
+}
+
 double Document::effective_line_weight(EntityId id) const noexcept {
     const auto* props = properties(id);
     if (props == nullptr) {
