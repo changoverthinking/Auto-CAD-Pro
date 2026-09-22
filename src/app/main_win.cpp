@@ -184,6 +184,8 @@ constexpr int kToolRectangle = 2017;
 constexpr int kToolBlockInsert = 2018;
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
 constexpr UINT kGuiTestSnapshotMessage = WM_APP + 42;
+constexpr UINT kGuiTestSelectedMessage = WM_APP + 43;
+constexpr UINT kGuiTestPropertyHitMessage = WM_APP + 44;
 #endif
 
 const wchar_t* paper_size_name(acp::layout::PaperSize paper) {
@@ -2372,9 +2374,9 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
     (void)hwnd;
 }
 
-bool handle_property_panel_double_click(HWND hwnd, POINT point) {
-    RECT client{};
-    GetClientRect(hwnd, &client);
+std::optional<int> property_value_row_at_point(
+    const RECT& client,
+    POINT point) {
 
     const int top = toolbar_height(client);
     const int panel_width = layer_panel_width(client);
@@ -2395,9 +2397,8 @@ bool handle_property_panel_double_click(HWND hwnd, POINT point) {
     if (point.x < value_left ||
         point.x >= client.right - 5 ||
         point.y < top + 26 ||
-        point.y >= panel_bottom ||
-        !g_app.selected.has_value()) {
-        return false;
+        point.y >= panel_bottom) {
+        return std::nullopt;
     }
 
     const int values_top = top + 26;
@@ -2406,12 +2407,25 @@ bool handle_property_panel_double_click(HWND hwnd, POINT point) {
         values_top +
         property_rows * panel_metrics.property_row_height;
     if (point.y >= values_bottom) {
+        return std::nullopt;
+    }
+
+    return (point.y - values_top) /
+        panel_metrics.property_row_height;
+}
+
+bool handle_property_panel_double_click(HWND hwnd, POINT point) {
+    RECT client{};
+    GetClientRect(hwnd, &client);
+
+    const auto row_at_point =
+        property_value_row_at_point(client, point);
+    if (!row_at_point.has_value() ||
+        !g_app.selected.has_value()) {
         return false;
     }
 
-    const int row =
-        (point.y - values_top) /
-        panel_metrics.property_row_height;
+    const int row = *row_at_point;
 
     if (row == 2) {
         return edit_selected_property(
@@ -3655,6 +3669,23 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 #ifdef ACP_ENABLE_GUI_TEST_HOOKS
         case kGuiTestSnapshotMessage:
             return write_gui_test_snapshot(w_param) ? 1 : 0;
+
+        case kGuiTestSelectedMessage:
+            return static_cast<LRESULT>(
+                g_app.selected.value_or(0));
+
+        case kGuiTestPropertyHitMessage: {
+            RECT client{};
+            GetClientRect(hwnd, &client);
+            const POINT point{
+                GET_X_LPARAM(l_param),
+                GET_Y_LPARAM(l_param)};
+            const auto row =
+                property_value_row_at_point(client, point);
+            return row.has_value()
+                ? static_cast<LRESULT>(*row + 1)
+                : 0;
+        }
 #endif
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
