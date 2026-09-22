@@ -4428,9 +4428,22 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 
         case WM_LBUTTONDOWN: {
             const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
+            if (begin_right_panel_resize(hwnd, p) ||
+                handle_right_panel_chrome_click(hwnd, p)) {
+                return 0;
+            }
             handle_left_click(hwnd, p);
             return 0;
         }
+
+        case WM_LBUTTONUP:
+            if (g_app.right_panel_resizing) {
+                g_app.right_panel_resizing = false;
+                ReleaseCapture();
+                save_ui_preferences();
+                return 0;
+            }
+            break;
 
         case WM_MBUTTONDOWN:
             g_app.panning = true;
@@ -4446,6 +4459,40 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
         case WM_MOUSEMOVE: {
             const POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
             g_app.cursor = p;
+
+            if (g_app.right_panel_resizing) {
+                update_right_panel_resize(hwnd, p);
+                return 0;
+            }
+
+            RECT client{};
+            GetClientRect(hwnd, &client);
+            if (g_app.right_panel_visible &&
+                !g_app.right_panel_pinned &&
+                g_app.right_panel_collapsed) {
+                const int collapsed_left = client.right - 28;
+                if (!g_app.right_panel_auto_hide_expanded &&
+                    p.x >= collapsed_left &&
+                    p.y >= toolbar_height(client) &&
+                    p.y < client.bottom - kStatusHeight) {
+                    g_app.right_panel_auto_hide_expanded = true;
+                    TRACKMOUSEEVENT tracking{
+                        sizeof(TRACKMOUSEEVENT),
+                        TME_LEAVE,
+                        hwnd,
+                        0};
+                    TrackMouseEvent(&tracking);
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                } else if (g_app.right_panel_auto_hide_expanded) {
+                    TRACKMOUSEEVENT tracking{
+                        sizeof(TRACKMOUSEEVENT),
+                        TME_LEAVE,
+                        hwnd,
+                        0};
+                    TrackMouseEvent(&tracking);
+                }
+            }
+
             const RECT canvas = canvas_rect(hwnd);
             if (!g_app.panning && PtInRect(&canvas, p)) {
                 const Vec2 raw = screen_to_world(hwnd, p);
@@ -4464,6 +4511,14 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }
+
+        case WM_MOUSELEAVE:
+            if (!g_app.right_panel_pinned &&
+                g_app.right_panel_auto_hide_expanded) {
+                g_app.right_panel_auto_hide_expanded = false;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            return 0;
 
         case WM_MOUSEWHEEL: {
             POINT p{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
@@ -4538,6 +4593,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             return 0;
 
         case WM_DESTROY:
+            save_ui_preferences();
             KillTimer(hwnd, kAutosaveTimerId);
             PostQuitMessage(0);
             return 0;
