@@ -1428,6 +1428,87 @@ void draw_layer_lock_icon(
     DeleteObject(pen);
 }
 
+void draw_quick_toolbar_icon(
+    HDC dc,
+    QuickToolbarIcon icon,
+    RECT area,
+    COLORREF color) {
+
+    const int cx = (area.left + area.right) / 2;
+    const int cy = (area.top + area.bottom) / 2;
+    const int half = std::max(
+        6, std::min(
+            static_cast<int>((area.right - area.left) / 2) - 4,
+            static_cast<int>((area.bottom - area.top) / 2) - 4));
+
+    HPEN pen = CreatePen(PS_SOLID, 1, color);
+    HGDIOBJ old_pen = SelectObject(dc, pen);
+    HGDIOBJ old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+
+    auto line = [&](int x1, int y1, int x2, int y2) {
+        MoveToEx(dc, x1, y1, nullptr);
+        LineTo(dc, x2, y2);
+    };
+
+    switch (icon) {
+        case QuickToolbarIcon::New:
+            Rectangle(dc, cx - half + 2, cy - half, cx + half - 1, cy + half);
+            line(cx + 1, cy - half, cx + half - 1, cy - half + 4);
+            line(cx + half - 1, cy - half + 4, cx + half - 1, cy - 1);
+            line(cx - 3, cy + 2, cx + 4, cy + 2);
+            line(cx, cy - 1, cx, cy + 6);
+            break;
+        case QuickToolbarIcon::Open:
+            line(cx - half, cy - 4, cx - 2, cy - 4);
+            line(cx - 2, cy - 4, cx, cy - 1);
+            line(cx, cy - 1, cx + half, cy - 1);
+            line(cx + half, cy - 1, cx + half - 2, cy + half - 2);
+            line(cx + half - 2, cy + half - 2, cx - half, cy + half - 2);
+            line(cx - half, cy + half - 2, cx - half, cy - 4);
+            break;
+        case QuickToolbarIcon::Save:
+            Rectangle(dc, cx - half, cy - half, cx + half, cy + half);
+            Rectangle(dc, cx - 3, cy - half, cx + 4, cy - 2);
+            Rectangle(dc, cx - 4, cy + 2, cx + 5, cy + half);
+            break;
+        case QuickToolbarIcon::Undo:
+            Arc(
+                dc,
+                cx - half, cy - half,
+                cx + half, cy + half,
+                cx + half - 1, cy + 2,
+                cx - half + 2, cy - 2);
+            line(cx - half + 2, cy - 2, cx - half + 6, cy - 6);
+            line(cx - half + 2, cy - 2, cx - half + 7, cy + 1);
+            break;
+        case QuickToolbarIcon::Redo:
+            Arc(
+                dc,
+                cx - half, cy - half,
+                cx + half, cy + half,
+                cx - half + 1, cy + 2,
+                cx + half - 2, cy - 2);
+            line(cx + half - 2, cy - 2, cx + half - 6, cy - 6);
+            line(cx + half - 2, cy - 2, cx + half - 7, cy + 1);
+            break;
+        case QuickToolbarIcon::Fit:
+            line(cx - half, cy - 2, cx - half, cy - half);
+            line(cx - half, cy - half, cx - 2, cy - half);
+            line(cx + 2, cy - half, cx + half, cy - half);
+            line(cx + half, cy - half, cx + half, cy - 2);
+            line(cx + half, cy + 2, cx + half, cy + half);
+            line(cx + half, cy + half, cx + 2, cy + half);
+            line(cx - 2, cy + half, cx - half, cy + half);
+            line(cx - half, cy + half, cx - half, cy + 2);
+            Rectangle(dc, cx - 3, cy - 3, cx + 4, cy + 4);
+            break;
+    }
+
+    SelectObject(dc, old_brush);
+    SelectObject(dc, old_pen);
+    DeleteObject(pen);
+}
+
 void draw_toolbar(HDC dc, const RECT& client) {
     const int height = toolbar_height(client);
     RECT bar{client.left, client.top, client.right, client.top + height};
@@ -1443,6 +1524,27 @@ void draw_toolbar(HDC dc, const RECT& client) {
     DeleteObject(divider);
 
     SetBkMode(dc, TRANSPARENT);
+
+    for (std::size_t i = 0; i < kQuickToolbarButtons.size(); ++i) {
+        const auto& button = kQuickToolbarButtons[i];
+        RECT rect = quick_toolbar_button_rect(i, client);
+        HBRUSH button_brush = CreateSolidBrush(RGB(42, 47, 53));
+        FillRect(dc, &rect, button_brush);
+        DeleteObject(button_brush);
+        draw_quick_toolbar_icon(
+            dc, button.icon, rect, RGB(210, 218, 224));
+    }
+
+    if (!kQuickToolbarButtons.empty()) {
+        const RECT last = quick_toolbar_button_rect(
+            kQuickToolbarButtons.size() - 1, client);
+        HPEN group_line = CreatePen(PS_SOLID, 1, RGB(77, 84, 90));
+        HGDIOBJ previous = SelectObject(dc, group_line);
+        MoveToEx(dc, last.right + 3, 4, nullptr);
+        LineTo(dc, last.right + 3, height - 4);
+        SelectObject(dc, previous);
+        DeleteObject(group_line);
+    }
 
     for (std::size_t i = 0; i < kToolbarButtons.size(); ++i) {
         const auto& button = kToolbarButtons[i];
@@ -1476,6 +1578,41 @@ bool handle_toolbar_click(HWND hwnd, POINT point) {
     if (point.y < 0 || point.y >= height) {
         return false;
     }
+    for (std::size_t i = 0; i < kQuickToolbarButtons.size(); ++i) {
+        const RECT rect = quick_toolbar_button_rect(i, client);
+        if (!PtInRect(&rect, point)) {
+            continue;
+        }
+
+        const auto& button = kQuickToolbarButtons[i];
+        if (button.icon == QuickToolbarIcon::Undo) {
+            if (g_app.history.undo(g_app.document, g_app.blocks)) {
+                g_app.dirty = true;
+                ensure_active_layer_exists();
+                ensure_active_block_exists();
+                if (g_app.selected.has_value() &&
+                    g_app.document.find(*g_app.selected) == nullptr) {
+                    g_app.selected.reset();
+                }
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+        } else if (button.icon == QuickToolbarIcon::Redo) {
+            if (g_app.history.redo(g_app.document, g_app.blocks)) {
+                g_app.dirty = true;
+                ensure_active_layer_exists();
+                ensure_active_block_exists();
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+        } else {
+            SendMessageW(
+                hwnd,
+                WM_COMMAND,
+                static_cast<WPARAM>(button.command_id),
+                0);
+        }
+        return true;
+    }
+
     for (std::size_t i = 0; i < kToolbarButtons.size(); ++i) {
         const RECT rect = toolbar_button_rect(i, client);
         if (PtInRect(&rect, point)) {
