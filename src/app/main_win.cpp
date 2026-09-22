@@ -2253,7 +2253,12 @@ bool handle_right_panel_chrome_click(HWND hwnd, POINT point) {
 
     if (g_app.right_panel_collapsed &&
         !g_app.right_panel_auto_hide_expanded) {
-        g_app.right_panel_auto_hide_expanded = true;
+        if (g_app.right_panel_pinned) {
+            g_app.right_panel_collapsed = false;
+            save_ui_preferences();
+        } else {
+            g_app.right_panel_auto_hide_expanded = true;
+        }
         InvalidateRect(hwnd, nullptr, FALSE);
         return true;
     }
@@ -3985,6 +3990,42 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 case kMenuZoomExtents:
                     fit_drawing(hwnd);
                     return 0;
+                case kMenuToggleRightPanel:
+                    g_app.right_panel_visible =
+                        !g_app.right_panel_visible;
+                    g_app.right_panel_auto_hide_expanded = false;
+                    save_ui_preferences();
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                case kMenuToggleRightPanelPin:
+                    g_app.right_panel_visible = true;
+                    g_app.right_panel_pinned =
+                        !g_app.right_panel_pinned;
+                    if (g_app.right_panel_pinned) {
+                        g_app.right_panel_collapsed = false;
+                    } else {
+                        g_app.right_panel_collapsed = true;
+                    }
+                    g_app.right_panel_auto_hide_expanded = false;
+                    save_ui_preferences();
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                case kMenuToggleRightPanelCollapse:
+                    g_app.right_panel_visible = true;
+                    g_app.right_panel_collapsed =
+                        !g_app.right_panel_collapsed;
+                    g_app.right_panel_auto_hide_expanded = false;
+                    save_ui_preferences();
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                case kMenuResetRightPanelWidth:
+                    g_app.right_panel_visible = true;
+                    g_app.right_panel_custom_width = 0;
+                    g_app.right_panel_collapsed = false;
+                    g_app.right_panel_auto_hide_expanded = false;
+                    save_ui_preferences();
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
                 case kMenuCyclePaperSize:
                     cycle_paper_size();
                     g_app.dirty = true;
@@ -4651,6 +4692,11 @@ HMENU create_app_menu() {
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"&File");
     AppendMenuW(view, MF_STRING, kMenuZoomExtents, L"Zoom &Extents");
     AppendMenuW(view, MF_STRING, kMenuToggleSnap, L"Toggle Object &Snap\tF3");
+    AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(view, MF_STRING, kMenuToggleRightPanel, L"Show/Hide Layer &Properties Panel");
+    AppendMenuW(view, MF_STRING, kMenuToggleRightPanelPin, L"&Pin/Auto-hide Layer Panel");
+    AppendMenuW(view, MF_STRING, kMenuToggleRightPanelCollapse, L"&Collapse/Expand Layer Panel");
+    AppendMenuW(view, MF_STRING, kMenuResetRightPanelWidth, L"&Reset Layer Panel Width");
     AppendMenuW(layer, MF_STRING, kMenuNewLayer, L"&New Layer");
     AppendMenuW(layer, MF_STRING, kMenuEditLayerName, L"&Rename Active Layer...");
     AppendMenuW(layer, MF_STRING, kMenuEditLayerWeight, L"Edit Active Layer &Line Weight...");
@@ -4728,6 +4774,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_command) {
         return 2;
     }
 
+    load_ui_preferences();
     restore_recovery_if_available(hwnd);
     if (SetTimer(hwnd, kAutosaveTimerId, kAutosaveIntervalMs, nullptr) == 0) {
         MessageBoxW(
