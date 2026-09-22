@@ -45,6 +45,39 @@ int main() {
     expect(acp::ui_layout::property_key_width(384) == 100,
            "wide property key width is capped");
 
+    const auto compact_text =
+        acp::ui_layout::right_panel_metrics(430, 16, 11);
+    expect(compact_text.property_row_height == 20,
+           "480p text property rows compact to fit");
+    expect(compact_text.visible_layer_rows == 1,
+           "480p reserves at least one visible layer row");
+    expect(
+        compact_text.properties_top_offset +
+            28 + 6 +
+            compact_text.property_row_height * 16 <= 430,
+        "480p text properties stay inside panel");
+
+    const auto tall_text =
+        acp::ui_layout::right_panel_metrics(680, 16, 20);
+    expect(tall_text.property_row_height == 22,
+           "tall panel uses full property row height");
+    expect(tall_text.visible_layer_rows >= 8,
+           "tall panel exposes multiple layer rows");
+
+    const auto tall_single_layer =
+        acp::ui_layout::right_panel_metrics(680, 16, 1);
+    expect(tall_single_layer.visible_layer_rows == 1,
+           "single layer does not reserve empty layer rows");
+    expect(tall_single_layer.properties_top_offset == 68,
+           "single layer keeps properties directly below the row");
+
+    const auto compact_empty =
+        acp::ui_layout::right_panel_metrics(430, 11, 10);
+    expect(compact_empty.property_row_height == 22,
+           "480p empty selection keeps full row height");
+    expect(compact_empty.visible_layer_rows >= 4,
+           "480p empty selection leaves room for layers");
+
     const auto full_hd = acp::ui_layout::metrics_for_client(1920, 1080);
     expect(full_hd.toolbar_height == 54, "1080p toolbar exact 1/20");
     expect(full_hd.right_panel_width == 384, "1080p right panel exact 2/10");
