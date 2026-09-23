@@ -23,6 +23,8 @@
 #include "acp/obj.hpp"
 #include "acp/blender_bridge.hpp"
 #include "acp/viewport3d.hpp"
+#include "acp/architecture3d_builder.hpp"
+#include "acp/scene_revision_cache.hpp"
 #include "resource.h"
 
 #include <algorithm>
@@ -109,10 +111,10 @@ struct AppState {
     int right_panel_custom_width{0};
     acp::model3d::Scene scene3d;
     acp::viewport3d::Camera camera3d{};
-    bool scene3d_dirty{true};
+    acp::model3d::SceneRevisionCache scene3d_cache{};
+    acp::architecture3d::ArchitecturalSceneOptions architecture3d_options{};
     bool view_3d{false};
     bool orbiting_3d{false};
-    double extrusion_height{3000.0};
 };
 
 AppState g_app;
@@ -234,6 +236,7 @@ constexpr int kToolBlockInsert = 2018;
 constexpr UINT kGuiTestSnapshotMessage = WM_APP + 42;
 constexpr UINT kGuiTestRightPanelWidthMessage = WM_APP + 43;
 constexpr UINT kGuiTestRightPanelStateMessage = WM_APP + 44;
+constexpr UINT kGuiTestArchitectural3DMessage = WM_APP + 45;
 #endif
 
 const wchar_t* paper_size_name(acp::layout::PaperSize paper) {
@@ -420,7 +423,7 @@ bool apply_history(std::unique_ptr<acp::Command> command) {
         return false;
     }
     g_app.dirty = true;
-    g_app.scene3d_dirty = true;
+    g_app.scene3d_cache.invalidate();
     return true;
 }
 
@@ -3026,17 +3029,22 @@ void assign_selected_to_active_layer(HWND hwnd) {
 }
 
 
+std::uint64_t scene3d_settings_signature() {
+    return acp::architecture3d::settings_signature(
+        g_app.architecture3d_options);
+}
+
 void rebuild_scene3d() {
-    g_app.scene3d =
-        acp::model3d::extrude_closed_polylines(
-            g_app.document,
-            g_app.extrusion_height,
-            0.0);
-    g_app.scene3d_dirty = false;
+    const std::uint64_t signature = scene3d_settings_signature();
+    g_app.scene3d = acp::architecture3d::build_architectural_scene(
+        g_app.document,
+        g_app.architecture3d_options);
+    g_app.scene3d_cache.mark_built(g_app.document, signature);
 }
 
 void ensure_scene3d() {
-    if (g_app.scene3d_dirty) {
+    const std::uint64_t signature = scene3d_settings_signature();
+    if (g_app.scene3d_cache.stale(g_app.document, signature)) {
         rebuild_scene3d();
     }
 }
@@ -3087,7 +3095,7 @@ void draw_scene3d(HWND hwnd, HDC dc, const RECT& canvas) {
         RECT label = canvas;
         DrawTextW(
             dc,
-            L"3D Workspace - draw a closed polyline/rectangle in 2D, then Build 3D.",
+            L"Architectural 3D - draw Lines for walls and closed Polylines for slabs, then Build 3D.",
             -1,
             &label,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -3133,7 +3141,7 @@ void draw_scene3d(HWND hwnd, HDC dc, const RECT& canvas) {
         canvas.top + 28};
     DrawTextW(
         dc,
-        L"3D  |  RMB orbit  |  MMB pan  |  Wheel zoom",
+        L"Architectural 3D  |  RMB orbit  |  MMB pan  |  Wheel zoom",
         -1,
         &hint,
         DT_LEFT | DT_SINGLELINE);
@@ -3150,9 +3158,12 @@ void draw_status(HWND hwnd, HDC dc, const RECT& client) {
     if (g_app.view_3d) {
         swprintf_s(
             buffer,
-            L"3D Workspace    Objects: %zu    Extrude: %.2f    Zoom: %.2f px/unit    RMB Orbit    MMB Pan",
+            L"Architectural 3D    Objects: %zu    Wall H: %.0f    Wall T: %.0f    Slab T: %.0f    Roof: %s    Zoom: %.2f",
             g_app.scene3d.size(),
-            g_app.extrusion_height,
+            g_app.architecture3d_options.wall_height,
+            g_app.architecture3d_options.wall_thickness,
+            g_app.architecture3d_options.slab_thickness,
+            g_app.architecture3d_options.include_roofs ? L"On" : L"Off",
             g_app.camera3d.zoom);
         SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, RGB(190, 195, 205));
@@ -3418,7 +3429,7 @@ void restore_recovery_if_available(HWND hwnd) {
 
     if (result == IDYES) {
         g_app.document = std::move(recovered->document);
-        g_app.scene3d_dirty = true;
+        g_app.scene3d_cache.invalidate();
         g_app.blocks = std::move(recovered->blocks);
         apply_project_settings(recovered->settings);
         g_app.history = acp::History{};
@@ -3449,6 +3460,44 @@ bool write_gui_test_snapshot(WPARAM snapshot_id) {
         path,
         acp::persistence::serialize_project(
             g_app.document, g_app.blocks, current_project_settings()));
+}
+bool seed_architectural_gui_test(HWND hwnd) {
+    g_app.document = Document{};
+    g_app.history = acp::History{};
+    g_app.blocks = acp::BlockLibrary{};
+    g_app.active_layer = acp::kDefaultLayerId;
+    g_app.architecture3d_options =
+        acp::architecture3d::ArchitecturalSceneOptions{};
+    g_app.architecture3d_options.include_roofs = true;
+    g_app.architecture3d_options.roof_eave_z =
+        g_app.architecture3d_options.wall_height;
+
+    const std::array<LineEntity, 4> walls{{
+        {{{0.0, 0.0}, {6000.0, 0.0}}},
+        {{{6000.0, 0.0}, {6000.0, 4000.0}}},
+        {{{6000.0, 4000.0}, {0.0, 4000.0}}},
+        {{{0.0, 4000.0}, {0.0, 0.0}}}
+    }};
+    for (const LineEntity& wall : walls) {
+        if (!apply_history(std::make_unique<acp::AddEntityCommand>(wall))) {
+            return false;
+        }
+    }
+    if (!apply_history(std::make_unique<acp::AddEntityCommand>(
+            PolylineEntity{{
+                {0.0, 0.0}, {6000.0, 0.0},
+                {6000.0, 4000.0}, {0.0, 4000.0}}, true}))) {
+        return false;
+    }
+
+    g_app.scene3d_cache.invalidate();
+    rebuild_scene3d();
+    g_app.view_3d = true;
+    fit_scene3d(hwnd);
+    SetWindowTextW(hwnd, L"Auto CAD Pro - Architectural 3D Workspace");
+    InvalidateRect(hwnd, nullptr, FALSE);
+    UpdateWindow(hwnd);
+    return g_app.scene3d.size() >= 6;
 }
 #endif
 
@@ -3505,7 +3554,7 @@ void open_project(HWND hwnd) {
     }
 
     g_app.document = std::move(project->document);
-    g_app.scene3d_dirty = true;
+    g_app.scene3d_cache.invalidate();
     g_app.blocks = std::move(project->blocks);
     apply_project_settings(project->settings);
     g_app.history = acp::History{};
@@ -3570,7 +3619,7 @@ void import_dxf(HWND hwnd) {
     }
 
     g_app.document = std::move(result->document);
-    g_app.scene3d_dirty = true;
+    g_app.scene3d_cache.invalidate();
     g_app.blocks = acp::BlockLibrary{};
     reset_project_settings();
     g_app.history = acp::History{};
@@ -3670,7 +3719,7 @@ void export_obj3d(HWND hwnd) {
     if (g_app.scene3d.size() == 0) {
         show_file_error(
             hwnd,
-            L"No closed 2D polyline is available to build a 3D solid.");
+            L"No architectural 3D geometry could be built. Add visible Lines for walls or a closed Polyline for a slab.");
         return;
     }
 
@@ -3735,7 +3784,7 @@ void send_to_blender(HWND hwnd) {
     if (g_app.scene3d.size() == 0) {
         show_file_error(
             hwnd,
-            L"No closed 2D polyline is available to build a 3D solid.");
+            L"No architectural 3D geometry could be built. Add visible Lines for walls or a closed Polyline for a slab.");
         return;
     }
 
@@ -3794,21 +3843,23 @@ void send_to_blender(HWND hwnd) {
 void set_extrusion_height(HWND hwnd) {
     const auto entered = prompt_property_value(
         hwnd,
-        L"3D Extrusion Height",
-        L"Height in drawing units:",
-        format_property_number(g_app.extrusion_height, 3));
+        L"Architectural Wall Height",
+        L"Wall height in drawing units:",
+        format_property_number(g_app.architecture3d_options.wall_height, 3));
     if (!entered.has_value()) {
         return;
     }
     const auto value = parse_finite_double(*entered);
-    if (!value.has_value() || std::abs(*value) <= acp::geo::kEpsilon) {
+    if (!value.has_value() || *value <= acp::geo::kEpsilon) {
         show_invalid_property(
             hwnd,
-            L"Extrusion height must be a finite non-zero number.");
+            L"Wall height must be a finite number greater than zero.");
         return;
     }
-    g_app.extrusion_height = *value;
-    g_app.scene3d_dirty = true;
+    g_app.architecture3d_options.wall_height = *value;
+    g_app.architecture3d_options.roof_eave_z =
+        g_app.architecture3d_options.base_z + *value;
+    g_app.scene3d_cache.invalidate();
     rebuild_scene3d();
     fit_scene3d(hwnd);
 }
@@ -4264,6 +4315,8 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             if (g_app.right_panel_resizing) state |= 16u;
             return static_cast<LRESULT>(state);
         }
+        case kGuiTestArchitectural3DMessage:
+            return seed_architectural_gui_test(hwnd) ? 1 : 0;
 #endif
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
@@ -4272,7 +4325,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                         return 0;
                     }
                     g_app.document = Document{};
-                    g_app.scene3d_dirty = true;
+                    g_app.scene3d_cache.invalidate();
                     g_app.history = acp::History{};
                     g_app.blocks = acp::BlockLibrary{};
                     reset_project_settings();
@@ -4316,28 +4369,28 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                     if (g_app.view_3d) {
                         ensure_scene3d();
                         fit_scene3d(hwnd);
-                        SetWindowTextW(hwnd, L"Auto CAD Pro - 3D Workspace");
+                        SetWindowTextW(hwnd, L"Auto CAD Pro - Architectural 3D Workspace");
                     } else {
                         SetWindowTextW(hwnd, L"Auto CAD Pro - 2D Workspace");
                     }
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
                 case kMenuBuild3D:
-                    g_app.scene3d_dirty = true;
+                    g_app.scene3d_cache.invalidate();
                     rebuild_scene3d();
                     g_app.view_3d = true;
                     fit_scene3d(hwnd);
-                    SetWindowTextW(hwnd, L"Auto CAD Pro - 3D Workspace");
+                    SetWindowTextW(hwnd, L"Auto CAD Pro - Architectural 3D Workspace");
                     return 0;
                 case kMenuSetExtrusionHeight:
                     set_extrusion_height(hwnd);
                     g_app.view_3d = true;
-                    SetWindowTextW(hwnd, L"Auto CAD Pro - 3D Workspace");
+                    SetWindowTextW(hwnd, L"Auto CAD Pro - Architectural 3D Workspace");
                     return 0;
                 case kMenuFit3D:
                     g_app.view_3d = true;
                     fit_scene3d(hwnd);
-                    SetWindowTextW(hwnd, L"Auto CAD Pro - 3D Workspace");
+                    SetWindowTextW(hwnd, L"Auto CAD Pro - Architectural 3D Workspace");
                     return 0;
                 case kMenuExportObj3D:
                     export_obj3d(hwnd);
@@ -5157,8 +5210,8 @@ HMENU create_app_menu() {
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(entity), L"&Entity");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(block_menu), L"&Block");
     AppendMenuW(model3d_menu, MF_STRING, kMenuToggle3D, L"Toggle &2D / 3D Workspace");
-    AppendMenuW(model3d_menu, MF_STRING, kMenuBuild3D, L"&Build 3D from Closed Polylines");
-    AppendMenuW(model3d_menu, MF_STRING, kMenuSetExtrusionHeight, L"Set &Extrusion Height...");
+    AppendMenuW(model3d_menu, MF_STRING, kMenuBuild3D, L"&Build Architectural 3D");
+    AppendMenuW(model3d_menu, MF_STRING, kMenuSetExtrusionHeight, L"Set &Wall Height...");
     AppendMenuW(model3d_menu, MF_STRING, kMenuFit3D, L"&Fit 3D View");
     AppendMenuW(model3d_menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(model3d_menu, MF_STRING, kMenuExportObj3D, L"Export &OBJ...");
