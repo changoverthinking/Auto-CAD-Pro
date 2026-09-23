@@ -51,6 +51,7 @@ add_library(acp_core
     src/core/geometry3d.cpp
     src/core/model3d.cpp
     src/core/architecture3d.cpp
+    src/core/architecture3d_hosting.cpp
     src/core/architecture3d_advanced.cpp
     src/core/obj.cpp
     src/core/blender_bridge.cpp
