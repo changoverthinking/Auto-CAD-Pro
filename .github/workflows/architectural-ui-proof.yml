@@ -1,0 +1,117 @@
+name: Architectural 3D UI Proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/architectural-ui-proof.yml"
+      - "src/app/main_win.cpp"
+      - "src/core/architecture3d*.cpp"
+      - "include/acp/architecture3d*.hpp"
+      - "include/acp/scene_revision_cache.hpp"
+      - "CMakeLists.txt"
+  workflow_dispatch:
+
+jobs:
+  architectural-ui-proof:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure
+        run: cmake -S . -B build -A x64 -DACP_BUILD_TESTS=ON -DACP_BUILD_APP=ON -DACP_ENABLE_GUI_TEST_HOOKS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Launch real Architectural 3D workspace and capture
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          public static class ACPNativeWindow {
+              [StructLayout(LayoutKind.Sequential)]
+              public struct RECT { public int Left, Top, Right, Bottom; }
+              [DllImport("user32.dll")]
+              public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+              [DllImport("user32.dll")]
+              public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+              [DllImport("user32.dll")]
+              public static extern bool SetForegroundWindow(IntPtr hWnd);
+              [DllImport("user32.dll")]
+              public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+          }
+          "@
+
+          $exe = Join-Path $PWD "build\Release\AutoCADPro.exe"
+          if (!(Test-Path $exe)) { throw "AutoCADPro.exe was not produced" }
+
+          $proc = Start-Process -FilePath $exe -PassThru
+          try {
+            $deadline = (Get-Date).AddSeconds(20)
+            do {
+              Start-Sleep -Milliseconds 400
+              $proc.Refresh()
+            } while ($proc.MainWindowHandle -eq 0 -and !$proc.HasExited -and (Get-Date) -lt $deadline)
+
+            if ($proc.HasExited) { throw "AutoCADPro exited before creating its main window" }
+            if ($proc.MainWindowHandle -eq 0) { throw "AutoCADPro did not create a main window" }
+
+            [ACPNativeWindow]::ShowWindow($proc.MainWindowHandle, 3) | Out-Null
+            [ACPNativeWindow]::SetForegroundWindow($proc.MainWindowHandle) | Out-Null
+            Start-Sleep -Seconds 1
+
+            $architectural3DMessage = [uint32](0x8000 + 45)
+            $result = [ACPNativeWindow]::SendMessage(
+              $proc.MainWindowHandle,
+              $architectural3DMessage,
+              [IntPtr]::Zero,
+              [IntPtr]::Zero)
+            if ($result -eq [IntPtr]::Zero) {
+              throw "Architectural 3D test hook failed to build the scene"
+            }
+
+            Start-Sleep -Seconds 2
+            $rect = New-Object ACPNativeWindow+RECT
+            if (![ACPNativeWindow]::GetWindowRect($proc.MainWindowHandle, [ref]$rect)) {
+              throw "GetWindowRect failed"
+            }
+            $width = $rect.Right - $rect.Left
+            $height = $rect.Bottom - $rect.Top
+            if ($width -lt 640 -or $height -lt 480) {
+              throw "Unexpected GUI dimensions: ${width}x${height}"
+            }
+
+            New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+            $bitmap = New-Object System.Drawing.Bitmap $width, $height
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            try {
+              $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bitmap.Size)
+              $bitmap.Save(
+                (Join-Path $PWD "artifacts\AutoCADPro-architectural-3d-ui.png"),
+                [System.Drawing.Imaging.ImageFormat]::Png)
+            }
+            finally {
+              $graphics.Dispose()
+              $bitmap.Dispose()
+            }
+
+            if (!(Test-Path "artifacts\AutoCADPro-architectural-3d-ui.png")) {
+              throw "Architectural 3D screenshot was not created"
+            }
+          }
+          finally {
+            if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+          }
+
+      - name: Upload Architectural 3D real UI
+        uses: actions/upload-artifact@v6
+        with:
+          name: AutoCADPro-Architectural-3D-Real-UI
+          path: artifacts/AutoCADPro-architectural-3d-ui.png
+          if-no-files-found: error
