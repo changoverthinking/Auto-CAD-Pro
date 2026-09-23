@@ -58,6 +58,39 @@ int main() {
     expect(!arch::valid(invalid), "zero ridge height rejected");
     expect(!arch::make_gable_roof(invalid).has_value(), "invalid roof does not build");
 
+    acp::Document roof_document;
+    const auto footprint_id = roof_document.insert(acp::PolylineEntity{{
+        {0.0, 0.0}, {6000.0, 0.0}, {6000.0, 4000.0}, {0.0, 4000.0}}, true});
+    const auto triangle_id = roof_document.insert(acp::PolylineEntity{{
+        {8000.0, 0.0}, {10000.0, 0.0}, {9000.0, 2000.0}}, true});
+    expect(footprint_id != 0 && triangle_id != 0, "roof source footprints inserted");
+
+    const auto generated = arch::gable_roofs_from_rectangular_polylines(
+        roof_document, 6500.0, 1500.0, 300.0);
+    expect(generated.size() == 1, "only rectangular footprint becomes gable roof");
+    if (generated.size() == 1) {
+        const auto ids = generated.ids();
+        const auto* generated_roof = generated.find(ids.front());
+        expect(generated_roof != nullptr, "generated roof object available");
+        if (generated_roof != nullptr) {
+            expect(generated_roof->kind == acp::model3d::ObjectKind::Roof,
+                   "generated footprint object tagged Roof");
+            expect(generated_roof->source_entity_id == footprint_id,
+                   "generated roof preserves source 2D entity id");
+            expect(generated_roof->name == "Roof_" + std::to_string(footprint_id),
+                   "generated roof has stable semantic name");
+            std::size_t ridge_vertices = 0;
+            for (const auto& vertex : generated_roof->mesh.vertices) {
+                if (close(vertex.z, 8000.0)) {
+                    ++ridge_vertices;
+                    expect(close(vertex.y, 2000.0),
+                           "wide footprint ridge runs along X at Y center");
+                }
+            }
+            expect(ridge_vertices == 2, "gable roof has two ridge vertices");
+        }
+    }
+
     acp::Document document;
     acp::model3d::SceneRevisionCache cache;
     constexpr std::uint64_t settings_revision = 1;
