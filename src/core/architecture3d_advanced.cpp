@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace acp::architecture3d {
 namespace {
@@ -93,6 +94,59 @@ std::optional<geo::Vec2> shared_endpoint(
     return std::nullopt;
 }
 
+std::optional<geo::Vec2> common_endpoint(
+    const std::vector<WallSpec>& walls,
+    double tolerance) noexcept {
+
+    if (walls.empty()) {
+        return std::nullopt;
+    }
+    const geo::Vec2 candidates[]{walls.front().start, walls.front().end};
+    for (const geo::Vec2 candidate : candidates) {
+        bool all_match = true;
+        geo::Vec2 sum{};
+        for (const WallSpec& wall : walls) {
+            if (geo::distance(wall.start, candidate) <= tolerance) {
+                sum = sum + wall.start;
+            } else if (geo::distance(wall.end, candidate) <= tolerance) {
+                sum = sum + wall.end;
+            } else {
+                all_match = false;
+                break;
+            }
+        }
+        if (all_match) {
+            return sum * (1.0 / static_cast<double>(walls.size()));
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<geo::Vec2> unit_direction_from_joint(
+    const WallSpec& wall,
+    geo::Vec2 joint,
+    double tolerance) noexcept {
+
+    const auto oriented = orient_to_joint(wall, joint, tolerance);
+    if (!oriented.has_value()) {
+        return std::nullopt;
+    }
+    const geo::Vec2 delta = oriented->far - oriented->joint;
+    const double length = geo::length(delta);
+    if (length <= geo::kEpsilon) {
+        return std::nullopt;
+    }
+    return delta * (1.0 / length);
+}
+
+bool same_ray(geo::Vec2 a, geo::Vec2 b, double tolerance) noexcept {
+    return std::abs(geo::cross(a, b)) <= tolerance && geo::dot(a, b) > 0.0;
+}
+
+bool opposite_ray(geo::Vec2 a, geo::Vec2 b, double tolerance) noexcept {
+    return std::abs(geo::cross(a, b)) <= tolerance && geo::dot(a, b) < 0.0;
+}
+
 std::optional<geo3d::Mesh> wall_from_miter_polygon(
     const OrientedWall& wall,
     geo::Vec2 plus_joint,
@@ -138,21 +192,6 @@ std::optional<geo3d::Mesh> make_opening_frame(
     const double direction = opening.wall.height >= 0.0 ? 1.0 : -1.0;
     const double base_z = opening.wall.base_z + direction * opening.sill_height;
 
-    auto make_vertical = [&](double offset) {
-        const geo::Vec2 rail_center = center + tangent * offset;
-        const geo::Vec2 half_span = tangent * (profile_width * 0.5);
-        return model3d::extrude_polygon(
-            {
-                rail_center - half_span + geo::Vec2{0.0, 0.0},
-                rail_center + half_span + geo::Vec2{0.0, 0.0},
-                rail_center + half_span + geo::Vec2{0.0, 0.0},
-                rail_center - half_span + geo::Vec2{0.0, 0.0}
-            },
-            direction * opening.height,
-            base_z);
-    };
-
-    // Use short wall-aligned segments so depth follows the host wall normal.
     auto rail_mesh = [&](double center_offset_along,
                          double rail_width,
                          double rail_height,
@@ -257,6 +296,72 @@ std::optional<WallJoinMeshes> make_mitered_wall_pair(
         return std::nullopt;
     }
     return WallJoinMeshes{std::move(*first_mesh), std::move(*second_mesh)};
+}
+
+std::optional<WallJunctionInfo> classify_wall_junction(
+    const std::vector<WallSpec>& walls,
+    double endpoint_tolerance,
+    double angular_tolerance) {
+
+    if (walls.size() < 2 || walls.size() > 4 ||
+        !finite(endpoint_tolerance) || endpoint_tolerance < 0.0 ||
+        !finite(angular_tolerance) || angular_tolerance < 0.0) {
+        return std::nullopt;
+    }
+
+    const WallSpec& reference = walls.front();
+    if (!valid(reference)) {
+        return std::nullopt;
+    }
+    for (const WallSpec& wall : walls) {
+        if (!valid(wall) ||
+            std::abs(wall.base_z - reference.base_z) > endpoint_tolerance ||
+            std::abs(wall.height - reference.height) > endpoint_tolerance) {
+            return std::nullopt;
+        }
+    }
+
+    const auto joint = common_endpoint(walls, endpoint_tolerance);
+    if (!joint.has_value()) {
+        return std::nullopt;
+    }
+
+    std::vector<geo::Vec2> directions;
+    directions.reserve(walls.size());
+    for (const WallSpec& wall : walls) {
+        const auto direction = unit_direction_from_joint(wall, *joint, endpoint_tolerance);
+        if (!direction.has_value()) {
+            return std::nullopt;
+        }
+        for (const geo::Vec2 existing : directions) {
+            if (same_ray(existing, *direction, angular_tolerance)) {
+                return std::nullopt;
+            }
+        }
+        directions.push_back(*direction);
+    }
+
+    std::size_t opposite_pairs = 0;
+    for (std::size_t i = 0; i < directions.size(); ++i) {
+        for (std::size_t j = i + 1; j < directions.size(); ++j) {
+            if (opposite_ray(directions[i], directions[j], angular_tolerance)) {
+                ++opposite_pairs;
+            }
+        }
+    }
+
+    WallJunctionKind kind = WallJunctionKind::Unsupported;
+    if (directions.size() == 2 && opposite_pairs == 0) {
+        kind = WallJunctionKind::L;
+    } else if (directions.size() == 3 && opposite_pairs == 1) {
+        kind = WallJunctionKind::T;
+    } else if (directions.size() == 4 && opposite_pairs == 2) {
+        kind = WallJunctionKind::X;
+    } else {
+        return std::nullopt;
+    }
+
+    return WallJunctionInfo{kind, *joint, walls.size()};
 }
 
 std::optional<StorySpan> story_span(
