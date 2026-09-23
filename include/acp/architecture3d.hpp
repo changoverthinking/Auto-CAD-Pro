@@ -4,9 +4,16 @@
 #include "acp/model3d.hpp"
 
 #include <optional>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace acp::architecture3d {
+
+struct Level {
+    std::string name;
+    double elevation{0.0};
+};
 
 struct WallSpec {
     geo::Vec2 start{};
@@ -31,19 +38,62 @@ struct ColumnSpec {
     double rotation{0.0};
 };
 
+struct BeamSpec {
+    geo::Vec2 start{};
+    geo::Vec2 end{};
+    double width{300.0};
+    double depth{500.0};
+    double top_z{3000.0};
+};
+
+enum class OpeningKind {
+    Door,
+    Window
+};
+
+struct WallOpeningSpec {
+    WallSpec wall;
+    OpeningKind kind{OpeningKind::Door};
+    double center_offset{0.5}; // Normalized distance along the wall: [0, 1].
+    double width{900.0};
+    double height{2100.0};
+    double sill_height{0.0};
+    double cut_clearance{2.0};
+};
+
+[[nodiscard]] bool valid(const Level& level) noexcept;
+[[nodiscard]] bool valid_levels(const std::vector<Level>& levels) noexcept;
+[[nodiscard]] std::optional<double> level_elevation(
+    const std::vector<Level>& levels,
+    std::string_view name) noexcept;
+
 [[nodiscard]] bool valid(const WallSpec& wall) noexcept;
 [[nodiscard]] bool valid(const SlabSpec& slab) noexcept;
 [[nodiscard]] bool valid(const ColumnSpec& column) noexcept;
+[[nodiscard]] bool valid(const BeamSpec& beam) noexcept;
+[[nodiscard]] bool valid(const WallOpeningSpec& opening) noexcept;
 
 [[nodiscard]] std::optional<geo3d::Mesh> make_wall(const WallSpec& wall);
 [[nodiscard]] std::optional<geo3d::Mesh> make_slab(const SlabSpec& slab);
 [[nodiscard]] std::optional<geo3d::Mesh> make_column(const ColumnSpec& column);
+[[nodiscard]] std::optional<geo3d::Mesh> make_beam(const BeamSpec& beam);
+
+// Returns a watertight cutter volume aligned to the host wall. A boolean
+// subtraction kernel will consume this volume in the next architecture stage.
+[[nodiscard]] std::optional<geo3d::Mesh> make_wall_opening_volume(
+    const WallOpeningSpec& opening);
 
 [[nodiscard]] model3d::Scene walls_from_lines(
     const Document& document,
     double thickness,
     double height,
     double base_z = 0.0);
+
+[[nodiscard]] model3d::Scene beams_from_lines(
+    const Document& document,
+    double width,
+    double depth,
+    double top_z);
 
 [[nodiscard]] model3d::Scene slabs_from_closed_polylines(
     const Document& document,
