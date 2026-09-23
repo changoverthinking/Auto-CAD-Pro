@@ -51,6 +51,7 @@ add_library(acp_core
     src/core/geometry3d.cpp
     src/core/model3d.cpp
     src/core/architecture3d.cpp
+    src/core/architecture3d_advanced.cpp
     src/core/obj.cpp
     src/core/blender_bridge.cpp
     src/core/viewport3d.cpp
@@ -161,6 +162,10 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_opening_element_tests tests/opening_element_tests.cpp)
     target_link_libraries(acp_opening_element_tests PRIVATE acp_core)
     add_test(NAME acp_opening_element_tests COMMAND acp_opening_element_tests)
+
+    add_executable(acp_architecture3d_advanced_tests tests/architecture3d_advanced_tests.cpp)
+    target_link_libraries(acp_architecture3d_advanced_tests PRIVATE acp_core)
+    add_test(NAME acp_architecture3d_advanced_tests COMMAND acp_architecture3d_advanced_tests)
 endif()
 
 if(WIN32 AND ACP_BUILD_APP)
