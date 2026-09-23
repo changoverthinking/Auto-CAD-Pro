@@ -166,6 +166,10 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_architecture3d_advanced_tests tests/architecture3d_advanced_tests.cpp)
     target_link_libraries(acp_architecture3d_advanced_tests PRIVATE acp_core)
     add_test(NAME acp_architecture3d_advanced_tests COMMAND acp_architecture3d_advanced_tests)
+
+    add_executable(acp_document_revision_tests tests/document_revision_tests.cpp)
+    target_link_libraries(acp_document_revision_tests PRIVATE acp_core)
+    add_test(NAME acp_document_revision_tests COMMAND acp_document_revision_tests)
 endif()
 
 if(WIN32 AND ACP_BUILD_APP)
