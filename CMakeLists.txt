@@ -50,6 +50,7 @@ add_library(acp_core
     src/core/geometry2d.cpp
     src/core/geometry3d.cpp
     src/core/model3d.cpp
+    src/core/architecture3d.cpp
     src/core/obj.cpp
     src/core/blender_bridge.cpp
     src/core/viewport3d.cpp
@@ -83,7 +84,7 @@ endif()
 
 if(ACP_BUILD_APP AND WIN32)
     add_executable(AutoCADPro WIN32 src/app/main_win.cpp src/app/app.rc)
-    target_link_libraries(AutoCADPro PRIVATE acp_core user32 gdi32 comdlg32)
+    target_link_libraries(AutoCADPro PRIVATE acp_core user32 gdi32 comdlg32 shell32)
     target_compile_definitions(AutoCADPro PRIVATE UNICODE _UNICODE)
     if(ACP_ENABLE_GUI_TEST_HOOKS)
         target_compile_definitions(AutoCADPro PRIVATE ACP_ENABLE_GUI_TEST_HOOKS=1)
@@ -152,6 +153,10 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_model3d_blender_tests tests/model3d_blender_tests.cpp)
     target_link_libraries(acp_model3d_blender_tests PRIVATE acp_core)
     add_test(NAME acp_model3d_blender_tests COMMAND acp_model3d_blender_tests)
+
+    add_executable(acp_architecture3d_tests tests/architecture3d_tests.cpp)
+    target_link_libraries(acp_architecture3d_tests PRIVATE acp_core)
+    add_test(NAME acp_architecture3d_tests COMMAND acp_architecture3d_tests)
 endif()
 
 if(WIN32 AND ACP_BUILD_APP)
