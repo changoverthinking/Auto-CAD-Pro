@@ -2,8 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <variant>
 
 namespace acp::architecture3d {
@@ -84,6 +87,38 @@ std::vector<geo::Vec2> opening_rectangle(const WallOpeningSpec& opening) {
         center - half_along + half_across
     };
 }
+
+bool append_mesh(geo3d::Mesh& destination, const geo3d::Mesh& source) {
+    if (!geo3d::valid_mesh(source)) {
+        return false;
+    }
+    if (destination.vertices.size() >
+        static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) -
+            source.vertices.size()) {
+        return false;
+    }
+
+    const auto offset = static_cast<std::uint32_t>(destination.vertices.size());
+    destination.vertices.insert(
+        destination.vertices.end(),
+        source.vertices.begin(),
+        source.vertices.end());
+    destination.triangles.reserve(
+        destination.triangles.size() + source.triangles.size());
+    for (const geo3d::Triangle triangle : source.triangles) {
+        destination.triangles.push_back({
+            triangle.a + offset,
+            triangle.b + offset,
+            triangle.c + offset});
+    }
+    return true;
+}
+
+struct OpeningInterval {
+    WallOpeningSpec opening;
+    double start{};
+    double end{};
+};
 
 } // namespace
 
@@ -233,6 +268,100 @@ std::optional<geo3d::Mesh> make_wall_opening_volume(
         opening_rectangle(opening),
         direction * opening.height,
         base_z);
+}
+
+std::optional<geo3d::Mesh> make_wall_with_openings(
+    const WallSpec& wall,
+    const std::vector<WallOpeningSpec>& openings) {
+
+    if (!valid(wall)) {
+        return std::nullopt;
+    }
+    if (openings.empty()) {
+        return make_wall(wall);
+    }
+
+    const geo::Vec2 delta = wall.end - wall.start;
+    const double wall_length = geo::length(delta);
+    const geo::Vec2 tangent = delta * (1.0 / wall_length);
+    const double direction = wall.height >= 0.0 ? 1.0 : -1.0;
+    const double wall_height = std::abs(wall.height);
+
+    std::vector<OpeningInterval> intervals;
+    intervals.reserve(openings.size());
+    for (WallOpeningSpec opening : openings) {
+        opening.wall = wall;
+        if (!valid(opening)) {
+            return std::nullopt;
+        }
+        const double center = opening.center_offset * wall_length;
+        intervals.push_back({
+            std::move(opening),
+            center - opening.width * 0.5,
+            center + opening.width * 0.5});
+    }
+    std::sort(
+        intervals.begin(), intervals.end(),
+        [](const OpeningInterval& a, const OpeningInterval& b) {
+            return a.start < b.start;
+        });
+
+    for (std::size_t i = 1; i < intervals.size(); ++i) {
+        if (intervals[i].start < intervals[i - 1].end - geo::kEpsilon) {
+            return std::nullopt;
+        }
+    }
+
+    geo3d::Mesh result;
+
+    auto add_piece = [&](double start_distance,
+                         double end_distance,
+                         double local_base,
+                         double height) -> bool {
+        if (end_distance - start_distance <= geo::kEpsilon ||
+            height <= geo::kEpsilon) {
+            return true;
+        }
+        const geo::Vec2 piece_start =
+            wall.start + tangent * start_distance;
+        const geo::Vec2 piece_end =
+            wall.start + tangent * end_distance;
+        auto mesh = model3d::extrude_polygon(
+            rectangle_around_segment(
+                piece_start, piece_end, wall.thickness),
+            direction * height,
+            wall.base_z + direction * local_base);
+        return mesh.has_value() && append_mesh(result, *mesh);
+    };
+
+    double cursor = 0.0;
+    for (const OpeningInterval& interval : intervals) {
+        if (!add_piece(cursor, interval.start, 0.0, wall_height)) {
+            return std::nullopt;
+        }
+
+        const double sill = interval.opening.sill_height;
+        const double head = sill + interval.opening.height;
+        if (!add_piece(interval.start, interval.end, 0.0, sill)) {
+            return std::nullopt;
+        }
+        if (!add_piece(
+                interval.start,
+                interval.end,
+                head,
+                wall_height - head)) {
+            return std::nullopt;
+        }
+        cursor = interval.end;
+    }
+
+    if (!add_piece(cursor, wall_length, 0.0, wall_height)) {
+        return std::nullopt;
+    }
+
+    return geo3d::valid_mesh(result)
+        ? std::optional<geo3d::Mesh>{std::move(result)}
+        : std::nullopt;
 }
 
 model3d::Scene walls_from_lines(
