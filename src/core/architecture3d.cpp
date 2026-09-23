@@ -1,7 +1,9 @@
 #include "acp/architecture3d.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
+#include <unordered_set>
 #include <variant>
 
 namespace acp::architecture3d {
@@ -59,7 +61,58 @@ std::vector<geo::Vec2> rotated_rectangle(
     };
 }
 
+std::vector<geo::Vec2> opening_rectangle(const WallOpeningSpec& opening) {
+    const geo::Vec2 delta = opening.wall.end - opening.wall.start;
+    const double length = geo::length(delta);
+    if (length <= geo::kEpsilon) {
+        return {};
+    }
+
+    const geo::Vec2 tangent = delta * (1.0 / length);
+    const geo::Vec2 normal{-tangent.y, tangent.x};
+    const geo::Vec2 center =
+        opening.wall.start + delta * opening.center_offset;
+    const geo::Vec2 half_along = tangent * (opening.width * 0.5);
+    const double cut_thickness =
+        opening.wall.thickness + opening.cut_clearance * 2.0;
+    const geo::Vec2 half_across = normal * (cut_thickness * 0.5);
+
+    return {
+        center - half_along - half_across,
+        center + half_along - half_across,
+        center + half_along + half_across,
+        center - half_along + half_across
+    };
+}
+
 } // namespace
+
+bool valid(const Level& level) noexcept {
+    return !level.name.empty() && finite(level.elevation);
+}
+
+bool valid_levels(const std::vector<Level>& levels) noexcept {
+    std::unordered_set<std::string> names;
+    names.reserve(levels.size());
+    for (const Level& level : levels) {
+        if (!valid(level) || !names.insert(level.name).second) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<double> level_elevation(
+    const std::vector<Level>& levels,
+    std::string_view name) noexcept {
+
+    for (const Level& level : levels) {
+        if (level.name == name && valid(level)) {
+            return level.elevation;
+        }
+    }
+    return std::nullopt;
+}
 
 bool valid(const WallSpec& wall) noexcept {
     return finite(wall.start.x) && finite(wall.start.y) &&
@@ -89,6 +142,38 @@ bool valid(const ColumnSpec& column) noexcept {
            finite(column.depth) && column.depth > geo::kEpsilon &&
            finite(column.height) && std::abs(column.height) > geo::kEpsilon &&
            finite(column.base_z) && finite(column.rotation);
+}
+
+bool valid(const BeamSpec& beam) noexcept {
+    return finite(beam.start.x) && finite(beam.start.y) &&
+           finite(beam.end.x) && finite(beam.end.y) &&
+           geo::distance(beam.start, beam.end) > geo::kEpsilon &&
+           finite(beam.width) && beam.width > geo::kEpsilon &&
+           finite(beam.depth) && beam.depth > geo::kEpsilon &&
+           finite(beam.top_z);
+}
+
+bool valid(const WallOpeningSpec& opening) noexcept {
+    if (!valid(opening.wall) ||
+        !finite(opening.center_offset) ||
+        opening.center_offset < 0.0 || opening.center_offset > 1.0 ||
+        !finite(opening.width) || opening.width <= geo::kEpsilon ||
+        !finite(opening.height) || opening.height <= geo::kEpsilon ||
+        !finite(opening.sill_height) || opening.sill_height < 0.0 ||
+        !finite(opening.cut_clearance) || opening.cut_clearance < 0.0) {
+        return false;
+    }
+
+    const double wall_length = geo::distance(opening.wall.start, opening.wall.end);
+    const double center_distance = wall_length * opening.center_offset;
+    const double half_width = opening.width * 0.5;
+    const bool fits_length =
+        center_distance - half_width >= -geo::kEpsilon &&
+        center_distance + half_width <= wall_length + geo::kEpsilon;
+    const bool fits_height =
+        opening.sill_height + opening.height <=
+        std::abs(opening.wall.height) + geo::kEpsilon;
+    return fits_length && fits_height;
 }
 
 std::optional<geo3d::Mesh> make_wall(const WallSpec& wall) {
@@ -123,6 +208,31 @@ std::optional<geo3d::Mesh> make_column(const ColumnSpec& column) {
             column.rotation),
         column.height,
         column.base_z);
+}
+
+std::optional<geo3d::Mesh> make_beam(const BeamSpec& beam) {
+    if (!valid(beam)) {
+        return std::nullopt;
+    }
+    return model3d::extrude_polygon(
+        rectangle_around_segment(beam.start, beam.end, beam.width),
+        beam.depth,
+        beam.top_z - beam.depth);
+}
+
+std::optional<geo3d::Mesh> make_wall_opening_volume(
+    const WallOpeningSpec& opening) {
+
+    if (!valid(opening)) {
+        return std::nullopt;
+    }
+    const double direction = opening.wall.height >= 0.0 ? 1.0 : -1.0;
+    const double base_z =
+        opening.wall.base_z + direction * opening.sill_height;
+    return model3d::extrude_polygon(
+        opening_rectangle(opening),
+        direction * opening.height,
+        base_z);
 }
 
 model3d::Scene walls_from_lines(
@@ -164,6 +274,49 @@ model3d::Scene walls_from_lines(
             "Wall_" + std::to_string(id),
             document.effective_color(id),
             model3d::ObjectKind::Wall,
+            id);
+    }
+    return scene;
+}
+
+model3d::Scene beams_from_lines(
+    const Document& document,
+    double width,
+    double depth,
+    double top_z) {
+
+    model3d::Scene scene;
+    if (!finite(width) || width <= geo::kEpsilon ||
+        !finite(depth) || depth <= geo::kEpsilon || !finite(top_z)) {
+        return scene;
+    }
+
+    for (const EntityId id : document.ids()) {
+        if (!document.entity_visible(id)) {
+            continue;
+        }
+        const Entity* entity = document.find(id);
+        const auto* line = entity == nullptr
+            ? nullptr
+            : std::get_if<LineEntity>(entity);
+        if (line == nullptr) {
+            continue;
+        }
+
+        auto mesh = make_beam(BeamSpec{
+            line->segment.a,
+            line->segment.b,
+            width,
+            depth,
+            top_z});
+        if (!mesh.has_value()) {
+            continue;
+        }
+        (void)scene.insert(
+            std::move(*mesh),
+            "Beam_" + std::to_string(id),
+            document.effective_color(id),
+            model3d::ObjectKind::Beam,
             id);
     }
     return scene;
