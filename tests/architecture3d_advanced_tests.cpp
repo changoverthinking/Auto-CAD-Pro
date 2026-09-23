@@ -62,6 +62,33 @@ int main() {
         expect(close(b.min.x, -100.0) && close(b.max.x, 100.0), "second wall keeps thickness");
     }
 
+    const auto l_junction = arch::classify_wall_junction({wall_x, wall_y});
+    expect(
+        l_junction.has_value() && l_junction->kind == arch::WallJunctionKind::L,
+        "two perpendicular walls classify as L junction");
+
+    const arch::WallSpec wall_left{{0.0, 0.0}, {-4000.0, 0.0}, 200.0, 3000.0, 0.0};
+    const auto t_junction = arch::classify_wall_junction({wall_x, wall_left, wall_y});
+    expect(
+        t_junction.has_value() && t_junction->kind == arch::WallJunctionKind::T,
+        "opposite pair plus branch classifies as T junction");
+
+    const arch::WallSpec wall_down{{0.0, 0.0}, {0.0, -3000.0}, 200.0, 3000.0, 0.0};
+    const auto x_junction = arch::classify_wall_junction({wall_x, wall_left, wall_y, wall_down});
+    expect(
+        x_junction.has_value() && x_junction->kind == arch::WallJunctionKind::X,
+        "two opposite pairs classify as X junction");
+
+    const arch::WallSpec duplicate_ray{{0.0, 0.0}, {2000.0, 0.0}, 150.0, 3000.0, 0.0};
+    expect(
+        !arch::classify_wall_junction({wall_x, duplicate_ray, wall_y}).has_value(),
+        "duplicate same-direction wall ray rejected");
+
+    const arch::WallSpec elevated_branch{{0.0, 0.0}, {0.0, 3000.0}, 200.0, 3000.0, 100.0};
+    expect(
+        !arch::classify_wall_junction({wall_x, wall_left, elevated_branch}).has_value(),
+        "junction with mismatched base elevation rejected");
+
     const arch::WallSpec parallel{{0.0, 0.0}, {3000.0, 0.0}, 200.0, 3000.0, 0.0};
     expect(
         !arch::make_mitered_wall_pair(wall_x, parallel).has_value(),
