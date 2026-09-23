@@ -75,18 +75,35 @@ int main() {
         "zero-depth opening panel rejected");
 
     acp::model3d::Scene scene;
+    auto host_mesh = arch::make_wall_with_openings(wall, {door, window});
+    expect(host_mesh.has_value(), "host wall with openings builds");
+    const auto host_id = host_mesh.has_value()
+        ? scene.insert(
+              std::move(*host_mesh),
+              "HostWall",
+              {200, 205, 214},
+              acp::model3d::ObjectKind::Wall)
+        : 0;
+    expect(host_id != 0, "host wall inserts into scene");
+
     const auto door_id = arch::add_opening_object(
         scene,
         door,
         40.0,
-        "MainEntry");
+        "MainEntry",
+        {160, 190, 215},
+        std::nullopt,
+        host_id);
     const auto window_id = arch::add_opening_object(
         scene,
         window,
         24.0,
-        "LivingGlazing");
+        "LivingGlazing",
+        {160, 190, 215},
+        std::nullopt,
+        host_id);
     expect(door_id != 0 && window_id != 0, "door and window insert into scene");
-    expect(scene.size() == 2, "semantic opening scene contains two objects");
+    expect(scene.size() == 3, "hosted opening scene contains wall and two openings");
 
     const auto* door_object = scene.find(door_id);
     expect(door_object != nullptr, "door scene object exists");
@@ -95,6 +112,7 @@ int main() {
             door_object->kind == acp::model3d::ObjectKind::Door,
             "door carries semantic Door kind");
         expect(door_object->name == "MainEntry", "door keeps supplied scene name");
+        expect(door_object->host_object_id == host_id, "door keeps host wall relationship");
     }
 
     const auto* window_object = scene.find(window_id);
@@ -104,7 +122,19 @@ int main() {
             window_object->kind == acp::model3d::ObjectKind::Window,
             "window carries semantic Window kind");
         expect(window_object->name == "LivingGlazing", "window keeps supplied scene name");
+        expect(window_object->host_object_id == host_id, "window keeps host wall relationship");
     }
+
+    expect(
+        arch::add_opening_object(
+            scene,
+            door,
+            40.0,
+            "InvalidHost",
+            {160, 190, 215},
+            std::nullopt,
+            999999) == 0,
+        "opening with missing host is rejected");
 
     const std::string obj = acp::obj::serialize(scene);
     expect(
@@ -113,6 +143,16 @@ int main() {
     expect(
         obj.find("o Window_LivingGlazing\n") != std::string::npos,
         "OBJ prefixes custom window name with semantic kind");
+
+    expect(scene.erase(host_id), "host wall can be erased");
+    door_object = scene.find(door_id);
+    window_object = scene.find(window_id);
+    expect(
+        door_object != nullptr && !door_object->host_object_id.has_value(),
+        "erasing host clears door host relationship");
+    expect(
+        window_object != nullptr && !window_object->host_object_id.has_value(),
+        "erasing host clears window host relationship");
 
     if (failures == 0) {
         std::cout << "Opening element tests passed\n";
