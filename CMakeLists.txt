@@ -54,6 +54,7 @@ add_library(acp_core
     src/core/architecture3d_hosting.cpp
     src/core/architecture3d_advanced.cpp
     src/core/architecture3d_storeys.cpp
+    src/core/architecture3d_roof.cpp
     src/core/obj.cpp
     src/core/blender_bridge.cpp
     src/core/viewport3d.cpp
@@ -176,6 +177,10 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_architecture3d_storeys_tests tests/architecture3d_storeys_tests.cpp)
     target_link_libraries(acp_architecture3d_storeys_tests PRIVATE acp_core)
     add_test(NAME acp_architecture3d_storeys_tests COMMAND acp_architecture3d_storeys_tests)
+
+    add_executable(acp_architecture3d_roof_cache_tests tests/architecture3d_roof_cache_tests.cpp)
+    target_link_libraries(acp_architecture3d_roof_cache_tests PRIVATE acp_core)
+    add_test(NAME acp_architecture3d_roof_cache_tests COMMAND acp_architecture3d_roof_cache_tests)
 endif()
 
 if(WIN32 AND ACP_BUILD_APP)
