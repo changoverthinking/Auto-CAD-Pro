@@ -90,13 +90,15 @@ struct WallOpeningSpec {
     double panel_depth);
 
 // Inserts a semantic Door or Window object into a scene and returns its ID.
+// When host_object_id is supplied it must refer to an existing scene object.
 [[nodiscard]] model3d::ObjectId add_opening_object(
     model3d::Scene& scene,
     const WallOpeningSpec& opening,
     double panel_depth,
     std::string name = {},
     RgbColor color = {160, 190, 215},
-    std::optional<EntityId> source_entity_id = std::nullopt);
+    std::optional<EntityId> source_entity_id = std::nullopt,
+    std::optional<model3d::ObjectId> host_object_id = std::nullopt);
 
 // Builds the host wall with rectangular door/window holes already removed.
 // Openings must not overlap along the wall. The resulting mesh can contain
