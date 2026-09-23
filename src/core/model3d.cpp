@@ -131,7 +131,13 @@ std::optional<std::vector<geo3d::Triangle>> triangulate_polygon(
 
 } // namespace
 
-ObjectId Scene::insert(geo3d::Mesh mesh, std::string name, RgbColor color) {
+ObjectId Scene::insert(
+    geo3d::Mesh mesh,
+    std::string name,
+    RgbColor color,
+    ObjectKind kind,
+    std::optional<EntityId> source_entity_id) {
+
     if (!geo3d::valid_mesh(mesh)) {
         return 0;
     }
@@ -141,7 +147,14 @@ ObjectId Scene::insert(geo3d::Mesh mesh, std::string name, RgbColor color) {
     const ObjectId id = next_id_++;
     objects_.emplace(
         id,
-        Object3D{id, std::move(name), std::move(mesh), color, true});
+        Object3D{
+            id,
+            std::move(name),
+            std::move(mesh),
+            color,
+            true,
+            kind,
+            source_entity_id});
     return id;
 }
 
@@ -289,7 +302,9 @@ Scene extrude_closed_polylines(
         (void)result.insert(
             std::move(*mesh),
             "Polyline_" + std::to_string(id),
-            document.effective_color(id));
+            document.effective_color(id),
+            ObjectKind::Generic,
+            id);
     }
     return result;
 }
