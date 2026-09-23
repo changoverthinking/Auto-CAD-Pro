@@ -34,4 +34,14 @@ struct GableRoofSpec {
     std::string name = "Roof",
     RgbColor color = {155, 95, 75});
 
+// Converts visible, closed, axis-aligned rectangular polylines into semantic
+// gable roofs. Non-rectangular footprints are intentionally skipped until the
+// general polygon roof solver is available. Ridge direction follows the longer
+// footprint axis and each object preserves its source 2D entity id.
+[[nodiscard]] model3d::Scene gable_roofs_from_rectangular_polylines(
+    const Document& document,
+    double eave_z,
+    double ridge_height,
+    double overhang = 300.0);
+
 } // namespace acp::architecture3d
