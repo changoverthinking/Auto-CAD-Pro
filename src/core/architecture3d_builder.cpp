@@ -21,7 +21,6 @@ bool finite_nonnegative(double value) noexcept {
 }
 
 void mix(std::uint64_t& seed, std::uint64_t value) noexcept {
-    // 64-bit hash-combine style mixing. Deterministic across supported builds.
     value += 0x9e3779b97f4a7c15ULL;
     value = (value ^ (value >> 30U)) * 0xbf58476d1ce4e5b9ULL;
     value = (value ^ (value >> 27U)) * 0x94d049bb133111ebULL;
@@ -86,7 +85,7 @@ bool valid(const ArchitecturalSceneOptions& options) noexcept {
 std::uint64_t settings_signature(
     const ArchitecturalSceneOptions& options) noexcept {
 
-    std::uint64_t seed = 0x415550524f334455ULL; // "AUPRO3DU" marker-like seed.
+    std::uint64_t seed = 0x415550524f334455ULL;
     mix(seed, static_cast<std::uint64_t>(options.mode));
     mix_double(seed, options.base_z);
     mix_double(seed, options.wall_height);
@@ -143,7 +142,7 @@ model3d::Scene build_architectural_scene(
         if (options.include_roofs) {
             append_scene(
                 result,
-                roofs_from_rectangular_polylines(
+                gable_roofs_from_rectangular_polylines(
                     document,
                     options.roof_eave_z,
                     options.roof_ridge_height,
@@ -187,7 +186,7 @@ model3d::Scene build_architectural_scene(
             highest_level_elevation(options.levels) + options.roof_eave_offset;
         append_scene(
             result,
-            roofs_from_rectangular_polylines(
+            gable_roofs_from_rectangular_polylines(
                 document,
                 roof_eave,
                 options.roof_ridge_height,
