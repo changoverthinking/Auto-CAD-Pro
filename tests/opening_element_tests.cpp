@@ -54,7 +54,7 @@ int main() {
     const arch::WallOpeningSpec window{
         wall,
         arch::OpeningKind::Window,
-        0.7,
+        0.75,
         1200.0,
         1200.0,
         900.0,
