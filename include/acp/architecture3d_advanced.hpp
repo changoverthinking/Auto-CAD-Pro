@@ -5,6 +5,7 @@
 #include <optional>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace acp::architecture3d {
 
@@ -18,6 +19,19 @@ struct StorySpan {
     double top_z{};
 
     [[nodiscard]] double height() const noexcept { return top_z - base_z; }
+};
+
+enum class WallJunctionKind {
+    Unsupported = 0,
+    L,
+    T,
+    X
+};
+
+struct WallJunctionInfo {
+    WallJunctionKind kind{WallJunctionKind::Unsupported};
+    geo::Vec2 joint{};
+    std::size_t wall_count{};
 };
 
 // Builds a rectangular frame around a hosted opening. Doors omit the bottom
@@ -35,6 +49,14 @@ struct StorySpan {
     const WallSpec& first,
     const WallSpec& second,
     double endpoint_tolerance = 1e-6);
+
+// Classifies 2-4 walls meeting at one endpoint. All walls must share base Z
+// and height. L requires two non-collinear rays, T requires one opposite pair
+// plus a branch, and X requires two opposite pairs.
+[[nodiscard]] std::optional<WallJunctionInfo> classify_wall_junction(
+    const std::vector<WallSpec>& walls,
+    double endpoint_tolerance = 1e-6,
+    double angular_tolerance = 1e-6);
 
 // Resolves the named level and the next higher level into a story range.
 [[nodiscard]] std::optional<StorySpan> story_span(
