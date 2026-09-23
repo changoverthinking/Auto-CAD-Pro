@@ -101,8 +101,8 @@ int main() {
            "multi-storey names carry owning level prefix");
 
     const auto scene_bounds = scene.bounds();
-    expect(scene_bounds.valid, "multi-storey bounds valid");
-    if (scene_bounds.valid) {
+    expect(scene_bounds.initialized, "multi-storey bounds valid");
+    if (scene_bounds.initialized) {
         expect(close(scene_bounds.min.z, -180.0), "ground slab extends below zero");
         expect(close(scene_bounds.max.z, 6500.0), "scene reaches roof level");
     }
