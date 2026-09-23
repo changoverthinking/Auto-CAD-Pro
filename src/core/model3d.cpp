@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace acp::model3d {
 namespace {
@@ -28,6 +30,103 @@ bool finite_polygon(const std::vector<geo::Vec2>& polygon) noexcept {
         }
     }
     return std::abs(signed_area(polygon)) > 1e-12;
+}
+
+double triangle_cross(
+    geo::Vec2 a,
+    geo::Vec2 b,
+    geo::Vec2 c) noexcept {
+    return geo::cross(b - a, c - a);
+}
+
+bool point_in_triangle(
+    geo::Vec2 point,
+    geo::Vec2 a,
+    geo::Vec2 b,
+    geo::Vec2 c) noexcept {
+
+    constexpr double epsilon = 1e-12;
+    const double ab = triangle_cross(a, b, point);
+    const double bc = triangle_cross(b, c, point);
+    const double ca = triangle_cross(c, a, point);
+    const bool has_negative =
+        ab < -epsilon || bc < -epsilon || ca < -epsilon;
+    const bool has_positive =
+        ab > epsilon || bc > epsilon || ca > epsilon;
+    return !(has_negative && has_positive);
+}
+
+std::optional<std::vector<geo3d::Triangle>> triangulate_polygon(
+    const std::vector<geo::Vec2>& polygon) {
+
+    if (!finite_polygon(polygon)) {
+        return std::nullopt;
+    }
+
+    const bool ccw = signed_area(polygon) > 0.0;
+    std::vector<std::uint32_t> remaining;
+    remaining.reserve(polygon.size());
+    for (std::size_t i = 0; i < polygon.size(); ++i) {
+        remaining.push_back(static_cast<std::uint32_t>(i));
+    }
+
+    std::vector<geo3d::Triangle> triangles;
+    triangles.reserve(polygon.size() - 2);
+
+    std::size_t guard = 0;
+    const std::size_t guard_limit = polygon.size() * polygon.size() * 2;
+    while (remaining.size() > 3 && guard++ < guard_limit) {
+        bool clipped = false;
+
+        for (std::size_t i = 0; i < remaining.size(); ++i) {
+            const std::uint32_t prev =
+                remaining[(i + remaining.size() - 1) % remaining.size()];
+            const std::uint32_t current = remaining[i];
+            const std::uint32_t next = remaining[(i + 1) % remaining.size()];
+
+            const double corner = triangle_cross(
+                polygon[prev], polygon[current], polygon[next]);
+            if ((ccw && corner <= 1e-12) ||
+                (!ccw && corner >= -1e-12)) {
+                continue;
+            }
+
+            bool contains_vertex = false;
+            for (const std::uint32_t candidate : remaining) {
+                if (candidate == prev ||
+                    candidate == current ||
+                    candidate == next) {
+                    continue;
+                }
+                if (point_in_triangle(
+                        polygon[candidate],
+                        polygon[prev],
+                        polygon[current],
+                        polygon[next])) {
+                    contains_vertex = true;
+                    break;
+                }
+            }
+            if (contains_vertex) {
+                continue;
+            }
+
+            triangles.push_back({prev, current, next});
+            remaining.erase(remaining.begin() + static_cast<std::ptrdiff_t>(i));
+            clipped = true;
+            break;
+        }
+
+        if (!clipped) {
+            return std::nullopt;
+        }
+    }
+
+    if (remaining.size() != 3) {
+        return std::nullopt;
+    }
+    triangles.push_back({remaining[0], remaining[1], remaining[2]});
+    return triangles;
 }
 
 } // namespace
@@ -99,10 +198,15 @@ std::optional<geo3d::Mesh> extrude_polygon(
         return std::nullopt;
     }
 
+    const auto cap = triangulate_polygon(polygon);
+    if (!cap.has_value()) {
+        return std::nullopt;
+    }
+
     const std::size_t count = polygon.size();
     geo3d::Mesh mesh;
     mesh.vertices.reserve(count * 2);
-    mesh.triangles.reserve((count - 2) * 2 + count * 2);
+    mesh.triangles.reserve(cap->size() * 2 + count * 2);
 
     const double top_z = base_z + height;
     for (const auto& point : polygon) {
@@ -113,21 +217,23 @@ std::optional<geo3d::Mesh> extrude_polygon(
     }
 
     const bool ccw = signed_area(polygon) > 0.0;
-    for (std::size_t i = 1; i + 1 < count; ++i) {
-        const auto a = static_cast<std::uint32_t>(0);
-        const auto b = static_cast<std::uint32_t>(i);
-        const auto c = static_cast<std::uint32_t>(i + 1);
-        const auto ta = static_cast<std::uint32_t>(count);
-        const auto tb = static_cast<std::uint32_t>(count + i);
-        const auto tc = static_cast<std::uint32_t>(count + i + 1);
+    const bool top_uses_polygon_winding = ccw == (height > 0.0);
 
-        if (ccw == (height > 0.0)) {
-            mesh.triangles.push_back({a, c, b});
-            mesh.triangles.push_back({ta, tb, tc});
-        } else {
-            mesh.triangles.push_back({a, b, c});
-            mesh.triangles.push_back({ta, tc, tb});
-        }
+    for (const geo3d::Triangle triangle : *cap) {
+        const geo3d::Triangle bottom = top_uses_polygon_winding
+            ? geo3d::Triangle{triangle.a, triangle.c, triangle.b}
+            : triangle;
+        const geo3d::Triangle top = top_uses_polygon_winding
+            ? geo3d::Triangle{
+                  static_cast<std::uint32_t>(count + triangle.a),
+                  static_cast<std::uint32_t>(count + triangle.b),
+                  static_cast<std::uint32_t>(count + triangle.c)}
+            : geo3d::Triangle{
+                  static_cast<std::uint32_t>(count + triangle.a),
+                  static_cast<std::uint32_t>(count + triangle.c),
+                  static_cast<std::uint32_t>(count + triangle.b)};
+        mesh.triangles.push_back(bottom);
+        mesh.triangles.push_back(top);
     }
 
     for (std::size_t i = 0; i < count; ++i) {
@@ -137,7 +243,7 @@ std::optional<geo3d::Mesh> extrude_polygon(
         const auto t0 = static_cast<std::uint32_t>(count + i);
         const auto t1 = static_cast<std::uint32_t>(count + next);
 
-        if (ccw == (height > 0.0)) {
+        if (top_uses_polygon_winding) {
             mesh.triangles.push_back({b0, b1, t1});
             mesh.triangles.push_back({b0, t1, t0});
         } else {
