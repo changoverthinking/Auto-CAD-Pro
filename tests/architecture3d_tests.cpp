@@ -80,6 +80,17 @@ int main() {
         expect(close(bounds.min.z, 0.0), "door begins at wall base");
     }
 
+    const auto wall_with_door = arch::make_wall_with_openings(wall, {door});
+    expect(wall_with_door.has_value(), "wall with hosted door builds");
+    if (wall_with_door.has_value()) {
+        expect(wall_with_door->vertices.size() == 24, "door wall decomposes into two piers and lintel");
+        expect(wall_with_door->triangles.size() == 36, "door wall piece faces are complete");
+        const auto bounds = acp::geo3d::bounds(*wall_with_door);
+        expect(close(bounds.size().x, 5000.0), "door wall keeps full span");
+        expect(close(bounds.size().y, 200.0), "door wall keeps host thickness");
+        expect(close(bounds.size().z, 3000.0), "door wall keeps host height");
+    }
+
     const arch::WallOpeningSpec window{
         wall,
         arch::OpeningKind::Window,
@@ -97,6 +108,42 @@ int main() {
         expect(close(bounds.min.z, 900.0), "window sill elevation preserved");
         expect(close(bounds.max.z, 2100.0), "window head elevation preserved");
     }
+
+    const auto wall_with_window = arch::make_wall_with_openings(wall, {window});
+    expect(wall_with_window.has_value(), "wall with hosted window builds");
+    if (wall_with_window.has_value()) {
+        expect(wall_with_window->vertices.size() == 32, "window wall has piers sill and head pieces");
+        expect(wall_with_window->triangles.size() == 48, "window wall piece faces are complete");
+    }
+
+    const arch::WallOpeningSpec left_door{
+        wall,
+        arch::OpeningKind::Door,
+        0.2,
+        800.0,
+        2100.0,
+        0.0,
+        2.0
+    };
+    const arch::WallOpeningSpec right_window{
+        wall,
+        arch::OpeningKind::Window,
+        0.72,
+        1000.0,
+        1200.0,
+        900.0,
+        2.0
+    };
+    expect(
+        arch::make_wall_with_openings(wall, {left_door, right_window}).has_value(),
+        "multiple non-overlapping hosted openings build");
+
+    auto overlapping_window = right_window;
+    overlapping_window.center_offset = 0.27;
+    overlapping_window.width = 1000.0;
+    expect(
+        !arch::make_wall_with_openings(wall, {left_door, overlapping_window}).has_value(),
+        "overlapping hosted openings rejected");
 
     auto invalid_opening = window;
     invalid_opening.center_offset = 0.02;
