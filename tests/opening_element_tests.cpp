@@ -1,7 +1,9 @@
 #include "acp/architecture3d.hpp"
+#include "acp/obj.hpp"
 
 #include <cmath>
 #include <iostream>
+#include <string>
 
 namespace {
 
@@ -77,12 +79,12 @@ int main() {
         scene,
         door,
         40.0,
-        "Door_Main");
+        "MainEntry");
     const auto window_id = arch::add_opening_object(
         scene,
         window,
         24.0,
-        "Window_Living");
+        "LivingGlazing");
     expect(door_id != 0 && window_id != 0, "door and window insert into scene");
     expect(scene.size() == 2, "semantic opening scene contains two objects");
 
@@ -92,7 +94,7 @@ int main() {
         expect(
             door_object->kind == acp::model3d::ObjectKind::Door,
             "door carries semantic Door kind");
-        expect(door_object->name == "Door_Main", "door keeps supplied name");
+        expect(door_object->name == "MainEntry", "door keeps supplied scene name");
     }
 
     const auto* window_object = scene.find(window_id);
@@ -101,8 +103,16 @@ int main() {
         expect(
             window_object->kind == acp::model3d::ObjectKind::Window,
             "window carries semantic Window kind");
-        expect(window_object->name == "Window_Living", "window keeps supplied name");
+        expect(window_object->name == "LivingGlazing", "window keeps supplied scene name");
     }
+
+    const std::string obj = acp::obj::serialize(scene);
+    expect(
+        obj.find("o Door_MainEntry\n") != std::string::npos,
+        "OBJ prefixes custom door name with semantic kind");
+    expect(
+        obj.find("o Window_LivingGlazing\n") != std::string::npos,
+        "OBJ prefixes custom window name with semantic kind");
 
     if (failures == 0) {
         std::cout << "Opening element tests passed\n";
