@@ -13,12 +13,26 @@ namespace acp::model3d {
 
 using ObjectId = std::uint64_t;
 
+enum class ObjectKind : std::uint8_t {
+    Generic = 0,
+    Wall,
+    Slab,
+    Column,
+    Beam,
+    Door,
+    Window,
+    Roof,
+    Stair
+};
+
 struct Object3D {
     ObjectId id{};
     std::string name;
     geo3d::Mesh mesh;
     RgbColor color{200, 205, 214};
     bool visible{true};
+    ObjectKind kind{ObjectKind::Generic};
+    std::optional<EntityId> source_entity_id;
 };
 
 class Scene {
@@ -26,7 +40,9 @@ public:
     [[nodiscard]] ObjectId insert(
         geo3d::Mesh mesh,
         std::string name = {},
-        RgbColor color = {200, 205, 214});
+        RgbColor color = {200, 205, 214},
+        ObjectKind kind = ObjectKind::Generic,
+        std::optional<EntityId> source_entity_id = std::nullopt);
 
     [[nodiscard]] const Object3D* find(ObjectId id) const noexcept;
     [[nodiscard]] Object3D* find(ObjectId id) noexcept;
