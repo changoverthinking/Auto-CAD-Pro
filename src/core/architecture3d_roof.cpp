@@ -1,13 +1,74 @@
 #include "acp/architecture3d_roof.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 #include <utility>
+#include <variant>
 
 namespace acp::architecture3d {
 namespace {
 
 bool finite(double value) noexcept {
     return std::isfinite(value);
+}
+
+bool close(double a, double b, double tolerance = 1e-6) noexcept {
+    return std::abs(a - b) <= tolerance;
+}
+
+std::optional<std::pair<geo::Vec2, geo::Vec2>> axis_aligned_rectangle_bounds(
+    const PolylineEntity& polyline) noexcept {
+
+    if (!polyline.closed || polyline.points.size() != 4) {
+        return std::nullopt;
+    }
+
+    double min_x = std::numeric_limits<double>::infinity();
+    double min_y = std::numeric_limits<double>::infinity();
+    double max_x = -std::numeric_limits<double>::infinity();
+    double max_y = -std::numeric_limits<double>::infinity();
+    for (const geo::Vec2 point : polyline.points) {
+        if (!finite(point.x) || !finite(point.y)) {
+            return std::nullopt;
+        }
+        min_x = std::min(min_x, point.x);
+        min_y = std::min(min_y, point.y);
+        max_x = std::max(max_x, point.x);
+        max_y = std::max(max_y, point.y);
+    }
+
+    if (max_x - min_x <= geo::kEpsilon ||
+        max_y - min_y <= geo::kEpsilon) {
+        return std::nullopt;
+    }
+
+    const std::array<geo::Vec2, 4> corners{{
+        {min_x, min_y},
+        {max_x, min_y},
+        {max_x, max_y},
+        {min_x, max_y}
+    }};
+
+    std::array<bool, 4> seen{};
+    for (const geo::Vec2 point : polyline.points) {
+        bool matched = false;
+        for (std::size_t i = 0; i < corners.size(); ++i) {
+            if (!seen[i] &&
+                close(point.x, corners[i].x) &&
+                close(point.y, corners[i].y)) {
+                seen[i] = true;
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            return std::nullopt;
+        }
+    }
+
+    return std::pair<geo::Vec2, geo::Vec2>{{min_x, min_y}, {max_x, max_y}};
 }
 
 } // namespace
@@ -88,6 +149,57 @@ model3d::ObjectId add_gable_roof(
         std::move(name),
         color,
         model3d::ObjectKind::Roof);
+}
+
+model3d::Scene gable_roofs_from_rectangular_polylines(
+    const Document& document,
+    double eave_z,
+    double ridge_height,
+    double overhang) {
+
+    model3d::Scene result;
+    if (!finite(eave_z) ||
+        !finite(ridge_height) || ridge_height <= geo::kEpsilon ||
+        !finite(overhang) || overhang < 0.0) {
+        return result;
+    }
+
+    for (const EntityId id : document.ids()) {
+        if (!document.entity_visible(id)) {
+            continue;
+        }
+        const Entity* entity = document.find(id);
+        const auto* polyline =
+            entity == nullptr ? nullptr : std::get_if<PolylineEntity>(entity);
+        if (polyline == nullptr) {
+            continue;
+        }
+
+        const auto bounds = axis_aligned_rectangle_bounds(*polyline);
+        if (!bounds.has_value()) {
+            continue;
+        }
+        const double width = bounds->second.x - bounds->first.x;
+        const double depth = bounds->second.y - bounds->first.y;
+        GableRoofSpec roof{
+            bounds->first,
+            bounds->second,
+            eave_z,
+            ridge_height,
+            overhang,
+            width >= depth ? RoofRidgeAxis::X : RoofRidgeAxis::Y};
+        auto mesh = make_gable_roof(roof);
+        if (!mesh.has_value()) {
+            continue;
+        }
+        (void)result.insert(
+            std::move(*mesh),
+            "Roof_" + std::to_string(id),
+            document.effective_color(id),
+            model3d::ObjectKind::Roof,
+            id);
+    }
+    return result;
 }
 
 } // namespace acp::architecture3d
