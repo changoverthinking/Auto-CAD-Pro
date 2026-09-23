@@ -16,6 +16,7 @@ namespace acp {
 
 using EntityId = std::uint64_t;
 using LayerId = std::uint32_t;
+using DocumentRevision = std::uint64_t;
 
 inline constexpr LayerId kDefaultLayerId = 1;
 
@@ -72,6 +73,12 @@ struct EntityProperties {
 class Document {
 public:
     Document();
+    Document(const Document& other);
+    Document(Document&& other) noexcept;
+    Document& operator=(const Document& other);
+    Document& operator=(Document&& other) noexcept;
+
+    [[nodiscard]] DocumentRevision revision() const noexcept { return revision_; }
 
     [[nodiscard]] EntityId insert(Entity entity);
     bool insert_with_id(EntityId id, Entity entity);
@@ -106,12 +113,14 @@ public:
 
 private:
     [[nodiscard]] bool layer_name_exists(const std::string& name, LayerId ignore_id = 0) const;
+    void mark_changed() noexcept;
 
     EntityId next_id_{1};
     LayerId next_layer_id_{kDefaultLayerId + 1};
     std::unordered_map<EntityId, Entity> entities_;
     std::unordered_map<EntityId, EntityProperties> properties_;
     std::unordered_map<LayerId, Layer> layers_;
+    DocumentRevision revision_{0};
 };
 
 } // namespace acp
