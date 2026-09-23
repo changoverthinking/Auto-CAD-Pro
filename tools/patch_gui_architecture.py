@@ -37,8 +37,6 @@ replace_once(
 # also invalidates automatically, so this is intentionally redundant only at
 # project replacement/settings boundaries.
 text = text.replace('g_app.scene3d_dirty = true;', 'g_app.scene3d_cache.invalidate();')
-if 'scene3d_dirty' in text:
-    raise SystemExit("scene3d_dirty remains after migration")
 
 replace_once(
     'void rebuild_scene3d() {\n'
@@ -72,6 +70,9 @@ replace_once(
     '    }\n'
     '}',
     "revision/signature scene cache")
+
+if 'scene3d_dirty' in text:
+    raise SystemExit("scene3d_dirty remains after migration")
 
 replace_once(
     '            L"3D Workspace - draw a closed polyline/rectangle in 2D, then Build 3D.",',
