@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <iostream>
+#include <limits>
+#include <vector>
 
 namespace {
 
@@ -22,15 +24,32 @@ bool close(double a, double b, double epsilon = 1e-9) {
 
 int main() {
     using acp::geo::Vec2;
+    namespace arch = acp::architecture3d;
 
-    const acp::architecture3d::WallSpec wall{
+    const std::vector<arch::Level> levels{
+        {"Ground", 0.0},
+        {"Level 2", 3200.0},
+        {"Roof", 6400.0}
+    };
+    expect(arch::valid_levels(levels), "unique finite levels are valid");
+    const auto level2 = arch::level_elevation(levels, "Level 2");
+    expect(level2.has_value() && close(*level2, 3200.0), "level elevation resolves by name");
+    expect(!arch::level_elevation(levels, "Missing").has_value(), "missing level does not resolve");
+    expect(
+        !arch::valid_levels({{"Ground", 0.0}, {"Ground", 3200.0}}),
+        "duplicate level names rejected");
+    expect(
+        !arch::valid(arch::Level{"Bad", std::numeric_limits<double>::infinity()}),
+        "non-finite level elevation rejected");
+
+    const arch::WallSpec wall{
         {0.0, 0.0},
         {5000.0, 0.0},
         200.0,
         3000.0,
         0.0
     };
-    const auto wall_mesh = acp::architecture3d::make_wall(wall);
+    const auto wall_mesh = arch::make_wall(wall);
     expect(wall_mesh.has_value(), "valid wall builds a mesh");
     if (wall_mesh.has_value()) {
         expect(wall_mesh->vertices.size() == 8, "wall has eight vertices");
@@ -41,7 +60,54 @@ int main() {
         expect(close(bounds.size().z, 3000.0), "wall height preserved");
     }
 
-    const acp::architecture3d::SlabSpec slab{
+    const arch::WallOpeningSpec door{
+        wall,
+        arch::OpeningKind::Door,
+        0.5,
+        900.0,
+        2100.0,
+        0.0,
+        2.0
+    };
+    expect(arch::valid(door), "door opening inside wall is valid");
+    const auto door_cut = arch::make_wall_opening_volume(door);
+    expect(door_cut.has_value(), "door opening creates a cutter volume");
+    if (door_cut.has_value()) {
+        const auto bounds = acp::geo3d::bounds(*door_cut);
+        expect(close(bounds.size().x, 900.0), "door cutter preserves width");
+        expect(close(bounds.size().y, 204.0), "door cutter crosses full wall thickness with clearance");
+        expect(close(bounds.size().z, 2100.0), "door cutter preserves height");
+        expect(close(bounds.min.z, 0.0), "door begins at wall base");
+    }
+
+    const arch::WallOpeningSpec window{
+        wall,
+        arch::OpeningKind::Window,
+        0.6,
+        1200.0,
+        1200.0,
+        900.0,
+        2.0
+    };
+    expect(arch::valid(window), "window opening inside wall is valid");
+    const auto window_cut = arch::make_wall_opening_volume(window);
+    expect(window_cut.has_value(), "window opening creates a cutter volume");
+    if (window_cut.has_value()) {
+        const auto bounds = acp::geo3d::bounds(*window_cut);
+        expect(close(bounds.min.z, 900.0), "window sill elevation preserved");
+        expect(close(bounds.max.z, 2100.0), "window head elevation preserved");
+    }
+
+    auto invalid_opening = window;
+    invalid_opening.center_offset = 0.02;
+    invalid_opening.width = 1000.0;
+    expect(!arch::valid(invalid_opening), "opening extending past wall end rejected");
+    invalid_opening = window;
+    invalid_opening.sill_height = 2200.0;
+    invalid_opening.height = 1200.0;
+    expect(!arch::valid(invalid_opening), "opening extending above wall rejected");
+
+    const arch::SlabSpec slab{
         {
             {0.0, 0.0},
             {4000.0, 0.0},
@@ -51,7 +117,7 @@ int main() {
         180.0,
         0.0
     };
-    const auto slab_mesh = acp::architecture3d::make_slab(slab);
+    const auto slab_mesh = arch::make_slab(slab);
     expect(slab_mesh.has_value(), "valid slab builds a mesh");
     if (slab_mesh.has_value()) {
         const auto bounds = acp::geo3d::bounds(*slab_mesh);
@@ -59,7 +125,7 @@ int main() {
         expect(close(bounds.max.z, 0.0), "slab top elevation preserved");
     }
 
-    const acp::architecture3d::SlabSpec concave_slab{
+    const arch::SlabSpec concave_slab{
         {
             {0.0, 0.0},
             {5000.0, 0.0},
@@ -71,7 +137,7 @@ int main() {
         200.0,
         500.0
     };
-    const auto concave_mesh = acp::architecture3d::make_slab(concave_slab);
+    const auto concave_mesh = arch::make_slab(concave_slab);
     expect(concave_mesh.has_value(), "concave L-shaped slab triangulates");
     if (concave_mesh.has_value()) {
         expect(concave_mesh->vertices.size() == 12, "concave slab has paired vertices");
@@ -81,7 +147,7 @@ int main() {
         expect(close(bounds.max.z, 500.0), "concave slab top elevation preserved");
     }
 
-    const acp::architecture3d::ColumnSpec column{
+    const arch::ColumnSpec column{
         {1000.0, 1000.0},
         400.0,
         600.0,
@@ -89,7 +155,7 @@ int main() {
         100.0,
         0.0
     };
-    const auto column_mesh = acp::architecture3d::make_column(column);
+    const auto column_mesh = arch::make_column(column);
     expect(column_mesh.has_value(), "valid column builds a mesh");
     if (column_mesh.has_value()) {
         const auto bounds = acp::geo3d::bounds(*column_mesh);
@@ -99,13 +165,41 @@ int main() {
         expect(close(bounds.max.z, 3300.0), "column top elevation preserved");
     }
 
+    const arch::BeamSpec beam{
+        {0.0, 0.0},
+        {5000.0, 0.0},
+        300.0,
+        500.0,
+        3000.0
+    };
+    const auto beam_mesh = arch::make_beam(beam);
+    expect(beam_mesh.has_value(), "valid beam builds a mesh");
+    if (beam_mesh.has_value()) {
+        const auto bounds = acp::geo3d::bounds(*beam_mesh);
+        expect(close(bounds.size().x, 5000.0), "beam span preserved");
+        expect(close(bounds.size().y, 300.0), "beam width preserved");
+        expect(close(bounds.size().z, 500.0), "beam depth preserved");
+        expect(close(bounds.min.z, 2500.0), "beam bottom elevation preserved");
+        expect(close(bounds.max.z, 3000.0), "beam top elevation preserved");
+    }
+
     acp::Document document;
     const auto line_id = document.insert(
         acp::LineEntity{{{0.0, 0.0}, {5000.0, 0.0}}});
     expect(line_id != 0, "source wall line inserted");
-    const auto walls = acp::architecture3d::walls_from_lines(
-        document, 200.0, 3000.0);
+    const auto walls = arch::walls_from_lines(document, 200.0, 3000.0);
     expect(walls.size() == 1, "visible line becomes one wall");
+    const auto beams = arch::beams_from_lines(document, 300.0, 500.0, 3000.0);
+    expect(beams.size() == 1, "visible line becomes one beam");
+    if (beams.size() == 1) {
+        const auto ids = beams.ids();
+        const auto* object = beams.find(ids.front());
+        expect(object != nullptr, "beam scene object exists");
+        if (object != nullptr) {
+            expect(object->kind == acp::model3d::ObjectKind::Beam, "beam scene carries semantic kind");
+            expect(object->source_entity_id == line_id, "beam keeps 2D source entity linkage");
+        }
+    }
 
     const auto poly_id = document.insert(
         acp::PolylineEntity{
@@ -118,20 +212,24 @@ int main() {
             true
         });
     expect(poly_id != 0, "source slab polyline inserted");
-    const auto slabs = acp::architecture3d::slabs_from_closed_polylines(
-        document, 180.0, 0.0);
+    const auto slabs = arch::slabs_from_closed_polylines(document, 180.0, 0.0);
     expect(slabs.size() == 1, "closed polyline becomes one slab");
 
     expect(
-        !acp::architecture3d::make_wall(
-            acp::architecture3d::WallSpec{{0.0, 0.0}, {0.0, 0.0}, 200.0, 3000.0, 0.0})
+        !arch::make_wall(
+            arch::WallSpec{{0.0, 0.0}, {0.0, 0.0}, 200.0, 3000.0, 0.0})
              .has_value(),
         "zero length wall rejected");
     expect(
-        !acp::architecture3d::make_column(
-            acp::architecture3d::ColumnSpec{{0.0, 0.0}, 0.0, 400.0, 3000.0, 0.0, 0.0})
+        !arch::make_column(
+            arch::ColumnSpec{{0.0, 0.0}, 0.0, 400.0, 3000.0, 0.0, 0.0})
              .has_value(),
         "zero width column rejected");
+    expect(
+        !arch::make_beam(
+            arch::BeamSpec{{0.0, 0.0}, {0.0, 0.0}, 300.0, 500.0, 3000.0})
+             .has_value(),
+        "zero length beam rejected");
 
     if (failures == 0) {
         std::cout << "Architectural 3D tests passed\n";
