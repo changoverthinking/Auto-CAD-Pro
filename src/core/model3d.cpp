@@ -136,9 +136,14 @@ ObjectId Scene::insert(
     std::string name,
     RgbColor color,
     ObjectKind kind,
-    std::optional<EntityId> source_entity_id) {
+    std::optional<EntityId> source_entity_id,
+    std::optional<ObjectId> host_object_id) {
 
     if (!geo3d::valid_mesh(mesh)) {
+        return 0;
+    }
+    if (host_object_id.has_value() &&
+        (!objects_.contains(*host_object_id) || *host_object_id == 0)) {
         return 0;
     }
     while (objects_.contains(next_id_)) {
@@ -154,7 +159,8 @@ ObjectId Scene::insert(
             color,
             true,
             kind,
-            source_entity_id});
+            source_entity_id,
+            host_object_id});
     return id;
 }
 
@@ -180,6 +186,12 @@ std::vector<ObjectId> Scene::ids() const {
 }
 
 bool Scene::erase(ObjectId id) noexcept {
+    for (auto& [object_id, object] : objects_) {
+        (void)object_id;
+        if (object.host_object_id == id) {
+            object.host_object_id.reset();
+        }
+    }
     return objects_.erase(id) == 1;
 }
 
