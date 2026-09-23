@@ -59,6 +59,28 @@ int main() {
         expect(close(bounds.max.z, 0.0), "slab top elevation preserved");
     }
 
+    const acp::architecture3d::SlabSpec concave_slab{
+        {
+            {0.0, 0.0},
+            {5000.0, 0.0},
+            {5000.0, 2000.0},
+            {2500.0, 2000.0},
+            {2500.0, 4500.0},
+            {0.0, 4500.0}
+        },
+        200.0,
+        500.0
+    };
+    const auto concave_mesh = acp::architecture3d::make_slab(concave_slab);
+    expect(concave_mesh.has_value(), "concave L-shaped slab triangulates");
+    if (concave_mesh.has_value()) {
+        expect(concave_mesh->vertices.size() == 12, "concave slab has paired vertices");
+        expect(concave_mesh->triangles.size() == 20, "concave slab has correct face count");
+        const auto bounds = acp::geo3d::bounds(*concave_mesh);
+        expect(close(bounds.min.z, 300.0), "concave slab bottom elevation preserved");
+        expect(close(bounds.max.z, 500.0), "concave slab top elevation preserved");
+    }
+
     const acp::architecture3d::ColumnSpec column{
         {1000.0, 1000.0},
         400.0,
