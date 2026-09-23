@@ -78,10 +78,18 @@ struct WallOpeningSpec {
 [[nodiscard]] std::optional<geo3d::Mesh> make_column(const ColumnSpec& column);
 [[nodiscard]] std::optional<geo3d::Mesh> make_beam(const BeamSpec& beam);
 
-// Returns a watertight cutter volume aligned to the host wall. A boolean
-// subtraction kernel will consume this volume in the next architecture stage.
+// Returns a watertight cutter volume aligned to the host wall. This remains
+// useful for a future general CSG kernel and for external authoring tools.
 [[nodiscard]] std::optional<geo3d::Mesh> make_wall_opening_volume(
     const WallOpeningSpec& opening);
+
+// Builds the host wall with rectangular door/window holes already removed.
+// Openings must not overlap along the wall. The resulting mesh can contain
+// several disconnected watertight pieces, but contains no geometry inside
+// the requested opening volumes.
+[[nodiscard]] std::optional<geo3d::Mesh> make_wall_with_openings(
+    const WallSpec& wall,
+    const std::vector<WallOpeningSpec>& openings);
 
 [[nodiscard]] model3d::Scene walls_from_lines(
     const Document& document,
