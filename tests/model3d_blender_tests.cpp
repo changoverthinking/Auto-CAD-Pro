@@ -28,8 +28,6 @@ std::size_t count_lines_with_prefix(
     std::size_t start = 0;
     while (start < value.size()) {
         const std::size_t end = value.find('\n', start);
-        const std::size_t length =
-            end == std::string::npos ? value.size() - start : end - start;
         if (value.compare(start, prefix.size(), prefix) == 0) {
             ++count;
         }
@@ -74,6 +72,19 @@ int main() {
     const auto scene =
         acp::model3d::extrude_closed_polylines(document, 2.5);
     expect(scene.size() == 1, "closed 2D polyline becomes one 3D object");
+    if (scene.size() == 1) {
+        const auto ids = scene.ids();
+        const auto* object = scene.find(ids.front());
+        expect(object != nullptr, "3D scene object can be fetched");
+        if (object != nullptr) {
+            expect(
+                object->kind == acp::model3d::ObjectKind::Generic,
+                "generic extrusion preserves generic semantic kind");
+            expect(
+                object->source_entity_id == polyline_id,
+                "3D object links back to source 2D entity");
+        }
+    }
 
     acp::viewport3d::Camera camera{};
     camera = acp::viewport3d::fit_camera(scene, camera, 1000.0, 700.0);
@@ -107,6 +118,14 @@ int main() {
     expect(
         script.find("bpy.ops.import_scene.obj") != std::string::npos,
         "legacy Blender OBJ import fallback present");
+    expect(
+        script.find("ACP_Walls") != std::string::npos &&
+        script.find("ACP_Slabs") != std::string::npos &&
+        script.find("ACP_Columns") != std::string::npos,
+        "Blender bridge creates architectural collections");
+    expect(
+        script.find("auto_cad_pro_kind") != std::string::npos,
+        "Blender objects receive semantic CAD kind metadata");
     expect(
         script.find("bpy.ops.wm.save_as_mainfile") != std::string::npos,
         "Blender save path supported");
