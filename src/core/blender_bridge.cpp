@@ -59,7 +59,7 @@ SAVE_BLEND_PATH = )";
 
     out << R"(
 
-# Work in metres. Auto CAD Pro geometry is transferred 1:1.
+# Auto CAD Pro currently transfers drawing units 1:1 and marks the scene Metric.
 scene = bpy.context.scene
 scene.unit_settings.system = 'METRIC'
 scene.unit_settings.scale_length = 1.0
@@ -70,9 +70,40 @@ if hasattr(bpy.ops.wm, "obj_import"):
 else:
     bpy.ops.import_scene.obj(filepath=OBJ_PATH)
 
-# Keep imported CAD objects grouped in one collection-like selection.
-for obj in bpy.context.selected_objects:
+imported = list(bpy.context.selected_objects)
+
+CATEGORY_PREFIXES = {
+    "Wall_": "ACP_Walls",
+    "Slab_": "ACP_Slabs",
+    "Column_": "ACP_Columns",
+    "Beam_": "ACP_Beams",
+    "Door_": "ACP_Doors",
+    "Window_": "ACP_Windows",
+    "Roof_": "ACP_Roofs",
+    "Stair_": "ACP_Stairs",
+}
+
+def ensure_collection(name):
+    collection = bpy.data.collections.get(name)
+    if collection is None:
+        collection = bpy.data.collections.new(name)
+        scene.collection.children.link(collection)
+    return collection
+
+def classify(name):
+    for prefix, collection_name in CATEGORY_PREFIXES.items():
+        if name.startswith(prefix):
+            return prefix[:-1], collection_name
+    return "Generic", "ACP_Generic"
+
+for obj in imported:
+    kind, collection_name = classify(obj.name)
     obj["auto_cad_pro_source"] = True
+    obj["auto_cad_pro_kind"] = kind
+    target = ensure_collection(collection_name)
+    for collection in list(obj.users_collection):
+        collection.objects.unlink(obj)
+    target.objects.link(obj)
 
 if SAVE_BLEND_PATH:
     bpy.ops.wm.save_as_mainfile(filepath=SAVE_BLEND_PATH)
