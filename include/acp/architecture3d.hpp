@@ -83,9 +83,24 @@ struct WallOpeningSpec {
 [[nodiscard]] std::optional<geo3d::Mesh> make_wall_opening_volume(
     const WallOpeningSpec& opening);
 
+// Builds a thin semantic door/window panel centered in the wall opening.
+// Frame and leaf profiles can be layered on this primitive later.
+[[nodiscard]] std::optional<geo3d::Mesh> make_opening_panel(
+    const WallOpeningSpec& opening,
+    double panel_depth);
+
+// Inserts a semantic Door or Window object into a scene and returns its ID.
+[[nodiscard]] model3d::ObjectId add_opening_object(
+    model3d::Scene& scene,
+    const WallOpeningSpec& opening,
+    double panel_depth,
+    std::string name = {},
+    RgbColor color = {160, 190, 215},
+    std::optional<EntityId> source_entity_id = std::nullopt);
+
 // Builds the host wall with rectangular door/window holes already removed.
 // Openings must not overlap along the wall. The resulting mesh can contain
-// several disconnected watertight pieces, but contains no geometry inside
+// several piecewise watertight solids, but contains no geometry inside
 // the requested opening volumes.
 [[nodiscard]] std::optional<geo3d::Mesh> make_wall_with_openings(
     const WallSpec& wall,
