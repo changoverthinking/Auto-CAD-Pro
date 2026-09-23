@@ -33,6 +33,7 @@ struct Object3D {
     bool visible{true};
     ObjectKind kind{ObjectKind::Generic};
     std::optional<EntityId> source_entity_id;
+    std::optional<ObjectId> host_object_id;
 };
 
 class Scene {
@@ -42,7 +43,8 @@ public:
         std::string name = {},
         RgbColor color = {200, 205, 214},
         ObjectKind kind = ObjectKind::Generic,
-        std::optional<EntityId> source_entity_id = std::nullopt);
+        std::optional<EntityId> source_entity_id = std::nullopt,
+        std::optional<ObjectId> host_object_id = std::nullopt);
 
     [[nodiscard]] const Object3D* find(ObjectId id) const noexcept;
     [[nodiscard]] Object3D* find(ObjectId id) noexcept;
