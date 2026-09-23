@@ -270,6 +270,60 @@ std::optional<geo3d::Mesh> make_wall_opening_volume(
         base_z);
 }
 
+std::optional<geo3d::Mesh> make_opening_panel(
+    const WallOpeningSpec& opening,
+    double panel_depth) {
+
+    if (!valid(opening) || !finite(panel_depth) || panel_depth <= geo::kEpsilon) {
+        return std::nullopt;
+    }
+
+    const geo::Vec2 delta = opening.wall.end - opening.wall.start;
+    const double wall_length = geo::length(delta);
+    const geo::Vec2 tangent = delta * (1.0 / wall_length);
+    const double center_distance = opening.center_offset * wall_length;
+    const geo::Vec2 center =
+        opening.wall.start + tangent * center_distance;
+    const geo::Vec2 half_span = tangent * (opening.width * 0.5);
+    const double direction = opening.wall.height >= 0.0 ? 1.0 : -1.0;
+
+    return model3d::extrude_polygon(
+        rectangle_around_segment(
+            center - half_span,
+            center + half_span,
+            panel_depth),
+        direction * opening.height,
+        opening.wall.base_z + direction * opening.sill_height);
+}
+
+model3d::ObjectId add_opening_object(
+    model3d::Scene& scene,
+    const WallOpeningSpec& opening,
+    double panel_depth,
+    std::string name,
+    RgbColor color,
+    std::optional<EntityId> source_entity_id) {
+
+    auto mesh = make_opening_panel(opening, panel_depth);
+    if (!mesh.has_value()) {
+        return 0;
+    }
+
+    const model3d::ObjectKind kind =
+        opening.kind == OpeningKind::Door
+            ? model3d::ObjectKind::Door
+            : model3d::ObjectKind::Window;
+    if (name.empty()) {
+        name = opening.kind == OpeningKind::Door ? "Door" : "Window";
+    }
+    return scene.insert(
+        std::move(*mesh),
+        std::move(name),
+        color,
+        kind,
+        source_entity_id);
+}
+
 std::optional<geo3d::Mesh> make_wall_with_openings(
     const WallSpec& wall,
     const std::vector<WallOpeningSpec>& openings) {
@@ -295,10 +349,10 @@ std::optional<geo3d::Mesh> make_wall_with_openings(
             return std::nullopt;
         }
         const double center = opening.center_offset * wall_length;
-        intervals.push_back({
-            std::move(opening),
-            center - opening.width * 0.5,
-            center + opening.width * 0.5});
+        const double half_width = opening.width * 0.5;
+        const double start = center - half_width;
+        const double end = center + half_width;
+        intervals.push_back({std::move(opening), start, end});
     }
     std::sort(
         intervals.begin(), intervals.end(),
