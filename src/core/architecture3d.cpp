@@ -1,7 +1,6 @@
 #include "acp/architecture3d.hpp"
 
 #include <cmath>
-#include <numbers>
 #include <string>
 #include <variant>
 
@@ -23,10 +22,7 @@ std::vector<geo::Vec2> rectangle_around_segment(
         return {};
     }
 
-    const geo::Vec2 normal{
-        -delta.y / length,
-        delta.x / length
-    };
+    const geo::Vec2 normal{-delta.y / length, delta.x / length};
     const geo::Vec2 offset = normal * (thickness * 0.5);
 
     return {
@@ -154,21 +150,21 @@ model3d::Scene walls_from_lines(
             continue;
         }
 
-        const WallSpec wall{
+        auto mesh = make_wall(WallSpec{
             line->segment.a,
             line->segment.b,
             thickness,
             height,
-            base_z
-        };
-        auto mesh = make_wall(wall);
+            base_z});
         if (!mesh.has_value()) {
             continue;
         }
         (void)scene.insert(
             std::move(*mesh),
             "Wall_" + std::to_string(id),
-            document.effective_color(id));
+            document.effective_color(id),
+            model3d::ObjectKind::Wall,
+            id);
     }
     return scene;
 }
@@ -202,7 +198,9 @@ model3d::Scene slabs_from_closed_polylines(
         (void)scene.insert(
             std::move(*mesh),
             "Slab_" + std::to_string(id),
-            document.effective_color(id));
+            document.effective_color(id),
+            model3d::ObjectKind::Slab,
+            id);
     }
     return scene;
 }
