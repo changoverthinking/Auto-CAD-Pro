@@ -3,8 +3,39 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <string>
+#include <string_view>
 
 namespace acp::obj {
+namespace {
+
+std::string_view kind_prefix(model3d::ObjectKind kind) noexcept {
+    switch (kind) {
+        case model3d::ObjectKind::Wall: return "Wall_";
+        case model3d::ObjectKind::Slab: return "Slab_";
+        case model3d::ObjectKind::Column: return "Column_";
+        case model3d::ObjectKind::Beam: return "Beam_";
+        case model3d::ObjectKind::Door: return "Door_";
+        case model3d::ObjectKind::Window: return "Window_";
+        case model3d::ObjectKind::Roof: return "Roof_";
+        case model3d::ObjectKind::Stair: return "Stair_";
+        case model3d::ObjectKind::Generic: break;
+    }
+    return {};
+}
+
+std::string export_name(const model3d::Object3D& object) {
+    std::string name = object.name.empty()
+        ? "Object_" + std::to_string(object.id)
+        : object.name;
+    const std::string_view prefix = kind_prefix(object.kind);
+    if (!prefix.empty() && !std::string_view{name}.starts_with(prefix)) {
+        name = std::string{prefix} + name;
+    }
+    return name;
+}
+
+} // namespace
 
 std::string serialize(const model3d::Scene& scene) {
     std::ostringstream out;
@@ -18,11 +49,7 @@ std::string serialize(const model3d::Scene& scene) {
             continue;
         }
 
-        out << "o "
-            << (object->name.empty()
-                    ? "Object_" + std::to_string(id)
-                    : object->name)
-            << "\n";
+        out << "o " << export_name(*object) << "\n";
 
         for (const geo3d::Vec3 vertex : object->mesh.vertices) {
             out << "v " << vertex.x << ' '
