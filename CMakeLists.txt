@@ -77,6 +77,7 @@ add_library(acp_core
     src/core/layout.cpp
     src/core/ui_layout.cpp
     src/core/command_catalog.cpp
+    src/core/icon_catalog.cpp
     src/core/svg.cpp
     src/core/pdf.cpp
     src/core/recovery.cpp
@@ -155,6 +156,10 @@ if(ACP_BUILD_TESTS)
     target_compile_definitions(acp_command_catalog_tests PRIVATE
         ACP_TEST_FULL_ICON_CATALOG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/full/icon_ids.txt")
     add_test(NAME acp_command_catalog_tests COMMAND acp_command_catalog_tests)
+
+    add_executable(acp_icon_catalog_tests tests/icon_catalog_tests.cpp)
+    target_link_libraries(acp_icon_catalog_tests PRIVATE acp_core)
+    add_test(NAME acp_icon_catalog_tests COMMAND acp_icon_catalog_tests)
 
     add_executable(acp_workflow_regression_tests tests/workflow_regression_tests.cpp)
     target_link_libraries(acp_workflow_regression_tests PRIVATE acp_core)
