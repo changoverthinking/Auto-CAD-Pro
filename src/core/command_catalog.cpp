@@ -9,7 +9,7 @@ using C = CommandDescriptor;
 using W = Workspace;
 using S = FeatureState;
 
-constexpr std::array<C, 78> kCommands{{
+constexpr std::array<C, 79> kCommands{{
     {"file.new", "pack-a.new-drawing", "New Drawing", W::Global, S::Verified, true},
     {"file.open", "pack-a.open", "Open", W::Global, S::Verified, true},
     {"file.save", "pack-a.save", "Save", W::Global, S::Production, true},
