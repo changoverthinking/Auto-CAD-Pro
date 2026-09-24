@@ -84,7 +84,33 @@ target_include_directories(acp_core PUBLIC include PRIVATE third_party/stb)
 target_compile_features(acp_core PUBLIC cxx_std_20)
 
 if(ACP_ENABLE_OPENCASCADE)
-    message(FATAL_ERROR "ACP_ENABLE_OPENCASCADE is reserved until the pinned OpenCASCADE dependency is provisioned in Windows CI. Keep it OFF; the compatibility BRep contract remains available without claiming production topology support.")
+    find_package(OpenCASCADE CONFIG REQUIRED)
+
+    set(ACP_OCCT_TARGETS
+        TKernel
+        TKMath
+        TKG2d
+        TKG3d
+        TKGeomBase
+        TKBRep
+        TKTopAlgo
+        TKGeomAlgo
+        TKPrim
+        TKBO
+        TKMesh)
+
+    foreach(ACP_OCCT_TARGET IN LISTS ACP_OCCT_TARGETS)
+        if(NOT TARGET ${ACP_OCCT_TARGET})
+            message(FATAL_ERROR "OpenCASCADE package is missing required target: ${ACP_OCCT_TARGET}")
+        endif()
+    endforeach()
+
+    target_sources(acp_core PRIVATE src/core/brep_opencascade.cpp)
+    target_compile_definitions(acp_core PRIVATE ACP_ENABLE_OPENCASCADE=1)
+    target_link_libraries(acp_core PRIVATE ${ACP_OCCT_TARGETS})
+    message(STATUS "Auto CAD Pro production BRep backend: OpenCASCADE ${OpenCASCADE_VERSION}")
+else()
+    message(STATUS "Auto CAD Pro BRep backend: compatibility extrusion/tessellation")
 endif()
 
 if(MSVC)

@@ -1,0 +1,61 @@
+name: OpenCASCADE Kernel CI
+
+on:
+  push:
+    branches: [main, "dev/**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: opencascade-ci-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  occt-kernel:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify pinned vcpkg manifest
+        shell: powershell
+        run: |
+          if (!(Test-Path "vcpkg.json")) { throw "vcpkg.json is missing" }
+          $manifest = Get-Content "vcpkg.json" -Raw | ConvertFrom-Json
+          if ($manifest.'builtin-baseline' -ne 'f907dc21e0e8699955b002d0fe7673de5db55fab') {
+            throw "Unexpected vcpkg baseline"
+          }
+          $occt = $manifest.dependencies | Where-Object { $_.name -eq 'opencascade' }
+          if ($null -eq $occt -or $occt.'version>=' -ne '8.0.1') {
+            throw "OpenCASCADE 8.0.1 is not pinned in the manifest"
+          }
+
+      - name: Locate vcpkg toolchain
+        shell: powershell
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:VCPKG_INSTALLATION_ROOT)) {
+            throw "VCPKG_INSTALLATION_ROOT is not available on the runner"
+          }
+          $toolchain = Join-Path $env:VCPKG_INSTALLATION_ROOT "scripts\buildsystems\vcpkg.cmake"
+          if (!(Test-Path $toolchain)) { throw "vcpkg CMake toolchain was not found: $toolchain" }
+          & (Join-Path $env:VCPKG_INSTALLATION_ROOT "vcpkg.exe") version
+
+      - name: Configure production BRep backend
+        shell: powershell
+        run: |
+          $toolchain = Join-Path $env:VCPKG_INSTALLATION_ROOT "scripts\buildsystems\vcpkg.cmake"
+          cmake -S . -B build-occt -A x64 `
+            "-DCMAKE_TOOLCHAIN_FILE=$toolchain" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DACP_ENABLE_OPENCASCADE=ON `
+            -DACP_BUILD_TESTS=ON `
+            -DACP_BUILD_APP=OFF
+          if ($LASTEXITCODE -ne 0) { throw "OpenCASCADE configure failed" }
+
+      - name: Build production BRep backend
+        run: cmake --build build-occt --config Release --parallel
+
+      - name: Test production BRep backend
+        run: ctest --test-dir build-occt -C Release --output-on-failure
+
+      - name: Repeat BRep kernel regression
+        run: ctest --test-dir build-occt -C Release -R "acp_(brep|bim_brep)_tests" --repeat until-fail:3 --output-on-failure

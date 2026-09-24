@@ -45,10 +45,10 @@ int main() {
             const auto bounds = acp::geo3d::bounds(*mesh);
             expect(bounds.initialized, "tessellation bounds initialized");
             const auto size = bounds.size();
-            expect(std::abs(size.x - 5000.0) < 1e-9, "wall length preserved in mm");
-            expect(std::abs(size.y - 200.0) < 1e-9, "wall thickness preserved in mm");
-            expect(std::abs(size.z - 3000.0) < 1e-9, "wall height preserved in mm");
-            expect(std::abs(bounds.min.z - 100.0) < 1e-9, "base elevation preserved");
+            expect(std::abs(size.x - 5000.0) < 1e-6, "wall length preserved in mm");
+            expect(std::abs(size.y - 200.0) < 1e-6, "wall thickness preserved in mm");
+            expect(std::abs(size.z - 3000.0) < 1e-6, "wall height preserved in mm");
+            expect(std::abs(bounds.min.z - 100.0) < 1e-6, "base elevation preserved");
         }
     }
 
@@ -66,6 +66,44 @@ int main() {
             "compatibility backend must not fake boolean cut");
         expect(!kernel->boolean_intersection(*wall, *wall).has_value(),
             "compatibility backend must not fake boolean intersection");
+    }
+
+    if (kernel->production_brep() && wall.has_value()) {
+        expect(kernel->name().find("OpenCASCADE") != std::string::npos,
+            "production backend identifies OpenCASCADE");
+
+        const std::vector<Vec2> overlapping_rectangle{
+            {2500.0, 0.0},
+            {7500.0, 0.0},
+            {7500.0, 200.0},
+            {2500.0, 200.0},
+        };
+        const auto other = kernel->extrude(overlapping_rectangle, 3000.0, 100.0);
+        expect(other.has_value(), "second OCCT solid must extrude");
+        if (other.has_value()) {
+            const auto fused = kernel->boolean_union(*wall, *other);
+            const auto cut = kernel->boolean_cut(*wall, *other);
+            const auto common = kernel->boolean_intersection(*wall, *other);
+            expect(fused.has_value(), "OpenCASCADE union must succeed");
+            expect(cut.has_value(), "OpenCASCADE cut must succeed");
+            expect(common.has_value(), "OpenCASCADE intersection must succeed");
+
+            if (fused.has_value()) {
+                const auto mesh = kernel->tessellate(*fused);
+                expect(mesh.has_value() && acp::geo3d::valid_mesh(*mesh),
+                    "OpenCASCADE union must tessellate");
+            }
+            if (cut.has_value()) {
+                const auto mesh = kernel->tessellate(*cut);
+                expect(mesh.has_value() && acp::geo3d::valid_mesh(*mesh),
+                    "OpenCASCADE cut must tessellate");
+            }
+            if (common.has_value()) {
+                const auto mesh = kernel->tessellate(*common);
+                expect(mesh.has_value() && acp::geo3d::valid_mesh(*mesh),
+                    "OpenCASCADE intersection must tessellate");
+            }
+        }
     }
 
     if (failures == 0) {

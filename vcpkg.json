@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "auto-cad-pro",
+  "version-string": "0.2.0",
+  "builtin-baseline": "f907dc21e0e8699955b002d0fe7673de5db55fab",
+  "dependencies": [
+    {
+      "name": "opencascade",
+      "default-features": false,
+      "version>=": "8.0.1"
+    }
+  ]
+}
