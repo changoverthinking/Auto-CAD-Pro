@@ -29,7 +29,7 @@ jobs:
             throw "OpenCASCADE 8.0.1 is not pinned in the manifest"
           }
 
-      - name: Locate vcpkg toolchain
+      - name: Prepare pinned vcpkg baseline
         shell: powershell
         run: |
           if ([string]::IsNullOrWhiteSpace($env:VCPKG_INSTALLATION_ROOT)) {
@@ -37,6 +37,13 @@ jobs:
           }
           $toolchain = Join-Path $env:VCPKG_INSTALLATION_ROOT "scripts\buildsystems\vcpkg.cmake"
           if (!(Test-Path $toolchain)) { throw "vcpkg CMake toolchain was not found: $toolchain" }
+
+          $baseline = "f907dc21e0e8699955b002d0fe7673de5db55fab"
+          git -C $env:VCPKG_INSTALLATION_ROOT fetch origin $baseline --depth=1
+          if ($LASTEXITCODE -ne 0) { throw "Could not fetch pinned vcpkg baseline $baseline" }
+          git -C $env:VCPKG_INSTALLATION_ROOT show "$baseline`:versions/baseline.json" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Pinned vcpkg baseline is not readable after fetch" }
+
           & (Join-Path $env:VCPKG_INSTALLATION_ROOT "vcpkg.exe") version
 
       - name: Configure production BRep backend
