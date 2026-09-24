@@ -84,6 +84,7 @@ struct Element {
     double unconnected_height_mm{0.0};
     double thickness_mm{0.0};
     std::optional<LocationCurve> location_curve;
+    std::vector<geo::Vec2> footprint;
     std::vector<MaterialId> materials;
     ParameterSet parameters;
     bool structural{false};

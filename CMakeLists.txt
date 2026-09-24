@@ -6,8 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
-    # Produce a self-contained Windows executable that does not depend on
-    # a separately installed Visual C++ runtime.
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
@@ -53,6 +51,7 @@ add_library(acp_core
     src/core/model3d.cpp
     src/core/project_model.cpp
     src/core/brep.cpp
+    src/core/bim_brep.cpp
     src/core/architecture3d.cpp
     src/core/architecture3d_hosting.cpp
     src/core/architecture3d_advanced.cpp
@@ -173,6 +172,10 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_brep_tests tests/brep_tests.cpp)
     target_link_libraries(acp_brep_tests PRIVATE acp_core)
     add_test(NAME acp_brep_tests COMMAND acp_brep_tests)
+
+    add_executable(acp_bim_brep_tests tests/bim_brep_tests.cpp)
+    target_link_libraries(acp_bim_brep_tests PRIVATE acp_core)
+    add_test(NAME acp_bim_brep_tests COMMAND acp_bim_brep_tests)
 
     add_executable(acp_architecture3d_tests tests/architecture3d_tests.cpp)
     target_link_libraries(acp_architecture3d_tests PRIVATE acp_core)
