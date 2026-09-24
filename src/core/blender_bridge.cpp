@@ -1,8 +1,10 @@
 #include "acp/blender_bridge.hpp"
 
 #include "acp/obj.hpp"
+#include "acp/units.hpp"
 
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 
 namespace acp::blender {
@@ -38,6 +40,12 @@ std::string quote_command_arg(const std::filesystem::path& path) {
     return quoted;
 }
 
+std::string python_number(double value) {
+    std::ostringstream out;
+    out << std::setprecision(17) << value;
+    return out.str();
+}
+
 } // namespace
 
 std::string import_script(
@@ -57,9 +65,13 @@ SAVE_BLEND_PATH = )";
         out << "None";
     }
 
-    out << R"(
+    out << "\nACP_TO_METERS = "
+        << python_number(units::canonical_to_meters(1.0))
+        << R"(
 
-# Auto CAD Pro currently transfers drawing units 1:1 and marks the scene Metric.
+# Auto CAD Pro canonical geometry is millimeters. Blender's scene is metric,
+# so imported geometry is converted explicitly to meters. This prevents an
+# architectural 3000 mm wall from becoming a 3000 m wall.
 scene = bpy.context.scene
 scene.unit_settings.system = 'METRIC'
 scene.unit_settings.scale_length = 1.0
@@ -97,9 +109,18 @@ def classify(name):
     return "Generic", "ACP_Generic"
 
 for obj in imported:
+    # OBJ has no standard unit metadata. Convert ACP's canonical millimeters to
+    # Blender meters at the bridge boundary and apply the transform so later
+    # modifiers/material workflows see real metric dimensions.
+    obj.scale = tuple(component * ACP_TO_METERS for component in obj.scale)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
     kind, collection_name = classify(obj.name)
     obj["auto_cad_pro_source"] = True
     obj["auto_cad_pro_kind"] = kind
+    obj["auto_cad_pro_source_unit"] = "millimeter"
     target = ensure_collection(collection_name)
     for collection in list(obj.users_collection):
         collection.objects.unlink(obj)
