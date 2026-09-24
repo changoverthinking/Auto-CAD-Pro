@@ -50,6 +50,7 @@ add_library(acp_core
     src/core/geometry2d.cpp
     src/core/geometry3d.cpp
     src/core/model3d.cpp
+    src/core/project_model.cpp
     src/core/architecture3d.cpp
     src/core/architecture3d_hosting.cpp
     src/core/architecture3d_advanced.cpp
@@ -158,6 +159,10 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_model3d_blender_tests tests/model3d_blender_tests.cpp)
     target_link_libraries(acp_model3d_blender_tests PRIVATE acp_core)
     add_test(NAME acp_model3d_blender_tests COMMAND acp_model3d_blender_tests)
+
+    add_executable(acp_project_model_tests tests/project_model_tests.cpp)
+    target_link_libraries(acp_project_model_tests PRIVATE acp_core)
+    add_test(NAME acp_project_model_tests COMMAND acp_project_model_tests)
 
     add_executable(acp_architecture3d_tests tests/architecture3d_tests.cpp)
     target_link_libraries(acp_architecture3d_tests PRIVATE acp_core)
