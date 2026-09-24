@@ -2,6 +2,7 @@
 #include "acp/document.hpp"
 #include "acp/model3d.hpp"
 #include "acp/obj.hpp"
+#include "acp/units.hpp"
 #include "acp/viewport3d.hpp"
 
 #include <cmath>
@@ -43,6 +44,19 @@ std::size_t count_lines_with_prefix(
 
 int main() {
     using acp::geo::Vec2;
+
+    expect(
+        acp::units::kCanonicalLengthUnit == acp::units::LengthUnit::Millimeter,
+        "canonical internal unit remains millimeter during compatibility phase");
+    expect(
+        std::abs(acp::units::canonical_to_meters(3000.0) - 3.0) < 1e-12,
+        "3000 canonical millimeters convert to 3 meters");
+    expect(
+        std::abs(acp::units::convert_length(
+            1.0,
+            acp::units::LengthUnit::Foot,
+            acp::units::LengthUnit::Millimeter) - 304.8) < 1e-9,
+        "foot to millimeter conversion is correct");
 
     const std::vector<Vec2> square{
         {0.0, 0.0},
@@ -112,6 +126,15 @@ int main() {
     expect(
         script.find("scene.unit_settings.system = 'METRIC'") != std::string::npos,
         "Blender bridge sets metric units");
+    expect(
+        script.find("ACP_TO_METERS = 0.001") != std::string::npos,
+        "Blender bridge converts canonical millimeters to meters");
+    expect(
+        script.find("transform_apply(location=False, rotation=False, scale=True)") != std::string::npos,
+        "Blender bridge applies unit scale to imported geometry");
+    expect(
+        script.find("auto_cad_pro_source_unit") != std::string::npos,
+        "Blender bridge records source unit metadata");
     expect(
         script.find("bpy.ops.wm.obj_import") != std::string::npos,
         "Blender 4 OBJ import path present");
