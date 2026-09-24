@@ -83,6 +83,16 @@ struct Element {
     double top_offset_mm{0.0};
     double unconnected_height_mm{0.0};
     double thickness_mm{0.0};
+
+    // Hosted opening / component dimensions. For Door and Window elements,
+    // host_offset_normalized locates the center along the host Wall centerline.
+    double width_mm{0.0};
+    double height_mm{0.0};
+    double depth_mm{0.0};
+    double sill_height_mm{0.0};
+    double host_offset_normalized{0.5};
+    double cut_clearance_mm{2.0};
+
     std::optional<LocationCurve> location_curve;
     std::vector<geo::Vec2> footprint;
     std::vector<MaterialId> materials;
@@ -111,6 +121,7 @@ public:
     [[nodiscard]] const Element* find_element(ElementId id) const;
     [[nodiscard]] Element* find_element(ElementId id);
     [[nodiscard]] std::optional<ElementId> host_of(ElementId hosted) const;
+    [[nodiscard]] std::vector<ElementId> hosted_by(ElementId host) const;
 
     [[nodiscard]] std::vector<LevelId> level_ids() const;
     [[nodiscard]] std::vector<ElementId> element_ids() const;

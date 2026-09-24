@@ -106,6 +106,17 @@ std::optional<ElementId> ProjectModel::host_of(ElementId hosted) const {
     return it->second;
 }
 
+std::vector<ElementId> ProjectModel::hosted_by(ElementId host) const {
+    std::vector<ElementId> ids;
+    for (const auto& [hosted, mapped_host] : host_by_element_) {
+        if (mapped_host == host && elements_.contains(hosted)) {
+            ids.push_back(hosted);
+        }
+    }
+    std::sort(ids.begin(), ids.end());
+    return ids;
+}
+
 std::vector<LevelId> ProjectModel::level_ids() const {
     std::vector<LevelId> ids;
     ids.reserve(levels_.size());
