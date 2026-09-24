@@ -14,6 +14,7 @@ endif()
 option(ACP_BUILD_TESTS "Build Auto CAD Pro tests" ON)
 option(ACP_BUILD_APP "Build Auto CAD Pro Windows desktop application" ON)
 option(ACP_ENABLE_GUI_TEST_HOOKS "Enable test-only GUI integration hooks" OFF)
+option(ACP_ENABLE_OPENCASCADE "Enable the production OpenCASCADE BRep backend" OFF)
 
 set(ACP_PDF_FONT_DIR "${CMAKE_BINARY_DIR}/assets")
 set(ACP_PDF_FONT_FILE "${ACP_PDF_FONT_DIR}/NotoSansJP.ttf")
@@ -51,6 +52,7 @@ add_library(acp_core
     src/core/geometry3d.cpp
     src/core/model3d.cpp
     src/core/project_model.cpp
+    src/core/brep.cpp
     src/core/architecture3d.cpp
     src/core/architecture3d_hosting.cpp
     src/core/architecture3d_advanced.cpp
@@ -81,6 +83,10 @@ add_library(acp_core
 )
 target_include_directories(acp_core PUBLIC include PRIVATE third_party/stb)
 target_compile_features(acp_core PUBLIC cxx_std_20)
+
+if(ACP_ENABLE_OPENCASCADE)
+    message(FATAL_ERROR "ACP_ENABLE_OPENCASCADE is reserved until the pinned OpenCASCADE dependency is provisioned in Windows CI. Keep it OFF; the compatibility BRep contract remains available without claiming production topology support.")
+endif()
 
 if(MSVC)
     target_compile_options(acp_core PRIVATE /W4 /permissive- /EHsc /utf-8)
@@ -163,6 +169,10 @@ if(ACP_BUILD_TESTS)
     add_executable(acp_project_model_tests tests/project_model_tests.cpp)
     target_link_libraries(acp_project_model_tests PRIVATE acp_core)
     add_test(NAME acp_project_model_tests COMMAND acp_project_model_tests)
+
+    add_executable(acp_brep_tests tests/brep_tests.cpp)
+    target_link_libraries(acp_brep_tests PRIVATE acp_core)
+    add_test(NAME acp_brep_tests COMMAND acp_brep_tests)
 
     add_executable(acp_architecture3d_tests tests/architecture3d_tests.cpp)
     target_link_libraries(acp_architecture3d_tests PRIVATE acp_core)
