@@ -1,0 +1,8 @@
+#include "icon_catalog_desc_00.inc"
+#include "icon_catalog_desc_01.inc"
+#include "icon_catalog_desc_02.inc"
+#include "icon_catalog_desc_03.inc"
+#include "icon_catalog_desc_04.inc"
+#include "icon_catalog_desc_05.inc"
+#include "icon_catalog_desc_06.inc"
+#include "icon_catalog_desc_07.inc"
