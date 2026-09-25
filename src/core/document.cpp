@@ -1,4 +1,5 @@
 #include "acp/document.hpp"
+#include "acp/id_allocation.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -72,10 +73,8 @@ void Document::mark_changed() noexcept {
 }
 
 EntityId Document::insert(Entity entity) {
-    while (entities_.contains(next_id_)) {
-        ++next_id_;
-    }
-    const EntityId id = next_id_++;
+    const EntityId id = detail::allocate_id(entities_, next_id_);
+    if (id == 0) return 0;
     entities_.emplace(id, std::move(entity));
     properties_.emplace(id, EntityProperties{});
     mark_changed();
@@ -221,10 +220,8 @@ LayerId Document::create_layer(std::string name) {
     if (name.empty() || layer_name_exists(name)) {
         return 0;
     }
-    while (layers_.contains(next_layer_id_)) {
-        ++next_layer_id_;
-    }
-    const LayerId id = next_layer_id_++;
+    const LayerId id = detail::allocate_id(layers_, next_layer_id_);
+    if (id == 0) return 0;
     layers_.emplace(id, Layer{id, std::move(name), true, false, 0.25});
     mark_changed();
     return id;

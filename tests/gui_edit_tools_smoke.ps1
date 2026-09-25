@@ -199,6 +199,38 @@ try {
         throw "GUI Extend did not modify target geometry"
     }
 
+    # Circle offset uses the same through-point tool as lines.
+    Send-Key $hwnd 0x43 # C
+    Click-Client $hwnd 250 480
+    Click-Client $hwnd 290 480
+    $circleBase = Snapshot $hwnd 33
+    Send-Key $hwnd 0x4F # O
+    Click-Client $hwnd 320 480
+    $circleOffset = Snapshot $hwnd 34
+    if (($circleOffset | Select-String -Pattern '(?m)^E\s+.*\sCIRCLE\s+' -AllMatches).Matches.Count -ne 2) {
+        throw "GUI Offset failed to create a concentric circle"
+    }
+    Send-CtrlKey $hwnd 0x5A
+    if ((Snapshot $hwnd 35) -ne $circleBase) { throw "Circle offset Undo mismatch" }
+    Send-CtrlKey $hwnd 0x59
+    if ((Snapshot $hwnd 36) -ne $circleOffset) { throw "Circle offset Redo mismatch" }
+
+    Send-Key $hwnd 0x41 # A: center, start, end
+    Click-Client $hwnd 420 480
+    Click-Client $hwnd 460 480
+    Click-Client $hwnd 420 440
+    $arcBase = Snapshot $hwnd 37
+    Send-Key $hwnd 0x4F
+    Click-Client $hwnd 490 480
+    $arcOffset = Snapshot $hwnd 38
+    if (($arcOffset | Select-String -Pattern '(?m)^E\s+.*\sARC\s+' -AllMatches).Matches.Count -ne 2) {
+        throw "GUI Offset failed to create a concentric arc"
+    }
+    Send-CtrlKey $hwnd 0x5A
+    if ((Snapshot $hwnd 39) -ne $arcBase) { throw "Arc offset Undo mismatch" }
+    Send-CtrlKey $hwnd 0x59
+    if ((Snapshot $hwnd 40) -ne $arcOffset) { throw "Arc offset Redo mismatch" }
+
     Write-Host "GUI edit-tools regression test passed"
 }
 finally {

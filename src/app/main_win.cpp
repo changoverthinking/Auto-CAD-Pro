@@ -4069,23 +4069,19 @@ void handle_left_click(HWND hwnd, POINT point) {
             return;
         }
         const acp::Entity* source = g_app.document.find(*g_app.selected);
-        if (source != nullptr && std::holds_alternative<LineEntity>(*source)) {
-            const auto& segment = std::get<LineEntity>(*source).segment;
-            const Vec2 direction = segment.b - segment.a;
-            const double length = acp::geo::length(direction);
-            if (length > acp::geo::kEpsilon) {
-                const double signed_distance =
-                    acp::geo::cross(direction, world - segment.a) / length;
-                const auto offset = acp::edit2d::offset_segment(
-                    segment, signed_distance);
-                if (offset.has_value()) {
-                    auto command = std::make_unique<acp::AddEntityCommand>(
-                        LineEntity{*offset});
-                    auto* command_ptr = command.get();
-                    if (apply_history(std::move(command))) {
-                        g_app.document.set_entity_layer(command_ptr->id(), g_app.active_layer);
-                        g_app.selected = command_ptr->id();
+        if (source != nullptr) {
+            const auto offset = acp::edit2d::offset_through_point(*source, world);
+            const auto* properties = g_app.document.properties(*g_app.selected);
+            if (offset.has_value() && properties != nullptr) {
+                auto inherited = *properties;
+                inherited.layer_id = g_app.active_layer;
+                auto command = std::make_unique<acp::AddEntityCommand>(*offset);
+                auto* command_ptr = command.get();
+                if (apply_history(std::move(command))) {
+                    if (auto* added = g_app.document.properties(command_ptr->id())) {
+                        *added = inherited;
                     }
+                    g_app.selected = command_ptr->id();
                 }
             }
         }
