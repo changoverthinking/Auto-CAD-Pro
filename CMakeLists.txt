@@ -173,6 +173,10 @@ if(ACP_BUILD_TESTS)
     target_link_libraries(acp_recovery_tests PRIVATE acp_core)
     add_test(NAME acp_recovery_tests COMMAND acp_recovery_tests)
 
+    add_executable(acp_persistence_safety_tests tests/persistence_safety_tests.cpp)
+    target_link_libraries(acp_persistence_safety_tests PRIVATE acp_core)
+    add_test(NAME acp_persistence_safety_tests COMMAND acp_persistence_safety_tests)
+
     add_executable(acp_layout_print_workflow_tests tests/layout_print_workflow_tests.cpp)
     target_link_libraries(acp_layout_print_workflow_tests PRIVATE acp_core)
     target_compile_definitions(acp_layout_print_workflow_tests PRIVATE

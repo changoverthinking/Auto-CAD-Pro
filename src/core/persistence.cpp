@@ -35,6 +35,7 @@ bool write_bytes(const std::filesystem::path& path, std::string_view data) {
     if (!out) return false;
     out.write(data.data(), static_cast<std::streamsize>(data.size()));
     out.flush();
+    out.close();
     return out.good();
 }
 
@@ -59,11 +60,8 @@ bool replace_file_atomic(
         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
 #else
     std::error_code ec;
-    std::filesystem::rename(source, destination, ec);
-    if (!ec) return true;
-
-    std::filesystem::remove(destination, ec);
-    ec.clear();
+    // POSIX rename already replaces a regular destination atomically. On
+    // failure, preserve the destination; deleting it first can destroy data.
     std::filesystem::rename(source, destination, ec);
     return !ec;
 #endif
@@ -83,7 +81,8 @@ bool read_points(std::istream& in, std::vector<geo::Vec2>& points) {
     }
 
     points.clear();
-    points.reserve(count);
+    // Counts come from untrusted files. Allocate only for points actually read,
+    // so a truncated file cannot request an enormous allocation up front.
     for (std::size_t i = 0; i < count; ++i) {
         geo::Vec2 point;
         if (!(in >> point.x >> point.y)) {
@@ -392,6 +391,8 @@ std::optional<ProjectData> deserialize_project(std::string_view data) {
 
     while (in >> record) {
         if (record == "END") {
+            in >> std::ws;
+            if (!in.eof()) return std::nullopt;
             return saw_default_layer ? std::optional<ProjectData>{std::move(project)} : std::nullopt;
         }
 
@@ -489,7 +490,7 @@ std::optional<ProjectData> deserialize_project(std::string_view data) {
             if (!(in >> definition.id >> std::quoted(definition.name)
                      >> definition.base_point.x >> definition.base_point.y >> count)) return std::nullopt;
 
-            definition.geometry.reserve(count);
+            // Grow only as primitives are successfully parsed (see read_points).
             for (std::size_t i = 0; i < count; ++i) {
                 BlockPrimitive primitive;
                 if (!read_primitive(in, primitive)) return std::nullopt;
