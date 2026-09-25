@@ -65,6 +65,15 @@ bool ProjectModel::set_host(ElementId hosted, ElementId host) {
     if (hosted == host || !elements_.contains(hosted) || !elements_.contains(host)) {
         return false;
     }
+    // Reject cycles before touching the old host relationship. The bounded
+    // traversal also refuses a pre-existing corrupt chain instead of hanging.
+    ElementId ancestor = host;
+    for (std::size_t depth = 0; ; ++depth) {
+        if (ancestor == hosted || depth >= elements_.size()) return false;
+        const auto parent = host_by_element_.find(ancestor);
+        if (parent == host_by_element_.end()) break;
+        ancestor = parent->second;
+    }
     host_by_element_[hosted] = host;
     return true;
 }

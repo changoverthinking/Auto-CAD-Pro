@@ -1,6 +1,7 @@
 #include "acp/block.hpp"
 
 #include "acp/transform.hpp"
+#include "acp/id_allocation.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -21,7 +22,9 @@ void transform_primitive(
         using T = std::decay_t<decltype(value)>;
 
         const auto transform_point = [&](geo::Vec2 point) {
-            geo::Vec2 result = base_point + (point - base_point) * instance.scale;
+            auto local = (point - base_point) * instance.scale;
+            if (instance.mirrored) local.y = -local.y;
+            geo::Vec2 result = base_point + local;
             result = transform::rotate_point(result, base_point, instance.rotation);
             return instance.insertion_point + (result - base_point);
         };
@@ -35,8 +38,10 @@ void transform_primitive(
         } else if constexpr (std::is_same_v<T, ArcEntity>) {
             value.arc.center = transform_point(value.arc.center);
             value.arc.radius *= instance.scale;
-            value.arc.start_angle += instance.rotation;
-            value.arc.end_angle += instance.rotation;
+            const double orientation = instance.mirrored ? -1.0 : 1.0;
+            value.arc.start_angle = orientation * value.arc.start_angle + instance.rotation;
+            value.arc.end_angle = orientation * value.arc.end_angle + instance.rotation;
+            if (instance.mirrored) value.arc.counter_clockwise = !value.arc.counter_clockwise;
         } else if constexpr (std::is_same_v<T, PolylineEntity>) {
             for (auto& point : value.points) {
                 point = transform_point(point);
@@ -56,11 +61,8 @@ BlockId BlockLibrary::create(
         return 0;
     }
 
-    while (blocks_.contains(next_id_)) {
-        ++next_id_;
-    }
-
-    const BlockId id = next_id_++;
+    const BlockId id = detail::allocate_id(blocks_, next_id_);
+    if (id == 0) return 0;
     blocks_.emplace(id, BlockDefinition{id, std::move(name), base_point, std::move(geometry)});
     return id;
 }

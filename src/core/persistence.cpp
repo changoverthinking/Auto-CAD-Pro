@@ -35,6 +35,7 @@ bool write_bytes(const std::filesystem::path& path, std::string_view data) {
     if (!out) return false;
     out.write(data.data(), static_cast<std::streamsize>(data.size()));
     out.flush();
+    out.close();
     return out.good();
 }
 
@@ -59,11 +60,8 @@ bool replace_file_atomic(
         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
 #else
     std::error_code ec;
-    std::filesystem::rename(source, destination, ec);
-    if (!ec) return true;
-
-    std::filesystem::remove(destination, ec);
-    ec.clear();
+    // POSIX rename already replaces a regular destination atomically. On
+    // failure, preserve the destination; deleting it first can destroy data.
     std::filesystem::rename(source, destination, ec);
     return !ec;
 #endif
@@ -83,7 +81,8 @@ bool read_points(std::istream& in, std::vector<geo::Vec2>& points) {
     }
 
     points.clear();
-    points.reserve(count);
+    // Counts come from untrusted files. Allocate only for points actually read,
+    // so a truncated file cannot request an enormous allocation up front.
     for (std::size_t i = 0; i < count; ++i) {
         geo::Vec2 point;
         if (!(in >> point.x >> point.y)) {
@@ -200,7 +199,10 @@ void write_entity_payload(std::ostream& out, const Entity& entity) {
             out << "POLY " << (value.closed ? 1 : 0) << ' ';
             write_points(out, value.points);
         } else if constexpr (std::is_same_v<T, BlockReferenceEntity>) {
-            out << "BLOCKREF "
+            // Older readers reject the new token instead of silently opening
+            // reflected blocks with the wrong handedness. Ordinary blocks keep
+            // the original v1 payload for compatibility.
+            out << (value.mirrored ? "BLOCKREF_MIRRORED " : "BLOCKREF ")
                 << value.block_id << ' '
                 << value.insertion_point.x << ' ' << value.insertion_point.y << ' '
                 << value.rotation << ' ' << value.scale;
@@ -265,8 +267,9 @@ bool read_entity_payload(std::istream& in, const BlockLibrary& blocks, Entity& e
         entity = std::move(value);
         return true;
     }
-    if (type == "BLOCKREF") {
+    if (type == "BLOCKREF" || type == "BLOCKREF_MIRRORED") {
         BlockReferenceEntity value;
+        value.mirrored = type == "BLOCKREF_MIRRORED";
         if (!(in >> value.block_id >> value.insertion_point.x >> value.insertion_point.y
                  >> value.rotation >> value.scale) ||
             blocks.find(value.block_id) == nullptr) return false;
@@ -392,6 +395,8 @@ std::optional<ProjectData> deserialize_project(std::string_view data) {
 
     while (in >> record) {
         if (record == "END") {
+            in >> std::ws;
+            if (!in.eof()) return std::nullopt;
             return saw_default_layer ? std::optional<ProjectData>{std::move(project)} : std::nullopt;
         }
 
@@ -489,7 +494,7 @@ std::optional<ProjectData> deserialize_project(std::string_view data) {
             if (!(in >> definition.id >> std::quoted(definition.name)
                      >> definition.base_point.x >> definition.base_point.y >> count)) return std::nullopt;
 
-            definition.geometry.reserve(count);
+            // Grow only as primitives are successfully parsed (see read_points).
             for (std::size_t i = 0; i < count; ++i) {
                 BlockPrimitive primitive;
                 if (!read_primitive(in, primitive)) return std::nullopt;
