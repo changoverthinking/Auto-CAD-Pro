@@ -25,7 +25,7 @@ Giảm thao tác lặp khi chỉnh sửa bản vẽ 2D; một thao tác nhóm t�
 
 ## Bằng chứng và giới hạn
 
-- Kiểm thử core: `acp_group_selection_tests`; bộ CTest đầy đủ hiện có 24 suite, đã chạy lặp 5 lần thành công trên Linux (120 lượt).
+- Kiểm thử core: `acp_group_selection_tests`; bộ CTest đầy đủ hiện có 25 suite, đã chạy lặp 5 lần thành công trên Linux (125 lượt).
 - Windows: `tests/gui_group_selection_smoke.ps1` kiểm tra Ctrl-click, Ctrl+A/menu, Move/Copy/Rotate/Scale/Mirror/Delete và Undo/Redo bằng snapshot dự án. Kết quả Windows chỉ được xác nhận sau CI.
 - Giao dịch nhóm sao chép tài liệu tạm trong lúc thực thi; lịch sử chỉ giữ dữ liệu lệnh con. Chưa có benchmark đủ 10k/100k đối tượng để chấm hiệu năng 8/10.
 - Chưa có chọn bằng cửa sổ/crossing, chỉnh thuộc tính hàng loạt, lựa chọn BIM hoặc preview hình học toàn nhóm. Hướng dẫn điểm gốc/đích hiện dùng đường chỉ dẫn sẵn có.

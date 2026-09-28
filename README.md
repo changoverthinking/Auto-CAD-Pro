@@ -42,6 +42,14 @@ Current architectural/3D foundation:
 
 The Windows GUI and 2D release foundation are in verified gates. Architectural 3D is now active development rather than a future-only phase. PDF embeds the bundled Noto Sans JP Unicode font with ToUnicode mapping for Japanese/Vietnamese text instead of relying on system fonts.
 
+## Precise coordinate entry
+
+Choose a 2D drawing tool and press **F6** (Draw -> Enter Coordinates).
+Enter absolute `x,y`, relative `@dx,dy`, or relative polar `@distance<degrees`
+coordinates in millimeters. Relative input uses the previous point of the current
+operation. Typed points bypass object snap and screen-pixel rounding.
+See `docs/PRECISE_COORDINATE_INPUT.md` for workflows and limitations.
+
 ## Development gates
 
 A feature is not considered implemented until it has:

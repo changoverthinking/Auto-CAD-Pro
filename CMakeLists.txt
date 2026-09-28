@@ -46,6 +46,7 @@ if(ACP_BUILD_APP OR ACP_BUILD_TESTS)
 endif()
 
 add_library(acp_core
+    src/core/coordinate_input.cpp
     src/core/geometry2d.cpp
     src/core/geometry3d.cpp
     src/core/model3d.cpp
@@ -143,6 +144,9 @@ endif()
 
 if(ACP_BUILD_TESTS)
     enable_testing()
+    add_executable(acp_coordinate_input_tests tests/coordinate_input_tests.cpp)
+    target_link_libraries(acp_coordinate_input_tests PRIVATE acp_core)
+    add_test(NAME acp_coordinate_input_tests COMMAND acp_coordinate_input_tests)
     add_executable(acp_core_tests tests/core_tests.cpp)
     target_link_libraries(acp_core_tests PRIVATE acp_core)
     target_compile_definitions(acp_core_tests PRIVATE

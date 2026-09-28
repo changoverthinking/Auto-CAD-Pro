@@ -4,6 +4,11 @@ Ngày đánh giá: 2026-09-25. Baseline main: `394dacc2b7bf9e826b838db5eb8e2da2a
 
 ## Kết luận
 
+Cập nhật 2026-09-28: PR #55 đã vào main sau khi Windows CI 36110340677 và
+OpenCASCADE CI 36110340683 cùng đạt. Đợt tiếp theo bổ sung nhập tọa độ 2D qua F6;
+xem `PRECISE_COORDINATE_INPUT.md`. Các điểm dưới đây là baseline của đánh giá,
+chưa được tự động nâng lên 8 chỉ bởi các thay đổi này.
+
 Chưa ngang AutoCAD/QCAD Professional về CAD 2D phục vụ hồ sơ xây dựng, chưa ngang
 FreeCAD về mô hình tham số. Hiện là nền tảng CAD đang phát triển, có executable
 Windows và nhiều bài kiểm thử tự động, nhưng chưa đủ để thay thế phần mềm chuyên
@@ -113,6 +118,6 @@ thương mại (nếu chọn) và ký số cần được giải quyết riêng 
 
 Đã triển khai tập lựa chọn nhiều đối tượng bằng Ctrl-click/Ctrl+A/menu, khung chọn từng thành viên và số lượng lựa chọn. Move, Copy, Rotate, Scale, Mirror, Delete dùng một giao dịch Undo/Redo; từ chối toàn bộ nếu có thành viên không được sửa. Copy giữ thuộc tính riêng của từng thành viên. Kết quả biến đổi không hữu hạn bị chặn trước khi áp dụng.
 
-Kiểm chứng core: 24 suite × 5 lần đều đạt; thêm kiểm thử lỗi giữa giao dịch, layer khóa/ẩn, Copy giữ ID/thuộc tính và round-trip dự án. Kiểm thử Windows mới đã được đăng ký, cần CI xác nhận trước tích hợp. Chi tiết sử dụng và giới hạn: [GROUP_SELECTION.md](GROUP_SELECTION.md).
+Kiểm chứng core: 25 suite × 5 lần đều đạt; thêm kiểm thử lỗi giữa giao dịch, layer khóa/ẩn, Copy giữ ID/thuộc tính và round-trip dự án. Kiểm thử Windows mới đã được đăng ký, cần CI xác nhận trước tích hợp. Chi tiết sử dụng và giới hạn: [GROUP_SELECTION.md](GROUP_SELECTION.md).
 
 Chưa nâng điểm lên 8/10 chỉ từ thay đổi này. Năng suất 2D còn thiếu window/crossing, Ortho và các tình huống CAD thực tế; hiệu năng cần đo trên bản vẽ lớn; các mục trao đổi định dạng, BIM, plugin và trải nghiệm người dùng trong bảng gốc vẫn cần hoàn thiện và nghiệm thu riêng.
