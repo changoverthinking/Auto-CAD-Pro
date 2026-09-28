@@ -4,6 +4,11 @@ Ngày đánh giá: 2026-09-25. Baseline main: `394dacc2b7bf9e826b838db5eb8e2da2a
 
 ## Kết luận
 
+Cập nhật 2026-09-28: PR #55 đã vào main sau khi Windows CI 36110340677 và
+OpenCASCADE CI 36110340683 cùng đạt. Đợt tiếp theo bổ sung nhập tọa độ 2D qua F6;
+xem `PRECISE_COORDINATE_INPUT.md`. Các điểm dưới đây là baseline của đánh giá,
+chưa được tự động nâng lên 8 chỉ bởi các thay đổi này.
+
 Chưa ngang AutoCAD/QCAD Professional về CAD 2D phục vụ hồ sơ xây dựng, chưa ngang
 FreeCAD về mô hình tham số. Hiện là nền tảng CAD đang phát triển, có executable
 Windows và nhiều bài kiểm thử tự động, nhưng chưa đủ để thay thế phần mềm chuyên
