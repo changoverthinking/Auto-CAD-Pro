@@ -50,6 +50,41 @@ std::optional<geo::Segment> offset_segment(
     return geo::Segment{source.a + delta, source.b + delta};
 }
 
+std::optional<geo::Circle> offset_circle(geo::Circle source, double distance) noexcept {
+    const double radius = source.radius + distance;
+    if (!std::isfinite(source.center.x) || !std::isfinite(source.center.y) ||
+        !std::isfinite(source.radius) || source.radius <= geo::kEpsilon ||
+        !std::isfinite(distance) || !std::isfinite(radius) || radius <= geo::kEpsilon) return std::nullopt;
+    source.radius = radius;
+    return source;
+}
+
+std::optional<geo::Arc> offset_arc(geo::Arc source, double distance) noexcept {
+    if (!geo::valid_arc(source)) return std::nullopt;
+    const auto circle = offset_circle({source.center,source.radius},distance);
+    if (!circle) return std::nullopt;
+    source.radius = circle->radius;
+    return source;
+}
+
+std::optional<Entity> offset_through_point(const Entity& source, geo::Vec2 point) {
+    if (!std::isfinite(point.x) || !std::isfinite(point.y)) return std::nullopt;
+    if (const auto* line = std::get_if<LineEntity>(&source)) {
+        const auto direction = line->segment.b - line->segment.a;
+        const double length = geo::length(direction);
+        if (!std::isfinite(length) || length <= geo::kEpsilon) return std::nullopt;
+        const auto result = offset_segment(line->segment, geo::cross(direction,point-line->segment.a)/length);
+        if (result) return LineEntity{*result};
+    } else if (const auto* circle = std::get_if<CircleEntity>(&source)) {
+        const auto result = offset_circle(circle->circle,geo::distance(point,circle->circle.center)-circle->circle.radius);
+        if (result) return CircleEntity{*result};
+    } else if (const auto* arc = std::get_if<ArcEntity>(&source)) {
+        const auto result = offset_arc(arc->arc,geo::distance(point,arc->arc.center)-arc->arc.radius);
+        if (result) return ArcEntity{*result};
+    }
+    return std::nullopt;
+}
+
 bool trim_segment(
     geo::Segment& target,
     geo::Segment cutter,

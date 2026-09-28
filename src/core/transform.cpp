@@ -148,6 +148,7 @@ bool mirror(Entity& entity, geo::Segment axis) noexcept {
             const double axis_angle = std::atan2(local_axis_direction.y, local_axis_direction.x);
             value.insertion_point = mirror_point(value.insertion_point, axis);
             value.rotation = 2.0 * axis_angle - value.rotation;
+            value.mirrored = !value.mirrored;
         } else if constexpr (std::is_same_v<T, TextEntity>) {
             const geo::Vec2 local_axis_direction = axis.b - axis.a;
             const double axis_angle = std::atan2(local_axis_direction.y, local_axis_direction.x);

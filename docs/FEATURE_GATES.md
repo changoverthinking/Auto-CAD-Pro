@@ -24,6 +24,11 @@ A feature may be labeled production only when all of the following are true:
 
 ## Current matrix
 
+Audit note (2026-09-25): historical labels below describe the listed acceptance
+cases, not parity with a commercial CAD product. The evidence-based gap assessment
+and minimum 8/10 release criteria are in `PRODUCT_QUALITY_PLAN.md`. Single-selection,
+limited DXF exchange and incomplete canonical BIM integration remain product gaps.
+
 | Feature | State | Evidence |
 |---|---|---|
 | line/polyline/circle/arc entities | verified | document integration + Windows core tests |

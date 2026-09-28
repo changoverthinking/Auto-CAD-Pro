@@ -13,6 +13,8 @@ struct BlockReferenceEntity {
     geo::Vec2 insertion_point{};
     double rotation{};
     double scale{1.0};
+    // Reflect local Y about the block base point before rotation/translation.
+    bool mirrored{false};
 };
 
 } // namespace acp

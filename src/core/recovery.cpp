@@ -5,50 +5,15 @@
 #include <iterator>
 #include <system_error>
 
-#ifdef _WIN32
-#define NOMINMAX
-#include <windows.h>
-#endif
-
 namespace acp::recovery {
-namespace {
-
-bool write_bytes(const std::filesystem::path& path, const std::string& data) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) return false;
-    out.write(data.data(), static_cast<std::streamsize>(data.size()));
-    out.flush();
-    return out.good();
-}
-
-bool replace_file(
-    const std::filesystem::path& source,
-    const std::filesystem::path& destination) {
-
-#ifdef _WIN32
-    return MoveFileExW(
-        source.c_str(),
-        destination.c_str(),
-        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-#else
-    std::error_code ec;
-    std::filesystem::rename(source, destination, ec);
-    if (!ec) return true;
-
-    std::filesystem::remove(destination, ec);
-    ec.clear();
-    std::filesystem::rename(source, destination, ec);
-    return !ec;
-#endif
-}
-
-} // namespace
 
 bool write_snapshot(
     const std::filesystem::path& path,
     const Document& document,
     const BlockLibrary& blocks,
     const persistence::ProjectSettings& settings) {
+
+    if (path.empty()) return false;
 
     std::error_code ec;
     const auto parent = path.parent_path();
@@ -57,22 +22,9 @@ bool write_snapshot(
         if (ec) return false;
     }
 
-    const auto temp = path.wstring() + L".tmp";
-    const std::filesystem::path temp_path{temp};
-
-    const std::string data =
-        persistence::serialize_project(document, blocks, settings);
-
-    if (!write_bytes(temp_path, data)) {
-        std::filesystem::remove(temp_path, ec);
-        return false;
-    }
-
-    if (!replace_file(temp_path, path)) {
-        std::filesystem::remove(temp_path, ec);
-        return false;
-    }
-    return true;
+    // Autosave must use the same validation and read-back verification as Save.
+    // Never replace the last recoverable snapshot with an unreadable project.
+    return persistence::save_project_atomic(path, document, blocks, settings);
 }
 
 std::optional<persistence::ProjectData> load_snapshot(

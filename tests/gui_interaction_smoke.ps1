@@ -349,6 +349,31 @@ try {
         throw "Block regression: Redo did not restore definition and both references"
     }
 
+    # Mirror a block through the real tool, then verify persistence and history.
+    Send-Key $hwnd 0x1B
+    Click-Client $hwnd 490 350
+    Send-Key $hwnd 0x49 # I: Mirror
+    Click-Client $hwnd 550 300
+    Click-Client $hwnd 550 450
+    $blockMirrorPath = Join-Path $PWD "artifacts\gui-interaction-11.acp2d"
+    Write-Snapshot $hwnd 11 $blockMirrorPath
+    $blockMirrorState = Get-Content -Raw -Path $blockMirrorPath
+    if ($blockMirrorState -notmatch '\sBLOCKREF_MIRRORED\s') {
+        throw "Block Mirror did not persist reflected geometry"
+    }
+    Send-CtrlKey $hwnd 0x5A
+    $blockMirrorUndoPath = Join-Path $PWD "artifacts\gui-interaction-12.acp2d"
+    Write-Snapshot $hwnd 12 $blockMirrorUndoPath
+    if ((Get-Content -Raw -Path $blockMirrorUndoPath) -ne $redoBlockState) {
+        throw "Block Mirror Undo did not restore the exact original project"
+    }
+    Send-CtrlKey $hwnd 0x59
+    $blockMirrorRedoPath = Join-Path $PWD "artifacts\gui-interaction-13.acp2d"
+    Write-Snapshot $hwnd 13 $blockMirrorRedoPath
+    if ((Get-Content -Raw -Path $blockMirrorRedoPath) -ne $blockMirrorState) {
+        throw "Block Mirror Redo did not restore the exact reflected project"
+    }
+
     # Force the same autosave path used by the 30-second timer.
     [GuiTestNative]::SendMessage($hwnd, 0x0113, [IntPtr]1, [IntPtr]::Zero) | Out-Null
     if (!(Test-Path $recoveryPath)) {
