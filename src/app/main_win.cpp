@@ -6,6 +6,7 @@
 #include <shellapi.h>
 
 #include "acp/document.hpp"
+#include "acp/coordinate_input.hpp"
 #include "acp/bounds.hpp"
 #include "acp/history.hpp"
 #include "acp/dxf.hpp"
@@ -214,6 +215,7 @@ constexpr int kMenuSetExtrusionHeight = 1050;
 constexpr int kMenuFit3D = 1051;
 constexpr int kMenuExportObj3D = 1052;
 constexpr int kMenuSendBlender = 1053;
+constexpr int kMenuEnterCoordinates = 1054;
 constexpr int kToolSelect = 2001;
 constexpr int kToolLine = 2002;
 constexpr int kToolCircle = 2003;
@@ -3864,28 +3866,7 @@ void set_extrusion_height(HWND hwnd) {
     fit_scene3d(hwnd);
 }
 
-void handle_left_click(HWND hwnd, POINT point) {
-    if (g_app.view_3d) {
-        return;
-    }
-    if (handle_toolbar_click(hwnd, point)) {
-        return;
-    }
-    if (handle_left_tool_rail_click(hwnd, point)) {
-        return;
-    }
-    if (handle_layer_panel_click(hwnd, point)) {
-        return;
-    }
-
-    const RECT canvas = canvas_rect(hwnd);
-    if (!PtInRect(&canvas, point)) {
-        return;
-    }
-
-    const Vec2 raw_world = screen_to_world(hwnd, point);
-    const Vec2 world = resolved_input_point(hwnd, point);
-
+void handle_world_point(HWND hwnd, Vec2 world, Vec2 raw_world) {
     if ((g_app.tool == Tool::Line ||
          g_app.tool == Tool::Circle ||
          g_app.tool == Tool::Polyline ||
@@ -4283,6 +4264,74 @@ void handle_left_click(HWND hwnd, POINT point) {
     InvalidateRect(hwnd, nullptr, FALSE);
 }
 
+void handle_left_click(HWND hwnd, POINT point) {
+    if (g_app.view_3d) {
+        return;
+    }
+    if (handle_toolbar_click(hwnd, point)) {
+        return;
+    }
+    if (handle_left_tool_rail_click(hwnd, point)) {
+        return;
+    }
+    if (handle_layer_panel_click(hwnd, point)) {
+        return;
+    }
+
+    const RECT canvas = canvas_rect(hwnd);
+    if (!PtInRect(&canvas, point)) {
+        return;
+    }
+
+    const Vec2 raw_world = screen_to_world(hwnd, point);
+    const Vec2 world = resolved_input_point(hwnd, point);
+    handle_world_point(hwnd, world, raw_world);
+}
+
+void enter_coordinates(HWND hwnd) {
+    if (g_app.view_3d || g_app.tool == Tool::Select || g_app.tool == Tool::Trim ||
+        g_app.tool == Tool::Extend || g_app.tool == Tool::Hatch ||
+        (g_app.tool == Tool::Text && g_app.has_first_point)) {
+        MessageBoxW(hwnd, L"Choose a 2D point-based drawing or editing tool first.",
+                    L"Enter Coordinates", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if ((g_app.tool == Tool::Move || g_app.tool == Tool::Copy ||
+         g_app.tool == Tool::Rotate || g_app.tool == Tool::Scale ||
+         g_app.tool == Tool::Mirror || g_app.tool == Tool::Offset) && !selected_editable()) {
+        MessageBoxW(hwnd, L"Select an editable entity before entering coordinates.",
+                    L"Enter Coordinates", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    std::optional<Vec2> reference;
+    if (g_app.tool == Tool::Polyline && !g_app.polyline_points.empty()) {
+        reference = g_app.polyline_points.back();
+    } else if (g_app.has_second_point) {
+        reference = g_app.second_point;
+    } else if (g_app.has_first_point) {
+        reference = g_app.first_point;
+    }
+    std::wstring initial;
+    for (;;) {
+        const auto entered = prompt_property_value(hwnd, L"Enter Coordinates (mm)",
+            L"x,y  |  @dx,dy  |  @distance<degrees", initial);
+        if (!entered) return;
+        const auto point = acp::input::parse_coordinate(utf8_from_wide(*entered), reference);
+        if (!point) {
+            MessageBoxW(hwnd,
+                L"Use x,y (e.g. 100.25,200), @dx,dy or @distance<degrees.\n"
+                L"Relative input needs a previous point in the current operation.\n"
+                L"Use a decimal point, finite numbers and no unit suffix.",
+                L"Invalid Coordinates", MB_OK | MB_ICONWARNING);
+            initial = *entered;
+            continue;
+        }
+        g_app.snap_candidate.reset();
+        handle_world_point(hwnd, *point, *point);
+        return;
+    }
+}
+
 void zoom_at(HWND hwnd, POINT cursor, int wheel_delta) {
     const Vec2 before = screen_to_world(hwnd, cursor);
     const double factor = wheel_delta > 0 ? 1.15 : (1.0 / 1.15);
@@ -4316,6 +4365,9 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
 #endif
         case WM_COMMAND:
             switch (LOWORD(w_param)) {
+                case kMenuEnterCoordinates:
+                    enter_coordinates(hwnd);
+                    return 0;
                 case kMenuNew:
                     if (!confirm_discard_unsaved(hwnd)) {
                         return 0;
@@ -4672,6 +4724,10 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
             break;
 
         case WM_KEYDOWN: {
+            if (w_param == VK_F6) {
+                enter_coordinates(hwnd);
+                return 0;
+            }
             const bool control_down =
                 (GetKeyState(VK_CONTROL) & 0x8000) != 0;
             const bool shift_down =
@@ -5137,6 +5193,8 @@ HMENU create_app_menu() {
     AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(file, MF_STRING, kMenuExit, L"E&xit");
 
+    AppendMenuW(draw, MF_STRING, kMenuEnterCoordinates, L"Enter Coordinates...\tF6");
+    AppendMenuW(draw, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(draw, MF_STRING, kToolSelect, L"&Select\tEsc");
     AppendMenuW(draw, MF_STRING, kToolLine, L"&Line\tL");
     AppendMenuW(draw, MF_STRING, kToolCircle, L"&Circle\tC");
