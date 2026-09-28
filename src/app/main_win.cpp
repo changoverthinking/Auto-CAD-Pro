@@ -80,7 +80,7 @@ struct AppState {
     Document document;
     acp::History history;
     acp::BlockLibrary blocks;
-    std::optional<acp::EntityId> selected;
+    acp::selection::Set selected;
     std::optional<acp::EntityId> auxiliary_entity;
     acp::LayerId active_layer{acp::kDefaultLayerId};
     std::vector<Vec2> polyline_points;
@@ -161,6 +161,7 @@ int layer_panel_width(const RECT& client) {
 int left_tool_rail_width(const RECT& client) {
     return client_layout_metrics(client).left_rail_width;
 }
+constexpr int kMenuSelectAll = 1055;
 constexpr int kMenuNew = 1001;
 constexpr int kMenuExit = 1002;
 constexpr int kMenuOpen = 1003;
@@ -427,6 +428,37 @@ bool apply_history(std::unique_ptr<acp::Command> command) {
     return true;
 }
 
+// Construct every child before applying a single atomic history transaction.
+// Single-entity property editors deliberately require exactly one selection.
+template <typename Transform>
+bool transform_selection(Transform transform, bool copy = false) {
+    std::vector<std::unique_ptr<acp::Command>> commands;
+    std::vector<acp::AddEntityCommand*> copies;
+    const acp::Document& document = g_app.document;
+    for (const auto id : g_app.selected.ids()) {
+        if (!document.entity_editable(id)) return false;
+        const auto* source = document.find(id);
+        const auto* properties = document.properties(id);
+        if (!source || !properties) return false;
+        acp::Entity replacement = *source;
+        if (!transform(replacement) || !acp::transform::has_finite_geometry(replacement)) return false;
+        if (copy) {
+            auto command = std::make_unique<acp::AddEntityCommand>(replacement, *properties);
+            copies.push_back(command.get());
+            commands.push_back(std::move(command));
+        } else {
+            commands.push_back(std::make_unique<acp::UpdateEntityCommand>(id, replacement));
+        }
+    }
+    if (!apply_history(std::make_unique<acp::EntityBatchCommand>(
+            g_app.selected.ids(), std::move(commands)))) return false;
+    if (copy) {
+        g_app.selected.reset();
+        for (const auto* command : copies) g_app.selected.toggle(command->id());
+    }
+    return true;
+}
+
 bool confirm_discard_unsaved(HWND hwnd) {
     if (!g_app.dirty) {
         return true;
@@ -465,12 +497,12 @@ bool active_layer_writable() {
 }
 
 bool selected_editable() {
-    return g_app.selected.has_value() &&
+    return g_app.selected.size() == 1 &&
            g_app.document.entity_editable(*g_app.selected);
 }
 
 bool selected_visibility_mutable() {
-    if (!g_app.selected.has_value()) {
+    if (g_app.selected.size() != 1) {
         return false;
     }
     const acp::EntityId id = *g_app.selected;
@@ -1094,12 +1126,9 @@ void draw_document(HWND hwnd, HDC dc) {
     SelectObject(dc, old_brush);
 }
 
-void draw_selection_overlay(HWND hwnd, HDC dc) {
-    if (!g_app.selected.has_value()) {
-        return;
-    }
-    const acp::Entity* entity = g_app.document.find(*g_app.selected);
-    if (entity == nullptr || !g_app.document.entity_visible(*g_app.selected)) {
+void draw_selected_entity(HWND hwnd, HDC dc, acp::EntityId id) {
+    const acp::Entity* entity = g_app.document.find(id);
+    if (entity == nullptr || !g_app.document.entity_visible(id)) {
         return;
     }
     const auto box = acp::bounds::entity_bounds(*entity, &g_app.blocks);
@@ -1140,6 +1169,10 @@ void draw_selection_overlay(HWND hwnd, HDC dc) {
     SelectObject(dc, old_pen);
     DeleteObject(grip_brush);
     DeleteObject(pen);
+}
+
+void draw_selection_overlay(HWND hwnd, HDC dc) {
+    for (const auto id : g_app.selected.ids()) draw_selected_entity(hwnd, dc, id);
 }
 
 void draw_preview(HWND hwnd, HDC dc) {
@@ -1644,14 +1677,12 @@ bool handle_toolbar_click(HWND hwnd, POINT point) {
                 g_app.dirty = true;
                 ensure_active_layer_exists();
                 ensure_active_block_exists();
-                if (g_app.selected.has_value() &&
-                    g_app.document.find(*g_app.selected) == nullptr) {
-                    g_app.selected.reset();
-                }
+                g_app.selected.prune(g_app.document);
                 InvalidateRect(hwnd, nullptr, FALSE);
             }
         } else if (button.icon == QuickToolbarIcon::Redo) {
             if (g_app.history.redo(g_app.document, g_app.blocks)) {
+                g_app.selected.prune(g_app.document);
                 g_app.dirty = true;
                 ensure_active_layer_exists();
                 ensure_active_block_exists();
@@ -2531,8 +2562,8 @@ void draw_layer_panel(HWND hwnd, HDC dc, const RECT& client) {
 
     wchar_t value[128]{};
     if (g_app.selected.has_value()) {
-        swprintf_s(value, L"%llu",
-                   static_cast<unsigned long long>(*g_app.selected));
+        swprintf_s(value, L"%zu selected; primary %llu",
+                   g_app.selected.size(), static_cast<unsigned long long>(*g_app.selected));
         draw_property(L"Selected", value);
         if (const acp::EntityProperties* props =
                 g_app.document.properties(*g_app.selected)) {
@@ -3178,11 +3209,11 @@ void draw_status(HWND hwnd, HDC dc, const RECT& client) {
         active_layer->locked ? L"LOCKED" :
         !active_layer->visible ? L"HIDDEN" :
         L"ACTIVE";
-    swprintf_s(buffer, L"%s  Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu    Selected: %llu    Layer: %u (%s)    SNAP: %s    Undo: %zu",
+    swprintf_s(buffer, L"%s  Tool: %s    X: %.2f    Y: %.2f    Zoom: %.0f%%    Entities: %zu    Selected: %llu (%zu)    Layer: %u (%s)    SNAP: %s    Undo: %zu",
                g_app.dirty ? L"*" : L" ",
                tool_name(g_app.tool), cursor_world.x, cursor_world.y,
                g_app.zoom * 100.0, g_app.document.size(),
-               static_cast<unsigned long long>(g_app.selected.value_or(0)),
+               static_cast<unsigned long long>(g_app.selected.value_or(0)), g_app.selected.size(),
                static_cast<unsigned>(g_app.active_layer), layer_state,
                snap_state, g_app.history.undo_size());
 
@@ -3902,9 +3933,13 @@ void handle_left_click(HWND hwnd, POINT point) {
         const auto hit = acp::selection::hit_test(
             g_app.document, g_app.blocks, raw_world,
             8.0 / std::max(g_app.zoom, 0.02));
-        g_app.selected = hit.has_value()
-            ? std::optional<acp::EntityId>{hit->id}
-            : std::nullopt;
+        if ((GetKeyState(VK_CONTROL) & 0x8000) != 0) {
+            if (hit) g_app.selected.toggle(hit->id);
+        } else {
+            g_app.selected = hit.has_value()
+                ? std::optional<acp::EntityId>{hit->id}
+                : std::nullopt;
+        }
         InvalidateRect(hwnd, nullptr, FALSE);
         return;
     }
@@ -4111,22 +4146,13 @@ void handle_left_click(HWND hwnd, POINT point) {
     }
 
     if (g_app.tool == Tool::Mirror && g_app.selected.has_value()) {
-        if (!selected_editable()) {
-            return;
-        }
         if (!g_app.has_first_point) {
             g_app.first_point = world;
             g_app.has_first_point = true;
         } else {
-            const acp::Entity* source = g_app.document.find(*g_app.selected);
-            if (source != nullptr) {
-                acp::Entity replacement = *source;
-                if (acp::transform::mirror(
-                        replacement, {g_app.first_point, world})) {
-                    (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
-                            *g_app.selected, replacement));
-                }
-            }
+            if (!transform_selection([&](acp::Entity& entity) {
+                    return acp::transform::mirror(entity, {g_app.first_point, world});
+                })) MessageBeep(MB_ICONWARNING);
             g_app.has_first_point = false;
         }
         InvalidateRect(hwnd, nullptr, FALSE);
@@ -4134,9 +4160,6 @@ void handle_left_click(HWND hwnd, POINT point) {
     }
 
     if (g_app.tool == Tool::Scale && g_app.selected.has_value()) {
-        if (!selected_editable()) {
-            return;
-        }
         if (!g_app.has_first_point) {
             g_app.first_point = world;
             g_app.has_first_point = true;
@@ -4148,16 +4171,11 @@ void handle_left_click(HWND hwnd, POINT point) {
                 acp::geo::distance(g_app.first_point, g_app.second_point);
             const double target =
                 acp::geo::distance(g_app.first_point, world);
-            const acp::Entity* source = g_app.document.find(*g_app.selected);
-            if (source != nullptr &&
-                reference > acp::geo::kEpsilon &&
-                target > acp::geo::kEpsilon) {
-                acp::Entity replacement = *source;
-                if (acp::transform::scale_uniform(
-                        replacement, g_app.first_point, target / reference)) {
-                    (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
-                            *g_app.selected, replacement));
-                }
+            if (reference > acp::geo::kEpsilon && target > acp::geo::kEpsilon) {
+                if (!transform_selection([&](acp::Entity& entity) {
+                        return acp::transform::scale_uniform(entity, g_app.first_point,
+                                                             target / reference);
+                    })) MessageBeep(MB_ICONWARNING);
             }
             g_app.has_first_point = false;
             g_app.has_second_point = false;
@@ -4234,49 +4252,23 @@ void handle_left_click(HWND hwnd, POINT point) {
             }
         }
     } else if (g_app.selected.has_value()) {
-        if (!selected_editable()) {
-            g_app.has_first_point = false;
-            InvalidateRect(hwnd, nullptr, FALSE);
-            return;
-        }
-        const acp::Entity* source = g_app.document.find(*g_app.selected);
-        if (source != nullptr) {
-            if (g_app.tool == Tool::Move) {
-                acp::Entity replacement = *source;
-                acp::transform::translate(replacement, world - g_app.first_point);
-                (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
-                        *g_app.selected, replacement));
-            } else if (g_app.tool == Tool::Copy) {
-                const acp::EntityProperties* source_properties_ptr =
-                    g_app.document.properties(*g_app.selected);
-                const std::optional<acp::EntityProperties> source_properties =
-                    source_properties_ptr != nullptr
-                        ? std::optional<acp::EntityProperties>{*source_properties_ptr}
-                        : std::nullopt;
-                const acp::Entity copy =
-                    acp::transform::translated_copy(*source, world - g_app.first_point);
-                auto command = std::make_unique<acp::AddEntityCommand>(copy);
-                auto* command_ptr = command.get();
-                if (apply_history(std::move(command))) {
-                    if (source_properties.has_value()) {
-                        if (acp::EntityProperties* copied_properties =
-                                g_app.document.properties(command_ptr->id())) {
-                            *copied_properties = *source_properties;
-                        }
-                    }
-                    g_app.selected = command_ptr->id();
-                }
-            } else if (g_app.tool == Tool::Rotate) {
-                const Vec2 direction = world - g_app.first_point;
-                if (acp::geo::length(direction) > acp::geo::kEpsilon) {
-                    acp::Entity replacement = *source;
-                    const double radians = std::atan2(direction.y, direction.x);
-                    acp::transform::rotate(replacement, g_app.first_point, radians);
-                    (void)apply_history(std::make_unique<acp::UpdateEntityCommand>(
-                            *g_app.selected, replacement));
-                }
+        bool applied = false;
+        if (g_app.tool == Tool::Move || g_app.tool == Tool::Copy) {
+            applied = transform_selection([&](acp::Entity& entity) {
+                acp::transform::translate(entity, world - g_app.first_point);
+                return true;
+            }, g_app.tool == Tool::Copy);
+        } else if (g_app.tool == Tool::Rotate) {
+            const Vec2 direction = world - g_app.first_point;
+            if (acp::geo::length(direction) > acp::geo::kEpsilon) {
+                applied = transform_selection([&](acp::Entity& entity) {
+                    acp::transform::rotate(entity, g_app.first_point,
+                                          std::atan2(direction.y, direction.x));
+                    return true;
+                });
             }
         }
+        if (!applied) MessageBeep(MB_ICONWARNING);
     }
 
     g_app.has_first_point = false;
@@ -4649,6 +4641,11 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                         DestroyWindow(hwnd);
                     }
                     return 0;
+                case kMenuSelectAll:
+                    set_tool(hwnd, Tool::Select);
+                    g_app.selected.select_all_editable(g_app.document);
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
                 case kToolSelect: set_tool(hwnd, Tool::Select); return 0;
                 case kToolLine: set_tool(hwnd, Tool::Line); return 0;
                 case kToolCircle: set_tool(hwnd, Tool::Circle); return 0;
@@ -4688,21 +4685,23 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 SendMessageW(hwnd, WM_COMMAND, kMenuNew, 0);
                 return 0;
             }
+            if (control_down && w_param == 'A') {
+                SendMessageW(hwnd, WM_COMMAND, kMenuSelectAll, 0);
+                return 0;
+            }
             if (control_down && w_param == 'Z') {
                 if (g_app.history.undo(g_app.document, g_app.blocks)) {
                     g_app.dirty = true;
                     ensure_active_layer_exists();
                     ensure_active_block_exists();
-                    if (g_app.selected.has_value() &&
-                        g_app.document.find(*g_app.selected) == nullptr) {
-                        g_app.selected.reset();
-                    }
+                    g_app.selected.prune(g_app.document);
                     InvalidateRect(hwnd, nullptr, FALSE);
                 }
                 return 0;
             }
             if (control_down && w_param == 'Y') {
                 if (g_app.history.redo(g_app.document, g_app.blocks)) {
+                g_app.selected.prune(g_app.document);
                     g_app.dirty = true;
                     ensure_active_layer_exists();
                     ensure_active_block_exists();
@@ -4711,14 +4710,15 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_p
                 return 0;
             }
             if (w_param == VK_DELETE && g_app.selected.has_value()) {
-                if (!selected_editable()) {
-                    return 0;
+                std::vector<std::unique_ptr<acp::Command>> commands;
+                for (const auto id : g_app.selected.ids()) {
+                    commands.push_back(std::make_unique<acp::RemoveEntityCommand>(id));
                 }
-                const acp::EntityId id = *g_app.selected;
-                if (apply_history(std::make_unique<acp::RemoveEntityCommand>(id))) {
+                if (apply_history(std::make_unique<acp::EntityBatchCommand>(
+                        g_app.selected.ids(), std::move(commands)))) {
                     g_app.selected.reset();
                     InvalidateRect(hwnd, nullptr, FALSE);
-                }
+                } else MessageBeep(MB_ICONWARNING);
                 return 0;
             }
             if (w_param == VK_ESCAPE) {
@@ -5138,6 +5138,7 @@ HMENU create_app_menu() {
     AppendMenuW(file, MF_STRING, kMenuExit, L"E&xit");
 
     AppendMenuW(draw, MF_STRING, kToolSelect, L"&Select\tEsc");
+    AppendMenuW(draw, MF_STRING, kMenuSelectAll, L"Select &All Editable\tCtrl+A");
     AppendMenuW(draw, MF_STRING, kToolLine, L"&Line\tL");
     AppendMenuW(draw, MF_STRING, kToolCircle, L"&Circle\tC");
     AppendMenuW(draw, MF_STRING, kToolPolyline, L"&Polyline\tP");

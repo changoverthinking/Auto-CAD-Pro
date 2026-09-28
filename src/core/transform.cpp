@@ -3,8 +3,35 @@
 #include <cmath>
 #include <type_traits>
 #include <variant>
+#include <algorithm>
 
 namespace acp::transform {
+
+bool has_finite_geometry(const Entity& entity) noexcept {
+    const auto point = [](geo::Vec2 p) { return std::isfinite(p.x) && std::isfinite(p.y); };
+    return std::visit([&](const auto& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, LineEntity>) {
+            return point(value.segment.a) && point(value.segment.b);
+        } else if constexpr (std::is_same_v<T, CircleEntity>) {
+            return point(value.circle.center) && std::isfinite(value.circle.radius);
+        } else if constexpr (std::is_same_v<T, ArcEntity>) {
+            return point(value.arc.center) && std::isfinite(value.arc.radius) &&
+                std::isfinite(value.arc.start_angle) && std::isfinite(value.arc.end_angle);
+        } else if constexpr (std::is_same_v<T, PolylineEntity>) {
+            return std::all_of(value.points.begin(), value.points.end(), point);
+        } else if constexpr (std::is_same_v<T, BlockReferenceEntity>) {
+            return point(value.insertion_point) && std::isfinite(value.rotation) && std::isfinite(value.scale);
+        } else if constexpr (std::is_same_v<T, TextEntity>) {
+            return point(value.position) && std::isfinite(value.height) && std::isfinite(value.rotation);
+        } else if constexpr (std::is_same_v<T, LinearDimensionEntity>) {
+            return point(value.first) && point(value.second) && point(value.line_point);
+        } else {
+            return std::all_of(value.boundary.begin(), value.boundary.end(), point) &&
+                std::isfinite(value.angle) && std::isfinite(value.spacing);
+        }
+    }, entity);
+}
 
 geo::Vec2 rotate_point(geo::Vec2 point, geo::Vec2 origin, double radians) noexcept {
     const auto local = point - origin;

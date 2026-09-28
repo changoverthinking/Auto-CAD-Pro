@@ -167,6 +167,10 @@ jobs:
         shell: powershell
         run: .\tests\gui_edit_tools_smoke.ps1 -Exe (Join-Path $PWD "build\Release\AutoCADPro.exe")
 
+      - name: GUI group selection and atomic Undo regression
+        shell: powershell
+        run: .\tests\gui_group_selection_smoke.ps1 -Exe (Join-Path $PWD "build\Release\AutoCADPro.exe")
+
       - name: GUI layout dirty-state regression
         shell: powershell
         run: .\tests\gui_layout_dirty_smoke.ps1 -Exe (Join-Path $PWD "build\Release\AutoCADPro.exe")

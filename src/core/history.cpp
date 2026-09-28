@@ -13,10 +13,11 @@ bool valid_line_type(LineType value) noexcept {
 }
 } // namespace
 
-AddEntityCommand::AddEntityCommand(Entity entity)
-    : entity_(std::move(entity)) {}
+AddEntityCommand::AddEntityCommand(Entity entity, std::optional<EntityProperties> properties)
+    : entity_(std::move(entity)), properties_(std::move(properties)) {}
 
 bool AddEntityCommand::execute(Document& document) {
+    if (properties_ && document.layer(properties_->layer_id) == nullptr) return false;
     if (executed_ && id_ != 0) {
         if (!document.insert_with_id(id_, entity_)) {
             return false;
@@ -30,8 +31,37 @@ bool AddEntityCommand::execute(Document& document) {
     }
 
     id_ = document.insert(entity_);
+    if (id_ != 0 && properties_) *document.properties(id_) = *properties_;
     executed_ = true;
     return id_ != 0;
+}
+
+EntityBatchCommand::EntityBatchCommand(std::vector<EntityId> sources,
+                                     std::vector<std::unique_ptr<Command>> commands)
+    : sources_(std::move(sources)), commands_(std::move(commands)) {}
+
+bool EntityBatchCommand::execute(Document& document) {
+    if (applied_ || sources_.empty() || commands_.empty()) return false;
+    for (const auto id : sources_) {
+        if (!document.entity_editable(id)) return false;
+    }
+    Document staged = document;
+    for (const auto& command : commands_) {
+        if (!command || !command->execute(staged)) return false;
+    }
+    document = std::move(staged);
+    applied_ = true;
+    return true;
+}
+
+void EntityBatchCommand::undo(Document& document) {
+    if (!applied_) return;
+    Document staged = document;
+    for (auto it = commands_.rbegin(); it != commands_.rend(); ++it) {
+        (*it)->undo(staged);
+    }
+    document = std::move(staged);
+    applied_ = false;
 }
 
 void AddEntityCommand::undo(Document& document) {
