@@ -181,6 +181,10 @@ if(ACP_BUILD_TESTS)
     target_link_libraries(acp_persistence_safety_tests PRIVATE acp_core)
     add_test(NAME acp_persistence_safety_tests COMMAND acp_persistence_safety_tests)
 
+    add_executable(acp_group_selection_tests tests/group_selection_tests.cpp)
+    target_link_libraries(acp_group_selection_tests PRIVATE acp_core)
+    add_test(NAME acp_group_selection_tests COMMAND acp_group_selection_tests)
+
     add_executable(acp_product_integrity_tests tests/product_integrity_tests.cpp)
     target_link_libraries(acp_product_integrity_tests PRIVATE acp_core)
     add_test(NAME acp_product_integrity_tests COMMAND acp_product_integrity_tests)

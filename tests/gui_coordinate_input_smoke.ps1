@@ -219,6 +219,7 @@ function Ctrl-Key([IntPtr]$hwnd, [int]$key) {
     Start-Sleep -Milliseconds 50
     Send-Key $hwnd $key
     [GuiCoordinateNative]::keybd_event(0x11,0,2,[UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 100
 }
 function Near([double]$actual,[double]$expected) {
     if ([Math]::Abs($actual-$expected) -gt 0.00000001) { throw "Coordinate mismatch: $actual != $expected" }
@@ -268,6 +269,25 @@ try {
     [GuiCoordinateNative]::SendMessage($dialog,0x0111,[IntPtr]2,[IntPtr]::Zero) | Out-Null
     Start-Sleep -Milliseconds 150
     if((Snapshot $hwnd 814) -ne $circle) { throw "Cancel modified document" }
+    # Mixed-type group edits must accept precise coordinates with Snap enabled.
+    Ctrl-Key $hwnd 0x41
+    Send-Key $hwnd 0x4D
+    Command-Property $hwnd $proc 1054 '0,0'
+    Command-Property $hwnd $proc 1054 '@0.125,-0.0625'
+    $group=Snapshot $hwnd 815
+    $match=[regex]::Match($group,'(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0\s+LINE\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)')
+    if(!$match.Success) { throw "Group line missing" }
+    $expected=@(1000.25,2000,1300.5,1959.875)
+    for($i=0;$i -lt 4;$i++) { Near (Parse-InvariantDouble $match.Groups[$i+1].Value) $expected[$i] }
+    $match=[regex]::Match($group,'(?m)^E\s+\d+\s+\d+\s+1\s+0\s+0\s+CIRCLE\s+(\S+)\s+(\S+)\s+(\S+)')
+    if(!$match.Success) { throw "Group circle missing" }
+    Near (Parse-InvariantDouble $match.Groups[1].Value) 0.125
+    Near (Parse-InvariantDouble $match.Groups[2].Value) -0.0625
+    Near (Parse-InvariantDouble $match.Groups[3].Value) 2.5
+    Ctrl-Key $hwnd 0x5A
+    if((Snapshot $hwnd 816) -ne $circle) { throw "Precise group Undo mismatch" }
+    Ctrl-Key $hwnd 0x59
+    if((Snapshot $hwnd 817) -ne $group) { throw "Precise group Redo mismatch" }
     Write-Host 'Precise coordinate GUI regression passed'
 }
 finally {

@@ -27,7 +27,8 @@ public:
 
 class AddEntityCommand final : public Command {
 public:
-    explicit AddEntityCommand(Entity entity);
+    explicit AddEntityCommand(Entity entity,
+                              std::optional<EntityProperties> properties = std::nullopt);
 
     bool execute(Document& document) override;
     void undo(Document& document) override;
@@ -125,6 +126,20 @@ private:
     LayerId id_{};
     Layer replacement_;
     std::optional<Layer> original_;
+};
+
+// Entity-only transaction. Validate every source before touching a staged document,
+// then commit once. A failed child never exposes a partially edited drawing.
+class EntityBatchCommand final : public Command {
+public:
+    EntityBatchCommand(std::vector<EntityId> sources,
+                       std::vector<std::unique_ptr<Command>> commands);
+    bool execute(Document& document) override;
+    void undo(Document& document) override;
+private:
+    std::vector<EntityId> sources_;
+    std::vector<std::unique_ptr<Command>> commands_;
+    bool applied_{false};
 };
 
 class History {

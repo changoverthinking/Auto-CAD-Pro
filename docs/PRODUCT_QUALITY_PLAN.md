@@ -113,3 +113,11 @@ thương mại (nếu chọn) và ký số cần được giải quyết riêng 
    thời gian và lỗi. Đây là bằng chứng còn cần thu thập, không giả nhận đã có.
 5. Chỉ công bố đạt 8/10 khi từng hàng trong bảng có hồ sơ nghiệm thu. Nếu chỉ đạt
    phạm vi 2D, công bố rõ 2D; phần BIM/plugin chưa đạt tiếp tục đánh dấu chưa đạt.
+
+## Tiến độ 2026-09-28 — thao tác nhóm 2D
+
+Đã triển khai tập lựa chọn nhiều đối tượng bằng Ctrl-click/Ctrl+A/menu, khung chọn từng thành viên và số lượng lựa chọn. Move, Copy, Rotate, Scale, Mirror, Delete dùng một giao dịch Undo/Redo; từ chối toàn bộ nếu có thành viên không được sửa. Copy giữ thuộc tính riêng của từng thành viên. Kết quả biến đổi không hữu hạn bị chặn trước khi áp dụng.
+
+Kiểm chứng core: 25 suite × 5 lần đều đạt; thêm kiểm thử lỗi giữa giao dịch, layer khóa/ẩn, Copy giữ ID/thuộc tính và round-trip dự án. Kiểm thử Windows mới đã được đăng ký, cần CI xác nhận trước tích hợp. Chi tiết sử dụng và giới hạn: [GROUP_SELECTION.md](GROUP_SELECTION.md).
+
+Chưa nâng điểm lên 8/10 chỉ từ thay đổi này. Năng suất 2D còn thiếu window/crossing, Ortho và các tình huống CAD thực tế; hiệu năng cần đo trên bản vẽ lớn; các mục trao đổi định dạng, BIM, plugin và trải nghiệm người dùng trong bảng gốc vẫn cần hoàn thiện và nghiệm thu riêng.
