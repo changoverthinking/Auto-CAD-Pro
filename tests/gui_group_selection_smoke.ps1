@@ -18,8 +18,16 @@ public static class GuiGroupNative {
     [DllImport("user32.dll")]
     public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]
+    private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam,
+        IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+
+    public static IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam) {
+        IntPtr result;
+        if (SendMessageTimeout(hWnd, Msg, wParam, lParam, 2, 5000, out result) == IntPtr.Zero)
+            throw new InvalidOperationException("GUI message timed out: " + Msg + "/" + wParam);
+        return result;
+    }
 
     [DllImport("user32.dll")]
     public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
@@ -36,6 +44,8 @@ function Send-CtrlKey([IntPtr]$hwnd, [int]$vk) {
     Start-Sleep -Milliseconds 50
     [GuiGroupNative]::SendMessage($hwnd, 0x0100, [IntPtr]$vk, [IntPtr]::Zero) | Out-Null
     [GuiGroupNative]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
+    # Let the application's input queue consume Ctrl-up before the next shortcut.
+    Start-Sleep -Milliseconds 100
 }
 
 function Click-Client([IntPtr]$hwnd, [int]$x, [int]$y) {
@@ -121,6 +131,7 @@ try {
     # Ctrl+A must select all editable members without switching to Arc.
     Send-CtrlKey $hwnd 0x41
     foreach ($tool in @(0x4D, 0x52, 0x53, 0x49)) { # Move, Rotate, Scale, Mirror
+        Write-Host "Testing group tool $tool"
         Send-Key $hwnd $tool
         Click-Client $hwnd 260 400
         if ($tool -eq 0x52) { Click-Client $hwnd 260 450 }
